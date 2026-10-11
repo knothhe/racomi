@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f4f4f6" />
+    <link rel="icon" type="image/png" sizes="128x128" href="/appicon.png" />
+    <title>racomi — Skill 管理器</title>
+    <script>
+      // Apply the saved choice before the app or its stylesheet can paint.
+      (() => {
+        let preference = "system";
+        try {
+          const saved = localStorage.getItem("racomi.theme");
+          if (saved === "light" || saved === "dark") preference = saved;
+        } catch {}
+        const theme = preference === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : preference;
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.themePreference = preference;
+        document.documentElement.style.colorScheme = theme;
+        document.documentElement.style.backgroundColor = theme === "dark" ? "#1a1a1e" : "#f4f4f6";
+        document.querySelector('meta[name="theme-color"]').content = theme === "dark" ? "#1a1a1e" : "#f4f4f6";
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="modal-root"></div>
+    <div id="toast-root"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,354 @@
+package desktop
+
+import (
+	"context"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+	"unicode/utf8"
+
+	"racomi/internal/backup"
+	skillstore "racomi/internal/skills"
+	"racomi/internal/sources"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
+)
+
+type AppState struct {
+	DataDir            string                    `json:"dataDir"`
+	HomeDir            string                    `json:"homeDir"`
+	State              skillstore.State          `json:"state"`
+	Snapshots          []skillstore.SnapshotInfo `json:"snapshots"`
+	DirectoryOptions   []DirectoryOption         `json:"directoryOptions"`
+	Projects           []skillstore.Target       `json:"projects"`
+	GlobalApplications []GlobalApplication       `json:"globalApplications"`
+}
+
+type Service struct {
+	store         *skillstore.Store
+	sources       *sources.Client
+	mu            sync.Mutex
+	themeMu       sync.Mutex
+	theme         string
+	locale        string
+	app           *application.App
+	legacyPreview *skillsManagerSession
+}
+
+func New(root string) (*Service, error) {
+	if root == "" {
+		base, err := os.UserConfigDir()
+		if err != nil {
+			return nil, err
+		}
+		root = filepath.Join(base, "racomi")
+	}
+	root, err := expandPath(root)
+	if err != nil {
+		return nil, err
+	}
+	store, err := skillstore.Open(root)
+	if err != nil {
+		return nil, err
+	}
+	return &Service{store: store, sources: sources.New(filepath.Join(store.Root(), "cache", "sources")), theme: "system", locale: "zh-CN"}, nil
+}
+
+func Attach(service *Service, app *application.App) {
+	service.themeMu.Lock()
+	service.app = app
+	service.themeMu.Unlock()
+	if app != nil {
+		app.Event.OnApplicationEvent(events.Common.ThemeChanged, func(_ *application.ApplicationEvent) {
+			service.themeMu.Lock()
+			defer service.themeMu.Unlock()
+			if service.theme == "system" {
+				service.applyThemeLocked()
+			}
+		})
+	}
+}
+
+// ServiceStartup runs after the platform environment is ready and before windows
+// are opened, so the first native background follows the system appearance.
+func (s *Service) ServiceStartup(_ context.Context, _ application.ServiceOptions) error {
+	s.themeMu.Lock()
+	defer s.themeMu.Unlock()
+	s.applyThemeLocked()
+	return nil
+}
+
+// SetTheme colours the native window behind the frontend's matching theme. Wails
+// beta.24 exposes dynamic background colours, while native controls keep the
+// system appearance. The transparent titlebar shares the frontend background.
+func (s *Service) SetTheme(theme string) error {
+	if theme != "system" && theme != "light" && theme != "dark" {
+		return errors.New("主题必须为 system、light 或 dark")
+	}
+	s.themeMu.Lock()
+	defer s.themeMu.Unlock()
+	s.theme = theme
+	s.applyThemeLocked()
+	return nil
+}
+
+func (s *Service) applyThemeLocked() {
+	if s.app == nil {
+		return
+	}
+	dark := s.theme == "dark" || (s.theme == "system" && s.app.Env.IsDarkMode())
+	colour := application.NewRGB(244, 244, 246)
+	if dark {
+		colour = application.NewRGB(26, 26, 30)
+	}
+	for _, window := range s.app.Window.GetAll() {
+		window.SetBackgroundColour(colour)
+	}
+}
+
+// ReadSkillDocument only reads a verified skill object identified by the index.
+// No caller-provided path is accepted, and skill contents are never executed.
+func (s *Service) ReadSkillDocument(skillID string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state, err := s.store.State()
+	if err != nil {
+		return "", err
+	}
+	var object string
+	var expectedHash string
+	for _, skill := range state.Skills {
+		if skill.ID == skillID {
+			expectedHash = skill.ContentHash
+			object = filepath.Join(s.store.Root(), "objects", expectedHash)
+			break
+		}
+	}
+	if object == "" {
+		return "", errors.New("技能不存在")
+	}
+	info, err := os.Lstat(filepath.Join(object, "SKILL.md"))
+	if err != nil {
+		return "", err
+	}
+	const maxDocumentSize = 1 << 20
+	if !info.Mode().IsRegular() || info.Size() > maxDocumentSize {
+		return "", errors.New("SKILL.md 必须为不超过 1 MiB 的普通文件")
+	}
+	hash, err := skillstore.HashDir(object)
+	if err != nil {
+		return "", err
+	}
+	if hash != expectedHash {
+		return "", errors.New("技能内容校验失败，请重新导入")
+	}
+	root, err := os.OpenRoot(object)
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+	file, err := root.Open("SKILL.md")
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	current, err := file.Stat()
+	if err != nil {
+		return "", err
+	}
+	if !current.Mode().IsRegular() || !os.SameFile(info, current) || current.Size() != info.Size() {
+		return "", errors.New("读取时技能文档发生变化")
+	}
+	content, err := io.ReadAll(io.LimitReader(file, maxDocumentSize+1))
+	if err != nil {
+		return "", err
+	}
+	if len(content) > maxDocumentSize {
+		return "", errors.New("SKILL.md 不能超过 1 MiB")
+	}
+	// Recheck after reading as local changes can happen outside this process.
+	hash, err = skillstore.HashDir(object)
+	if err != nil {
+		return "", err
+	}
+	if hash != expectedHash || int64(len(content)) != current.Size() {
+		return "", errors.New("读取时技能内容发生变化")
+	}
+	if !utf8.Valid(content) {
+		return "", errors.New("SKILL.md 必须为有效的 UTF-8 文本")
+	}
+	return string(content), nil
+}
+
+func (s *Service) GetState() (AppState, error) {
+	state, err := s.store.State()
+	if err != nil {
+		return AppState{}, err
+	}
+	snapshots, err := s.store.Snapshots()
+	if err != nil {
+		return AppState{}, err
+	}
+	directories, err := codexDirectoryOptions()
+	if err != nil {
+		return AppState{}, err
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return AppState{}, err
+	}
+	home, err = filepath.Abs(home)
+	if err != nil {
+		return AppState{}, err
+	}
+	globals, err := globalApplications(state)
+	if err != nil {
+		return AppState{}, err
+	}
+	projects := []skillstore.Target{}
+	for _, target := range state.Targets {
+		if target.Kind == "project" {
+			projects = append(projects, target)
+		}
+	}
+	return AppState{DataDir: s.store.Root(), HomeDir: applicationPath(home), State: state, Snapshots: snapshots, DirectoryOptions: directories, Projects: projects, GlobalApplications: globals}, nil
+}
+
+func (s *Service) Search(ctx context.Context, query string) ([]sources.SearchResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	return s.sources.Search(ctx, query)
+}
+
+func (s *Service) Preview(ctx context.Context, source, ref, subpath string) (sources.Preview, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	return s.sources.Preview(ctx, source, ref, subpath)
+}
+
+func (s *Service) Install(previewID string, paths []string) (AppState, error) {
+	return s.mutate(func() error { return s.installFromPreview(previewID, paths) })
+}
+
+func (s *Service) CheckUpdates(ctx context.Context) ([]sources.Update, error) {
+	return s.checkSourceUpdates(ctx)
+}
+
+func (s *Service) UpdateSkill(ctx context.Context, id string) (AppState, error) {
+	return s.UpdateSkills(ctx, []string{id})
+}
+
+func (s *Service) RemoveSkill(id string) (AppState, error) {
+	return s.RemoveSkills([]string{id})
+}
+func (s *Service) SaveSettings(settings skillstore.Settings) (AppState, error) {
+	return s.mutate(func() error { return s.store.SaveSettings(settings) })
+}
+func (s *Service) SavePreset(preset skillstore.Preset) (AppState, error) {
+	return s.mutate(func() error { _, err := s.store.SavePreset(preset); return err })
+}
+func (s *Service) DeletePreset(id string) (AppState, error) {
+	return s.mutate(func() error { return s.store.DeletePreset(id) })
+}
+func (s *Service) SaveTarget(target skillstore.Target) (AppState, error) {
+	return s.mutate(func() error { _, err := s.store.SaveTarget(target); return err })
+}
+func (s *Service) DeleteTarget(id string) (AppState, error) {
+	return s.mutate(func() error { return s.store.DeleteTarget(id) })
+}
+func (s *Service) SetTargetPresets(id string, presetIDs []string) (AppState, error) {
+	return s.mutate(func() error { return s.store.SetTargetPresets(id, presetIDs) })
+}
+func (s *Service) SetTargetSelection(id string, skillIDs, presetIDs []string) (AppState, error) {
+	return s.mutate(func() error { return s.store.SetTargetSelection(id, skillIDs, presetIDs) })
+}
+func (s *Service) PlanTarget(id string) (skillstore.ApplyPlan, error) { return s.store.Plan(id) }
+func (s *Service) ApplyTarget(id string) (AppState, error) {
+	return s.mutate(func() error { return s.store.Apply(id) })
+}
+func (s *Service) CreateSnapshot() (AppState, error) {
+	return s.mutate(func() error { _, err := s.store.Snapshot("手动快照"); return err })
+}
+func (s *Service) RestoreSnapshot(id string) (AppState, error) {
+	return s.mutate(func() error { return s.store.RestoreSnapshot(id) })
+}
+func (s *Service) ExportBackup(filename string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	filename, err := expandPath(filename)
+	if err != nil {
+		return "", err
+	}
+	state, err := s.store.State()
+	if err != nil {
+		return "", err
+	}
+	if err = backup.Export(s.store.Root(), state, filename); err != nil {
+		return "", err
+	}
+	return filename, nil
+}
+func (s *Service) ImportBackup(filename string) (AppState, error) {
+	return s.mutate(func() error {
+		filename, err := expandPath(filename)
+		if err != nil {
+			return err
+		}
+		return backup.Import(s.store, filename)
+	})
+}
+
+func (s *Service) ChooseDirectory() (string, error) {
+	if s.app == nil {
+		return "", errors.New(s.nativeText("Directory selection is available only in the desktop app", "目录选择仅在桌面应用中可用", "目錄選擇僅在桌面應用程式中可用"))
+	}
+	return s.app.Dialog.OpenFile().SetTitle(s.nativeText("Choose target directory", "选择目标目录", "選擇目標目錄")).CanChooseDirectories(true).CanChooseFiles(false).ShowHiddenFiles(true).PromptForSingleSelection()
+}
+func (s *Service) ChooseExportFile() (string, error) {
+	if s.app == nil {
+		return "", errors.New(s.nativeText("File selection is available only in the desktop app", "文件选择仅在桌面应用中可用", "檔案選擇僅在桌面應用程式中可用"))
+	}
+	return s.app.Dialog.SaveFile().SetFilename("racomi-"+time.Now().Format("2006-01-02")+".zip").AddFilter(s.nativeText("racomi backup", "racomi 备份", "racomi 備份"), "*.zip").PromptForSingleSelection()
+}
+func (s *Service) ChooseImportFile() (string, error) {
+	if s.app == nil {
+		return "", errors.New(s.nativeText("File selection is available only in the desktop app", "文件选择仅在桌面应用中可用", "檔案選擇僅在桌面應用程式中可用"))
+	}
+	return s.app.Dialog.OpenFile().SetTitle(s.nativeText("Import racomi backup", "导入 racomi 备份", "匯入 racomi 備份")).AddFilter(s.nativeText("racomi backup", "racomi 备份", "racomi 備份"), "*.zip").PromptForSingleSelection()
+}
+
+func (s *Service) mutate(change func() error) (AppState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := change(); err != nil {
+		return AppState{}, err
+	}
+	return s.GetState()
+}
+
+func expandPath(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", errors.New("路径不能为空")
+	}
+	if value == "~" || strings.HasPrefix(value, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		if value == "~" {
+			value = home
+		} else {
+			value = filepath.Join(home, strings.TrimPrefix(value, "~/"))
+		}
+	}
+	if !filepath.IsAbs(value) {
+		return "", errors.New("请输入绝对路径")
+	}
+	return filepath.Clean(value), nil
+}

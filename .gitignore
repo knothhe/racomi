@@ -1,0 +1,10 @@
+.DS_Store
+/.cache/
+/bin/
+/frontend/dist/
+/frontend/node_modules/
+*.tsbuildinfo
+
+.codex/
+.agents/
+.claude/
