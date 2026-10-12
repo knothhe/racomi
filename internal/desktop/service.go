@@ -225,10 +225,26 @@ func (s *Service) Search(ctx context.Context, query string) ([]sources.SearchRes
 	return s.sources.Search(ctx, query)
 }
 
+func (s *Service) ListSkills(ctx context.Context, page int) (sources.SkillListPage, error) {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	return s.sources.ListSkills(ctx, page)
+}
+
 func (s *Service) Preview(ctx context.Context, source, ref, subpath string) (sources.Preview, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	return s.sources.Preview(ctx, source, ref, subpath)
+}
+
+func (s *Service) PreviewLocal(ctx context.Context, path string) (sources.Preview, error) {
+	path, err := expandPath(path)
+	if err != nil {
+		return sources.Preview{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	return s.sources.PreviewLocal(ctx, path)
 }
 
 func (s *Service) Install(previewID string, paths []string) (AppState, error) {

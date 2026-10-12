@@ -129,6 +129,30 @@ func readLegacy(t *testing.T, f *legacyFixture, existing skillstore.State) *Bund
 	return bundle
 }
 
+func TestLegacyScenarioIconsKeepDefaultPresetGlyph(t *testing.T) {
+	f := newLegacyFixture(t)
+	f.scenario("legacy-icon", "Legacy icon", "")
+	f.exec(`UPDATE scenarios SET icon = ? WHERE id = ?`, "🧭", "legacy-icon")
+	bundle := readLegacy(t, f, skillstore.State{})
+	if len(bundle.Presets) != 1 || bundle.Presets[0].Icon != "" {
+		t.Fatalf("legacy presentation should use the default local glyph: %+v", bundle.Presets)
+	}
+	store, err := skillstore.Open(filepath.Join(t.TempDir(), "racomi"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.MergeImport(bundle.Candidates, bundle.Presets, bundle.Sources); err != nil {
+		t.Fatal(err)
+	}
+	state, err := store.State()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if icon := state.Presets[0].Icon; icon != "" {
+		t.Fatalf("imported preset icon = %q, want default", icon)
+	}
+}
+
 func candidateNamed(t *testing.T, bundle *Bundle, name string) skillstore.Candidate {
 	t.Helper()
 	for _, candidate := range bundle.Candidates {

@@ -38,18 +38,18 @@ func codexDirectoryOptions() ([]DirectoryOption, error) {
 	}
 	return []DirectoryOption{
 		{
-			ID: "codex-user", Name: "Codex 用户目录", Kind: "global",
+			ID: "codex-user", Name: "共享用户目录", Kind: "global",
 			Path:        filepath.Join(home, ".agents", "skills"),
-			Description: "当前推荐的用户技能目录，适用于所有项目。",
+			Description: "Codex 与 Cursor 共用的本机用户技能目录，适用于所有项目。",
 		},
 		{
 			ID: "codex-legacy", Name: "Codex 兼容目录", Kind: "global",
 			Path:        filepath.Join(codexHome, "skills"),
-			Description: "兼容已有 Codex skills，遵循 CODEX_HOME，默认 ~/.codex/skills。",
+			Description: "保留已有 Codex 技能配置，遵循 CODEX_HOME；新配置建议使用 ~/.agents/skills。",
 		},
 		{
-			ID: "codex-project", Name: "Codex 项目目录", Kind: "project", Path: "",
-			Description: "选择项目根目录，将使用该项目下的 .agents/skills。",
+			ID: "codex-project", Name: "共享项目目录", Kind: "project", Path: "",
+			Description: "选择项目根目录，将使用 Codex 与 Cursor 共用的 .agents/skills。",
 		},
 	}, nil
 }

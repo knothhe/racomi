@@ -33,6 +33,9 @@ func TestCodexDirectoryChoicesSaveExactTargetsWithoutDeploying(t *testing.T) {
 		"codex-legacy": filepath.Join(home, ".codex", "skills"),
 	}
 	for _, option := range app.DirectoryOptions {
+		if (option.ID == "codex-user" && option.Name != "共享用户目录") || (option.ID == "codex-project" && option.Name != "共享项目目录") {
+			t.Fatalf("shared shortcut was mislabeled as a Codex-only directory: %+v", option)
+		}
 		path := option.Path
 		if option.ID == "codex-project" {
 			if option.Kind != "project" || option.Path != "" {

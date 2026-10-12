@@ -1,13 +1,13 @@
 .searchable-source-picker { position: relative; width: 190px; min-width: 0; color: var(--fg); font-size: 12px; }
 .source-picker-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; height: var(--control-height, 32px); padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--card); font-size: 12px; line-height: 18px; text-align: left; }
 .source-picker-trigger > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.source-picker-trigger > svg { flex: none; color: var(--muted); }
+.source-picker-trigger .source-picker-chevron { width: 12px; height: 12px; color: var(--muted); }
 .source-picker-trigger:hover { background: var(--pill-hover); }
 .source-picker-trigger[aria-expanded="true"] { border-color: var(--accent); }
 .source-picker-popup { position: fixed; z-index: 40; display: flex; flex-direction: column; width: 280px; padding: 6px; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: var(--pop-bg); box-shadow: var(--shadow); color: var(--fg); font: 12px/1.4 var(--font); }
 .source-picker-search { display: flex; flex: none; align-items: center; gap: 6px; padding: 0 7px; margin-bottom: 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--muted); }
 .source-picker-search:focus-within { border-color: var(--accent); }
-.source-picker-search > svg { flex: none; }
+.source-picker-search .source-picker-search-icon { width: 14px; height: 14px; }
 .source-picker-search .source-picker-search-input { display: block; width: 100%; min-width: 0; height: calc(var(--control-height, 32px) - 2px); padding: 0; border: 0; border-radius: 0; outline: none; background: transparent; font-size: 12px; line-height: 18px; color: var(--fg); }
 .source-picker-options { min-height: 0; max-height: 230px; overflow: auto; overscroll-behavior: contain; }
 .source-picker-option { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 31px; padding: 7px 8px; border-radius: 5px; cursor: pointer; }
@@ -16,7 +16,7 @@
 .source-picker-option small { display: block; margin-top: 2px; font-size: 10px; color: var(--muted); overflow-wrap: anywhere; }
 .source-picker-option:hover, .source-picker-option.keyboard-active { background: var(--pill-hover); }
 .source-picker-option[aria-selected="true"] { color: var(--accent); }
-.source-picker-check { flex: none; visibility: hidden; }
+.source-picker-option .source-picker-check { width: 14px; height: 14px; visibility: hidden; }
 .source-picker-option[aria-selected="true"] .source-picker-check { visibility: visible; }
 .source-picker-empty { padding: 13px 8px; font-size: 12px; color: var(--muted); text-align: center; }
-.preset-filter-row .searchable-source-picker { width: 100%; }
+.preset-skill-filters .searchable-source-picker { width: 100%; }

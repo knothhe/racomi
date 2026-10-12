@@ -7,7 +7,7 @@ function positionFeedback() {
   const lifted = !!document.querySelector("#modal-root > *");
   root.classList.toggle("feedback-lift", lifted);
   const metadata = document.querySelector(".statusbar-meta")?.getBoundingClientRect();
-  root.style.maxWidth = lifted ? "calc(100vw - 32px)" : `${Math.max(120, (metadata?.left ?? innerWidth) - 30)}px`;
+  root.style.maxWidth = lifted ? "calc(100vw - 32px)" : `${Math.max(120, (metadata?.left ?? innerWidth) - root.getBoundingClientRect().left - 12)}px`;
 }
 
 function observeLayout() {
@@ -19,6 +19,8 @@ function observeLayout() {
     if (element) observer.observe(element, { childList: true });
   }
   window.addEventListener("resize", positionFeedback);
+  document.addEventListener("racomi:nav-layout-change", positionFeedback);
+  document.addEventListener("racomi:sidebar-resize", positionFeedback);
 }
 
 export function showFeedback(message: string, error = false) {

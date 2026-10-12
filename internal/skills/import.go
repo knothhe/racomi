@@ -234,8 +234,13 @@ func mergeImportPresets(s *State, presets []Preset, skillIDs map[string]string, 
 	seen := map[string]bool{}
 	for _, preset := range presets {
 		preset.Name = strings.TrimSpace(preset.Name)
+		preset.Icon = strings.TrimSpace(preset.Icon)
 		if !safeName.MatchString(preset.ID) || preset.Name == "" || seen[preset.ID] {
 			return fmt.Errorf("invalid or duplicate imported preset %q", preset.ID)
+		}
+		// Validate before matching: skipped presets must not hide invalid input.
+		if preset.Icon != "" && !localIconPattern.MatchString(preset.Icon) {
+			return errors.New("invalid preset icon")
 		}
 		seen[preset.ID] = true
 		if len(unique(preset.SkillIDs)) != len(preset.SkillIDs) {

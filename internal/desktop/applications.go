@@ -10,8 +10,9 @@ import (
 	skillstore "racomi/internal/skills"
 )
 
-// GlobalApplication is an Agent's known user skill directory. An empty slot has
-// no persisted Target until the user saves a selection.
+// GlobalApplication is a known user skill directory, including shared paths
+// supported by multiple agents. An empty slot has no persisted Target until the
+// user saves a selection.
 type GlobalApplication struct {
 	Key         string             `json:"key"`
 	AgentID     string             `json:"agentId"`
@@ -29,10 +30,12 @@ func globalApplications(state skillstore.State) ([]GlobalApplication, error) {
 	}
 	home := filepath.Dir(filepath.Dir(directories[0].Path))
 	applications := []GlobalApplication{
-		{Key: "codex-user", AgentID: "codex", AgentName: "Codex", Name: "用户技能目录", Path: directories[0].Path, Description: directories[0].Description},
+		// Retain the historical key so saved defaults and deployment ownership
+		// survive the correction from a Codex-only label to a shared directory.
+		{Key: "codex-user", AgentID: "agents", AgentName: "共享", Name: "用户技能目录", Path: directories[0].Path, Description: directories[0].Description},
 		{Key: "codex-legacy", AgentID: "codex", AgentName: "Codex", Name: "兼容技能目录", Path: directories[1].Path, Description: directories[1].Description},
-		{Key: "claude-user", AgentID: "claude", AgentName: "Claude Code", Name: "用户技能目录", Path: filepath.Join(home, ".claude", "skills"), Description: "Claude Code 的个人技能，供所有项目使用。"},
-		{Key: "cursor-user", AgentID: "cursor", AgentName: "Cursor", Name: "用户技能目录", Path: filepath.Join(home, ".cursor", "skills"), Description: "Cursor 的用户技能，供所有项目使用。"},
+		{Key: "claude-user", AgentID: "claude", AgentName: "Claude Code", Name: "用户技能目录", Path: filepath.Join(home, ".claude", "skills"), Description: "Claude Code 的本机用户技能目录，Cursor 也可兼容读取。"},
+		{Key: "cursor-user", AgentID: "cursor", AgentName: "Cursor", Name: "用户技能目录", Path: filepath.Join(home, ".cursor", "skills"), Description: "Cursor 的本机用户技能目录，适用于所有项目。"},
 	}
 	matched := map[string]bool{}
 	for i := range applications {
@@ -107,7 +110,7 @@ func (s *Service) globalApplication(key string) (GlobalApplication, error) {
 }
 
 func emptyApplicationPlan(key string) skillstore.ApplyPlan {
-	return skillstore.ApplyPlan{TargetID: key, Add: []string{}, Update: []string{}, Remove: []string{}, Conflicts: []string{}, Directories: []skillstore.DirectoryPlan{}}
+	return skillstore.ApplyPlan{TargetID: key, Add: []string{}, Update: []string{}, Remove: []string{}, Conflicts: []string{}, BlockingConflicts: []string{}, Overwrite: []string{}, Directories: []skillstore.DirectoryPlan{}}
 }
 
 func (s *Service) SetGlobalSelection(key string, skillIDs, presetIDs []string) (AppState, error) {
@@ -144,6 +147,16 @@ func (s *Service) ApplyGlobal(key string) (AppState, error) {
 			return err
 		}
 		return s.store.Apply(application.Target.ID)
+	})
+}
+
+func (s *Service) ForceApplyGlobal(key string, reviewed skillstore.ApplyPlan) (AppState, error) {
+	return s.mutate(func() error {
+		application, err := s.globalApplication(key)
+		if err != nil || application.Target == nil {
+			return err
+		}
+		return s.store.ForceApplyReviewed(application.Target.ID, reviewed)
 	})
 }
 
@@ -212,6 +225,15 @@ func (s *Service) ApplyProject(id string) (AppState, error) {
 			return err
 		}
 		return s.store.Apply(id)
+	})
+}
+
+func (s *Service) ForceApplyProject(id string, reviewed skillstore.ApplyPlan) (AppState, error) {
+	return s.mutate(func() error {
+		if _, err := s.project(id); err != nil {
+			return err
+		}
+		return s.store.ForceApplyReviewed(id, reviewed)
 	})
 }
 
@@ -298,5 +320,21 @@ func (s *Service) ApplyGlobals(keys []string) (AppState, error) {
 			}
 		}
 		return s.store.ApplyTargets(targetIDs)
+	})
+}
+
+func (s *Service) ForceApplyGlobals(keys []string, reviewed skillstore.ApplyPlan) (AppState, error) {
+	return s.mutate(func() error {
+		applications, err := s.globalBatch(keys)
+		if err != nil {
+			return err
+		}
+		targetIDs := []string{}
+		for _, application := range applications {
+			if application.Target != nil {
+				targetIDs = append(targetIDs, application.Target.ID)
+			}
+		}
+		return s.store.ForceApplyTargetsReviewed(targetIDs, reviewed)
 	})
 }

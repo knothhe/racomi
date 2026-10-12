@@ -145,6 +145,56 @@ test("backend templates translate errors while preserving dynamic names, paths a
   assert.equal(i.tMessage("__proto__"), "__proto__");
 });
 
+test("preview limit reasons are localized inside unsupported-content diagnostics", () => {
+  const i = setup({ saved: "zh-CN" });
+  const limits = [
+    ["repository content exceeds the 100 MiB preview limit", "仓库内容超过 100 MiB 预览限制"],
+    ["skill content exceeds the 100 MiB preview limit", "技能内容超过 100 MiB 预览限制"],
+    ["skill has too many files (maximum 20,000)", "技能文件数量超过 20,000 个"],
+    ["skill was skipped because the preview reached its 100 MiB content limit", "本次预览的技能内容已达 100 MiB 上限，已跳过此技能"],
+    ["skill was skipped because the preview reached its 20,000 file limit", "本次预览的技能文件已达 20,000 个上限，已跳过此技能"],
+    ["repository has too many tree entries (maximum 200,000)", "仓库目录条目超过 200,000 个上限"],
+    ["repository tree metadata exceeds the 32 MiB preview limit", "仓库目录信息超过 32 MiB 预览限制"],
+    ["skill metadata exceeds the 100 MiB preview limit", "技能描述信息超过 100 MiB 预览限制"],
+  ];
+  for (const [reason, translated] of limits) {
+    assert.equal(i.tMessage(`unsupported skill content at "skills/foo/SKILL.md": ${reason}`), `技能内容 "skills/foo/SKILL.md" 不受支持：${translated}`);
+  }
+});
+
+test("force apply review errors explain how to retry and preserve literal paths", () => {
+  const i = setup({ saved: "zh-CN" });
+  assert.equal(i.tMessage("target contents changed since review; preview and apply again"), "目标内容在预览后发生变化，请重新预览并应用");
+  assert.equal(i.tMessage("unsupported target file: /project/skills/local draft/pipe"), "目标文件类型不受支持：/project/skills/local draft/pipe");
+  i.setLocale("zh-TW");
+  assert.equal(i.tMessage("target content exceeds the 1 GiB review limit"), "目標內容超過 1 GiB 的預覽限制");
+});
+
+test("nested diagnostic wrappers translate fully while quoted paths and skill names stay unchanged", () => {
+  const i = setup({ saved: "zh-TW" });
+  const skill = JSON.stringify('source not found: 用户 "技能"');
+  const file = JSON.stringify('skills/名称: source not found/"draft"/SKILL.md');
+  const entry = JSON.stringify('skills/目录: source not found/文件\\asset');
+  const message = `no usable skills were found; skipped ${skill}: skill ${skill} was skipped during refresh: unsupported skill content at ${file}: skipped repository entry ${entry}: skill content exceeds the 100 MiB preview limit`;
+  const traditional = `沒有可用技能；已跳過 ${skill}：技能 ${skill} 在本次重新整理時已跳過：技能內容 ${file} 不受支援：已跳過儲存庫項目 ${entry}：技能內容超過 100 MiB 預覽限制`;
+  assert.equal(i.tMessage(message), traditional);
+  i.setLocale("en");
+  assert.equal(i.tMessage(traditional), `No usable skills were found; skipped ${skill}: Skill ${skill} was skipped during refresh: Unsupported skill content at ${file}: Skipped repository entry ${entry}: Skill content exceeds the 100 MiB preview limit`);
+  i.setLocale("zh-CN");
+  assert.equal(i.tMessage(message), `没有可用技能；已跳过 ${skill}：技能 ${skill} 在本次刷新时已跳过：技能内容 ${file} 不受支持：已跳过仓库条目 ${entry}：技能内容超过 100 MiB 预览限制`);
+});
+
+test("unknown reasons and non-diagnostic user values are never recursively translated", () => {
+  const i = setup({ saved: "zh-CN" });
+  const unknown = "custom diagnostic: disk quota exceeded (source not found)";
+  const file = JSON.stringify("skill content exceeds the 100 MiB preview limit");
+  assert.equal(i.tMessage(unknown), unknown);
+  assert.equal(i.tMessage(`skill ${file} was skipped during refresh: unsupported skill content at ${file}: ${unknown}`), `技能 ${file} 在本次刷新时已跳过：技能内容 ${file} 不受支持：${unknown}`);
+  assert.equal(i.tMessage(`unsupported skill content at ${file}: source not found`), `技能内容 ${file} 不受支持：来源不存在`);
+  assert.equal(i.tMessage("技能 source not found 的内容校验失败"), "技能 source not found 的内容校验失败");
+  assert.equal(i.tMessage(`cannot read repository path ${file}: source not found`), `无法读取仓库路径 ${file}：source not found`);
+});
+
 test("the authored UI transformer is idempotent after render-time localization", () => {
   const result = spawnSync(process.execPath, ["scripts/localize-ui.mjs", "src/main.ts", "--check"], { cwd: root, encoding: "utf8" });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);

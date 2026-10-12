@@ -55,7 +55,7 @@ func TestSourceRefreshSkipsUnrelatedSymlink(t *testing.T) {
 }
 
 func TestPartialSourceRefreshRetainsSkippedSkillsAndRecovers(t *testing.T) {
-	for _, problem := range []string{"metadata", "skill-document-symlink", "skill-asset-symlink", "skill-directory-symlink", "ancestor-directory-symlink"} {
+	for _, problem := range []string{"metadata", "skill-document-symlink", "skill-asset-symlink", "skill-directory-symlink", "ancestor-directory-symlink", "skill-size"} {
 		t.Run(problem, func(t *testing.T) {
 			repo := testRepo(t)
 			client := New(t.TempDir())
@@ -75,6 +75,8 @@ func TestPartialSourceRefreshRetainsSkippedSkillsAndRecovers(t *testing.T) {
 			switch problem {
 			case "metadata":
 				err = os.WriteFile(filepath.Join(alphaDir, "SKILL.md"), []byte("Malformed document without frontmatter\n"), 0644)
+			case "skill-size":
+				writeLargeTestFile(t, filepath.Join(alphaDir, "large.bin"), maxRepositoryBytes+1)
 			case "skill-document-symlink":
 				if err = os.Remove(filepath.Join(alphaDir, "SKILL.md")); err == nil {
 					err = os.Symlink("../../nested/beta/SKILL.md", filepath.Join(alphaDir, "SKILL.md"))

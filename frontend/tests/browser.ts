@@ -5,10 +5,10 @@ import { api, type AppState, type ApplyPlan, type Target } from "../src/api";
 const state: AppState = {
   dataDir: "/test/racomi", homeDir: "/test/home", directoryOptions: [], snapshots: [], projects: [],
   globalApplications: [
-    { key: "codex-user", agentId: "codex", agentName: "Codex", name: "用户技能目录", path: "/test/home/.agents/skills", description: "当前推荐的用户技能目录，适用于所有项目。", target: null },
-    { key: "codex-legacy", agentId: "codex", agentName: "Codex", name: "兼容技能目录", path: "/test/home/.codex/skills", description: "兼容已有 Codex skills，遵循 CODEX_HOME，默认 ~/.codex/skills。", target: null },
-    { key: "claude-user", agentId: "claude", agentName: "Claude Code", name: "用户技能目录", path: "/test/home/.claude/skills", description: "Claude Code 的个人技能，供所有项目使用。", target: null },
-    { key: "cursor-user", agentId: "cursor", agentName: "Cursor", name: "用户技能目录", path: "/test/home/.cursor/skills", description: "Cursor 的用户技能，供所有项目使用。", target: null },
+    { key: "codex-user", agentId: "agents", agentName: "共享", name: "用户技能目录", path: "/test/home/.agents/skills", description: "Codex 与 Cursor 共用的本机用户技能目录，适用于所有项目。", target: null },
+    { key: "codex-legacy", agentId: "codex", agentName: "Codex", name: "兼容技能目录", path: "/test/home/.codex/skills", description: "保留已有 Codex 技能配置，遵循 CODEX_HOME；新配置建议使用 ~/.agents/skills。", target: null },
+    { key: "claude-user", agentId: "claude", agentName: "Claude Code", name: "用户技能目录", path: "/test/home/.claude/skills", description: "Claude Code 的本机用户技能目录，Cursor 也可兼容读取。", target: null },
+    { key: "cursor-user", agentId: "cursor", agentName: "Cursor", name: "用户技能目录", path: "/test/home/.cursor/skills", description: "Cursor 的本机用户技能目录，适用于所有项目。", target: null },
   ],
   state: {
     schema: 2, settings: { deploymentMode: "copy", defaultProjectDirectories: ["agents"], defaultGlobalDirectories: ["codex-user"], customProjectDirectories: [] },
@@ -27,16 +27,17 @@ const state: AppState = {
 };
 
 const testParameters = new URLSearchParams(location.search);
+let projectSelectionFailures = testParameters.has("project-selection-fail-once") ? 1 : 0;
 // Opt in to realistic, populated pages without changing regression-test fixtures.
 const visualReview = testParameters.has("visual-review");
 if (visualReview && testParameters.has("native-mac")) document.body.classList.add("native-mac");
 if (visualReview) {
   state.dataDir = "/test/home/Library/Application Support/Racomi/workspaces/product-design-team";
   state.directoryOptions = [
-    { id: "agents", name: "Agents", path: ".agents/skills", kind: "project", description: "项目内共享的技能目录。" },
-    { id: "claude", name: "Claude Code", path: ".claude/skills", kind: "project", description: "供 Claude Code 使用的项目技能。" },
-    { id: "codex", name: "Codex", path: ".codex/skills", kind: "project", description: "兼容已有 Codex 项目配置。" },
-    { id: "cursor", name: "Cursor", path: ".cursor/skills", kind: "project", description: "供 Cursor 使用的项目技能。" },
+    { id: "agents", name: "共享技能目录", path: ".agents/skills", kind: "project", description: "Codex 与 Cursor 共用的项目技能目录。" },
+    { id: "claude", name: "Claude Code", path: ".claude/skills", kind: "project", description: "Claude Code 的项目技能目录，Cursor 也可兼容读取。" },
+    { id: "codex", name: "Codex（兼容）", path: ".codex/skills", kind: "project", description: "保留已有 .codex/skills 配置；新项目建议使用 .agents/skills。" },
+    { id: "cursor", name: "Cursor", path: ".cursor/skills", kind: "project", description: "Cursor 的项目技能目录。" },
   ];
   state.state.settings.customProjectDirectories = [
     { id: "project-dir-team", name: "团队共享技能 / Team shared skills", path: "tools/ai-assistants/shared/skills" },
@@ -127,8 +128,81 @@ if (testParameters.has("legacy-project")) {
   const project: Target = { id: "project-legacy", name: "Legacy project", kind: "project", projectRoot: "/test/legacy-project", directoryIds: [], customPaths: [".legacy/skills", "/test/shared/skills"], path: "/test/legacy-project/.legacy/skills", paths: ["/test/legacy-project/.legacy/skills", "/test/shared/skills"], enabledSkillIds: [], enabledPresetIds: [], deployments: [], pending: false };
   state.projects.push(project); state.state.targets.push(project);
 }
+if (testParameters.has("projects") || testParameters.has("many-projects")) {
+  const requested = Number(testParameters.get("projects") || 40);
+  const count = Math.max(1, Math.min(250, Number.isFinite(requested) ? Math.floor(requested) : 40));
+  for (let index = state.projects.length; index < count; index++) {
+    const number = String(index + 1).padStart(2, "0");
+    const root = `/test/home/Workspace/Products/service-${number}`;
+    const paths = [`${root}/.agents/skills`, ...(index % 3 === 0 ? [`${root}/.claude/skills`] : [])];
+    const skillIDs = index % 2 === 0 ? ["design", "local"] : ["code"];
+    const presetIDs = index % 4 === 1 ? ["preset-dev"] : [];
+    const effective = new Set([...skillIDs, ...state.state.presets.filter((preset) => presetIDs.includes(preset.id)).flatMap((preset) => preset.skillIds)]);
+    const pending = index % 3 === 0;
+    const project: Target = { id: `project-fixture-${index + 1}`, name: `Project ${number} · ${index % 2 === 0 ? "客户服务" : "Developer Tools"}`, kind: "project", projectRoot: root, path: paths[0], paths, directoryIds: index % 3 === 0 ? ["agents", "claude"] : ["agents"], customPaths: [], enabledSkillIds: skillIDs, enabledPresetIds: presetIDs, pending, deployments: pending ? [] : paths.flatMap((path) => state.state.skills.filter((skill) => effective.has(skill.id)).map((skill) => ({ skillId: skill.id, name: skill.name, contentHash: skill.contentHash, path, mode: "copy" }))) };
+    state.projects.push(project); state.state.targets.push(project);
+  }
+}
+if (testParameters.has("skills")) {
+  const requested = Number(testParameters.get("skills"));
+  const count = Math.max(0, Math.min(600, Number.isFinite(requested) ? Math.floor(requested) : 60));
+  const template = state.state.skills.find((skill) => !skill.sourceId) || state.state.skills[0];
+  for (let index = state.state.skills.length; index < count; index++) {
+    const number = String(index + 1).padStart(3, "0");
+    state.state.skills.push({
+      ...template, id: `skill-fixture-${index + 1}`, name: index % 2 === 0 ? `Skill ${number} · 团队工作流` : `Skill ${number} · Accessibility and Production Review`,
+      description: `Fixture skill ${number}: 用于检查长列表滚动、搜索和技能详情。`, contentHash: `fixture-skill-${index + 1}`,
+      source: "", sourceId: "", subpath: ".", upstreamRemoved: false,
+    });
+  }
+  if (count < state.state.skills.length) state.state.skills.length = count;
+  const available = new Set(state.state.skills.map((skill) => skill.id));
+  for (const preset of state.state.presets) preset.skillIds = preset.skillIds.filter((id) => available.has(id));
+  for (const target of state.state.targets) {
+    target.enabledSkillIds = target.enabledSkillIds.filter((id) => available.has(id));
+    target.deployments = target.deployments.filter((deployment) => available.has(deployment.skillId));
+  }
+}
+if (testParameters.has("sources")) {
+  const requested = Number(testParameters.get("sources"));
+  const count = Math.max(0, Math.min(100, Number.isFinite(requested) ? Math.floor(requested) : 40));
+  const template = state.state.sources[0];
+  for (let index = state.state.sources.length; index < count; index++) {
+    const number = String(index + 1).padStart(3, "0");
+    state.state.sources.push({
+      ...template, id: `source-fixture-${index + 1}`, name: index % 2 === 0 ? `Source ${number} · 团队技能仓库` : `Source ${number} · Engineering Workflows`,
+      repository: `https://example.com/fixtures/source-${number}`, mode: index % 2 === 0 ? "selected" : "all",
+      revision: `fixture-source-${index + 1}`, refreshedAt: "2026-10-12T00:00:00Z", lastError: "", catalog: [], warnings: [],
+    });
+  }
+  if (count < state.state.sources.length) state.state.sources.length = count;
+  const available = new Set(state.state.sources.map((source) => source.id));
+  for (const skill of state.state.skills) if (skill.sourceId && !available.has(skill.sourceId)) {
+    skill.sourceId = ""; skill.source = "";
+  }
+}
+if (testParameters.has("presets")) {
+  const requested = Number(testParameters.get("presets"));
+  const count = Math.max(0, Math.min(100, Number.isFinite(requested) ? Math.floor(requested) : 30));
+  for (let index = state.state.presets.length; index < count; index++) {
+    const number = String(index + 1).padStart(2, "0");
+    state.state.presets.push({ id: `preset-fixture-${index + 1}`, name: index % 3 === 0 ? `代码审查 ${number}` : index % 3 === 1 ? `Accessibility & Design System Review ${number}` : `文档与发布 ${number}`, description: "适用于团队协作的预设，包含常用技能。", skillIds: state.state.skills.slice(0, index % state.state.skills.length + 1).map((skill) => skill.id) });
+  }
+  if (count < state.state.presets.length) state.state.presets.length = count;
+  const available = new Set(state.state.presets.map((preset) => preset.id));
+  for (const target of state.state.targets) target.enabledPresetIds = target.enabledPresetIds.filter((id) => available.has(id));
+}
 const settingsDelay = Math.min(2000, Math.max(0, Number(testParameters.get("settings-delay")) || 0));
 let settingsFailure = testParameters.has("settings-fail-once");
+if (testParameters.has("blocking-conflict")) {
+  const template = state.state.skills[0];
+  const duplicateIDs = ["force-duplicate-first", "force-duplicate-second"];
+  state.state.skills.push(...duplicateIDs.map((id) => ({ ...template, id, name: "Duplicate Deployment Skill", source: "", sourceId: "", subpath: ".", contentHash: id })));
+  for (const target of state.state.targets) target.enabledSkillIds = [...new Set([...target.enabledSkillIds, ...duplicateIDs])];
+}
+if (testParameters.has("force-conflict") || testParameters.has("blocking-conflict")) {
+  for (const target of state.state.targets) target.pending = true;
+}
 const copy = () => structuredClone(state);
 const checkedSkills = (ids: string[]) => [...new Set(ids)].map((id) => {
   const skill = state.state.skills.find((item) => item.id === id);
@@ -155,20 +229,55 @@ const removeSkills = async (ids: string[]) => {
   return copy();
 };
 const selectedSkills = (target: Target) => new Set([...target.enabledSkillIds, ...state.state.presets.filter((preset) => target.enabledPresetIds.includes(preset.id)).flatMap((preset) => preset.skillIds)]);
-const plan = (targets: Target[]): ApplyPlan => {
+const forcedDirectories = new Set<string>();
+const directoryKey = (target: Target, path: string) => `${target.id}:${path}`;
+const recordApplyCall = (method: string) => {
+  const key = `${method}Calls`;
+  document.documentElement.dataset[key] = String(Number(document.documentElement.dataset[key] || 0) + 1);
+};
+for (const method of ["applyProject", "applyGlobal", "applyGlobals", "forceApplyProject", "forceApplyGlobal", "forceApplyGlobals"]) document.documentElement.dataset[`${method}Calls`] = "0";
+document.documentElement.dataset.forceApplyCalls = "0";
+const plan = (targets: Target[]): ApplyPlan & { overwrite: string[]; blockingConflicts: string[] } => {
   const directories = targets.flatMap((target) => [...new Set([...(target.paths || [target.path]), ...target.deployments.map((item) => item.path || target.path)])].map((path) => {
     const desired = (target.paths || [target.path]).includes(path) ? state.state.skills.filter((skill) => selectedSkills(target).has(skill.id)) : [];
     const deployed = target.deployments.filter((item) => (item.path || target.path) === path);
+    const names = new Map<string, string>();
+    const blockingConflicts: string[] = [];
+    for (const skill of desired) {
+      const other = names.get(skill.name.toLowerCase());
+      if (other) blockingConflicts.push(`${skill.name}: multiple skills have the same deployment name (${other})`);
+      else names.set(skill.name.toLowerCase(), skill.id);
+    }
+    const conflicts = [...blockingConflicts];
+    const overwrite: string[] = [];
+    // Simulate a locally edited managed skill (or an unmanaged incoming skill)
+    // at the same absolute deployment path the confirmation must display.
+    const conflictSkill = desired.find((skill) => !skill.name.includes("/")) || deployed.find((skill) => !skill.name.includes("/"));
+    const forceConflict = testParameters.has("force-conflict") && !forcedDirectories.has(directoryKey(target, path)) && !!conflictSkill;
+    if (forceConflict) {
+      conflicts.push(`${conflictSkill!.name}: locally modified; existing content was preserved`);
+      overwrite.push(`${path}/${conflictSkill!.name}`);
+    }
     return {
       targetId: target.id, path,
       add: desired.filter((skill) => !deployed.some((item) => item.skillId === skill.id)).map((skill) => skill.name),
-      update: desired.filter((skill) => deployed.some((item) => item.skillId === skill.id && (item.contentHash !== skill.contentHash || (item.mode || "copy") !== state.state.settings.deploymentMode))).map((skill) => skill.name),
-      remove: deployed.filter((item) => !desired.some((skill) => skill.id === item.skillId)).map((item) => item.name), conflicts: [],
+      update: desired.filter((skill) => deployed.some((item) => item.skillId === skill.id && (item.contentHash !== skill.contentHash || (item.mode || "copy") !== state.state.settings.deploymentMode || forceConflict && skill.name === conflictSkill?.name))).map((skill) => skill.name),
+      remove: deployed.filter((item) => !desired.some((skill) => skill.id === item.skillId)).map((item) => item.name), conflicts, blockingConflicts, overwrite,
+      fingerprint: `fixture:${directoryKey(target, path)}:${forcedDirectories.has(directoryKey(target, path)) ? "applied" : "initial"}`,
     };
   }));
-  return { targetId: targets[0]?.id || "", directories, add: [...new Set(directories.flatMap((directory) => directory.add))], update: [...new Set(directories.flatMap((directory) => directory.update))], remove: [...new Set(directories.flatMap((directory) => directory.remove))], conflicts: [] };
+  return { targetId: targets[0]?.id || "", directories, add: [...new Set(directories.flatMap((directory) => directory.add))], update: [...new Set(directories.flatMap((directory) => directory.update))], remove: [...new Set(directories.flatMap((directory) => directory.remove))], conflicts: directories.flatMap((directory) => directory.conflicts.map((conflict) => `${directory.path}: ${conflict}`)), blockingConflicts: directories.flatMap((directory) => directory.blockingConflicts.map((conflict) => `${directory.path}: ${conflict}`)), overwrite: [...new Set(directories.flatMap((directory) => directory.overwrite))] };
 };
-const apply = (targets: Target[]) => {
+const apply = (targets: Target[], force = false, reviewed?: ApplyPlan) => {
+  const current = plan(targets);
+  if (current.blockingConflicts.length || (!force && current.conflicts.length)) throw new Error(`application has conflicts: ${(force ? current.blockingConflicts : current.conflicts).join("; ")}`);
+  if (force) {
+    if (!reviewed) throw new Error("review the application plan before forcing an overwrite");
+    document.documentElement.dataset.forceOverwritePaths = JSON.stringify(current.overwrite);
+    for (const directory of current.directories || []) forcedDirectories.add(`${directory.targetId}:${directory.path}`);
+    document.documentElement.dataset.forceAppliedTargets = targets.map((target) => target.id).join(",");
+    document.documentElement.dataset.forceApplyCalls = String(Number(document.documentElement.dataset.forceApplyCalls || 0) + 1);
+  }
   for (const target of targets) {
     target.deployments = (target.paths || [target.path]).flatMap((path) => state.state.skills.filter((skill) => selectedSkills(target).has(skill.id)).map((skill) => ({ path, mode: state.state.settings.deploymentMode, skillId: skill.id, name: skill.name, contentHash: skill.contentHash })));
     target.pending = false;
@@ -196,8 +305,38 @@ const templatePath = (path: string) => {
   return parts.join("/") || ".";
 };
 const globalTargets = (keys: string[]) => state.globalApplications.filter((application) => keys.includes(application.key)).flatMap((application) => application.target ? [application.target] : []);
+const localCandidates = [
+  { name: "Local Writing", description: "Writing skill from an ordinary local directory", subpath: "writing", revision: "" },
+  { name: "Local Review", description: "Review skill from the same parent directory", subpath: "nested/review", revision: "" },
+];
+let localPreviewID = "";
+let localPreviewSequence = 0;
+const previewLocal = async (path: string) => {
+  const delay = Math.min(2000, Math.max(0, Number(testParameters.get("local-preview-delay")) || 0));
+  if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+  if (testParameters.has("local-preview-fail")) throw new Error("local skill directory is not a directory");
+  localPreviewID = `local-preview-${++localPreviewSequence}`;
+  document.documentElement.dataset.localPreviewPath = path;
+  return { id: localPreviewID, local: true, source: path, ref: "", revision: "", candidates: testParameters.has("local-preview-empty") ? [] : localCandidates, warnings: [], skipped: [] };
+};
+const installLocal = async (id: string, paths: string[]) => {
+  if (!localPreviewID || id !== localPreviewID) throw new Error("preview is no longer available; preview the source again");
+  if (paths.some((path) => !localCandidates.some((candidate) => candidate.subpath === path))) throw new Error("skill was not offered by this preview");
+  for (const item of localCandidates.filter((candidate) => paths.includes(candidate.subpath))) {
+    const skill = { ...item, id: `local-import-${item.name}`, source: "", sourceId: "", contentHash: `local-${item.name}`, installedAt: "2026-10-12T00:00:00Z", updatedAt: "2026-10-12T00:00:00Z", upstreamRemoved: false, ref: "" };
+    state.state.skills = [...state.state.skills.filter((existing) => existing.id !== skill.id), skill];
+  }
+  document.documentElement.dataset.localInstalledPaths = paths.join(",");
+  localPreviewID = "";
+  return copy();
+};
 Object.assign(api, {
   state: async () => copy(), setTheme: async () => {}, setLocale: async () => {},
+  search: async (query: string) => state.state.skills.filter((skill) => skill.sourceId && `${skill.name} ${skill.source}`.toLowerCase().includes(query.trim().toLowerCase())).map((skill) => ({ name: skill.name, slug: `${skill.sourceId}/${skill.name}`, source: skill.source, installs: 100, url: skill.source, supported: true })),
+  listSkills: async (page: number) => {
+    const results = await api.search("");
+    return { skills: results.slice(page * 200, (page + 1) * 200), total: results.length, hasMore: (page + 1) * 200 < results.length, page };
+  },
   checkUpdates: async () => state.state.skills.filter((skill) => ["design", "code"].includes(skill.id)).map((skill) => ({
     skillId: skill.id, revision: `updated-${skill.id}`, summary: `Update ${skill.name}`,
     available: skill.revision !== `updated-${skill.id}`, removed: false, error: "",
@@ -225,6 +364,8 @@ Object.assign(api, {
     warnings: ['skipped repository entry "AGENTS.md": symlink is not supported'],
     skipped: [{ subpath: "skills/design", reason: 'unsupported skill content at "skills/design/AGENTS.md": symlink is not supported' }],
   }),
+  previewLocal,
+  install: installLocal,
   readSkillDocument: async () => "# 名称\n\n设置 must remain authored text.",
   saveSettings: async (settings: AppState["state"]["settings"]) => {
     if (settingsDelay) await new Promise((resolve) => setTimeout(resolve, settingsDelay));
@@ -262,7 +403,8 @@ Object.assign(api, {
     const paths = [...directories.map((id) => `${root}/.${id}/skills`), ...customPaths.map((path) => resolvePath(root, path))];
     if (!paths.length) throw new Error("select at least one project skill directory");
     if (new Set(paths).size !== paths.length) throw new Error("duplicate target paths");
-    const target = { ...project, customPaths, id: project.id || "project-test", projectRoot: root, paths, path: paths[0], pending: !!previous?.deployments.length || project.pending };
+    const destinationsChanged = !!previous && JSON.stringify([...(previous.paths || [previous.path])].sort()) !== JSON.stringify([...paths].sort());
+    const target = { ...project, customPaths, id: project.id || "project-test", projectRoot: root, paths, path: paths[0], pending: project.pending || !!previous?.deployments.length && destinationsChanged };
     state.projects = [...state.projects.filter((item) => item.id !== target.id), target];
     state.state.targets = [...state.state.targets.filter((item) => item.id !== target.id), target];
     return copy();
@@ -296,9 +438,20 @@ Object.assign(api, {
   },
   setProjectSelection: async (id: string, skillIds: string[], presetIds: string[]) => {
     const target = state.projects.find((project) => project.id === id)!;
+    if (!target) throw new Error("project not found");
+    if (testParameters.has("project-selection-delay")) await new Promise((resolve) => setTimeout(resolve, Math.min(2000, Math.max(0, Number(testParameters.get("project-selection-delay")) || 300))));
+    if (projectSelectionFailures > 0) { projectSelectionFailures--; throw new Error("Fixture selection save failed"); }
+    document.documentElement.dataset.savedProjectID = id;
+    document.documentElement.dataset.savedProjectSkills = skillIds.join(",");
+    document.documentElement.dataset.savedProjectPresets = presetIds.join(",");
+    document.documentElement.dataset.projectSelectionSaves = String(Number(document.documentElement.dataset.projectSelectionSaves || 0) + 1);
     target.enabledSkillIds = skillIds; target.enabledPresetIds = presetIds; target.pending = true; return copy();
   },
   setGlobalSelections: async (keys: string[], skillIds: string[], presetIds: string[]) => {
+    if (testParameters.has("project-selection-delay")) await new Promise((resolve) => setTimeout(resolve, Math.min(2000, Math.max(0, Number(testParameters.get("project-selection-delay")) || 300))));
+    document.documentElement.dataset.savedGlobalKeys = keys.join(",");
+    document.documentElement.dataset.savedGlobalSkills = skillIds.join(",");
+    document.documentElement.dataset.savedGlobalPresets = presetIds.join(",");
     for (const application of state.globalApplications.filter((item) => keys.includes(item.key))) {
       if (!application.target) {
         application.target = { id: application.key, name: application.agentName, kind: "global", path: application.path, paths: [application.path], enabledSkillIds: [], enabledPresetIds: [], deployments: [], pending: false };
@@ -308,12 +461,51 @@ Object.assign(api, {
     }
     return copy();
   },
-  planProject: async (id: string) => plan(state.projects.filter((target) => target.id === id)),
+  planProject: async (id: string) => {
+    if (testParameters.has("project-plan-delay")) await new Promise((resolve) => setTimeout(resolve, Math.min(2000, Math.max(0, Number(testParameters.get("project-plan-delay")) || 300))));
+    document.documentElement.dataset.projectPlanID = id;
+    return plan(state.projects.filter((target) => target.id === id));
+  },
   planGlobals: async (keys: string[]) => plan(globalTargets(keys)),
-  applyProject: async (id: string) => apply(state.projects.filter((target) => target.id === id)),
-  applyGlobals: async (keys: string[]) => apply(globalTargets(keys)),
-  chooseDirectory: async () => testParameters.get("choose-directory") || "/test/project",
-});
+  planGlobal: async (key: string) => plan(globalTargets([key])),
+  applyProject: async (id: string) => {
+    recordApplyCall("applyProject");
+    const result = apply(state.projects.filter((target) => target.id === id));
+    document.documentElement.dataset.projectAppliedID = id;
+    return result;
+  },
+  applyGlobals: async (keys: string[]) => {
+    recordApplyCall("applyGlobals");
+    const result = apply(globalTargets(keys));
+    document.documentElement.dataset.globalAppliedKeys = keys.join(",");
+    return result;
+  },
+  applyGlobal: async (key: string) => {
+    recordApplyCall("applyGlobal");
+    const result = apply(globalTargets([key]));
+    document.documentElement.dataset.globalAppliedKeys = key;
+    return result;
+  },
+  forceApplyProject: async (id: string, reviewed: ApplyPlan) => {
+    recordApplyCall("forceApplyProject");
+    const result = apply(state.projects.filter((target) => target.id === id), true, reviewed);
+    document.documentElement.dataset.projectAppliedID = id;
+    return result;
+  },
+  forceApplyGlobals: async (keys: string[], reviewed: ApplyPlan) => {
+    recordApplyCall("forceApplyGlobals");
+    const result = apply(globalTargets(keys), true, reviewed);
+    document.documentElement.dataset.globalAppliedKeys = keys.join(",");
+    return result;
+  },
+  forceApplyGlobal: async (key: string, reviewed: ApplyPlan) => {
+    recordApplyCall("forceApplyGlobal");
+    const result = apply(globalTargets([key]), true, reviewed);
+    document.documentElement.dataset.globalAppliedKeys = key;
+    return result;
+  },
+  chooseDirectory: async () => testParameters.has("choose-directory-cancel") ? "" : testParameters.get("choose-directory") || "/test/project",
+} satisfies Partial<typeof api>);
 if (visualReview) {
   // Keep discovery, backup, and editing interactions inside the fixture as well.
   let nextVisualID = 1;
@@ -328,13 +520,20 @@ if (visualReview) {
         { name: "Design Tokens and Component Libraries", slug: "design-tokens", source: "team/design", installs: 3280, url: "https://example.com/skills/design-tokens", supported: true },
         { name: "Production-ready Code Review", slug: "code-review", source: "team/code", installs: 24600, url: "https://example.com/skills/code-review", supported: true },
       ];
+      const requested = Number(testParameters.get("discovery-results"));
+      const count = Math.max(results.length, Math.min(600, Number.isFinite(requested) ? Math.floor(requested) : results.length));
+      for (let index = results.length; index < count; index++) {
+        const number = String(index + 1).padStart(3, "0");
+        results.push({ name: `Design workflow ${number} · 团队协作`, slug: `design-workflow-${number}`, source: "team/design", installs: 500 + index, url: `https://example.com/skills/design-workflow-${number}`, supported: true });
+      }
       return results.filter((result) => `${result.name} ${result.slug} ${result.source}`.toLowerCase().includes(query.trim().toLowerCase()));
     },
     preview: async (source: string, ref: string) => {
       previewSource = source;
       return { id: "visual-preview", source, ref: ref || "main", revision: "9e8d7c6b5a40", candidates: availableSkills.map((skill) => ({ name: skill.name, description: skill.description, subpath: skill.subpath, revision: skill.revision })), warnings: [], skipped: [] };
     },
-    install: async (_id: string, paths: string[]) => {
+    install: async (id: string, paths: string[]) => {
+      if (id.startsWith("local-preview-")) return installLocal(id, paths);
       for (const item of availableSkills.filter((skill) => paths.includes(skill.subpath))) {
         if (state.state.skills.some((skill) => skill.source === previewSource && skill.subpath === item.subpath)) continue;
         const source = state.state.sources.find((item) => item.repository === previewSource);
@@ -344,6 +543,8 @@ if (visualReview) {
     },
     readSkillDocument: async (id: string) => {
       const skill = checkedSkills([id])[0];
+      const delay = Math.min(2000, Math.max(0, Number(testParameters.get("document-delay")) || 0));
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
       return `# ${skill.name}\n\n${skill.description}\n\n## 工作流程 / Workflow\n\n1. 明确用户目标，检查信息层级和阅读顺序。\n2. 对齐标题、表单、操作与内容边界。\n3. 验证长文本、中英文和紧凑窗口下的布局。\n\n## Quality checks\n\n- Consistent spacing and readable typography\n- Keyboard access and visible focus\n- Clear feedback before applying changes\n`;
     },
     saveSource: async (source: AppState["state"]["sources"][number]) => {
@@ -373,8 +574,6 @@ if (visualReview) {
       return copy();
     },
     setGlobalSelection: async (key: string, skillIds: string[], presetIds: string[]) => api.setGlobalSelections([key], skillIds, presetIds),
-    planGlobal: async (key: string) => plan(globalTargets([key])),
-    applyGlobal: async (key: string) => apply(globalTargets([key])),
     createSnapshot: async () => {
       const id = `snapshot-visual-created-${nextVisualID++}`;
       snapshotStates.set(id, structuredClone(state.state));

@@ -14,6 +14,12 @@ https://github.com/lobehub/lobe-icons
 The respective trademarks and logos belong to their owners. Their use here
 identifies the supported Agent applications.
 
+The navigation layouts, theme tokens, compact controls, and feedback styles
+also adapt Magpie's GUI implementation. Sidebar navigation, layout switching,
+and resizing were referenced from main at commit
+74b30cb7f86763d9e7cc4574477379b939487fd4:
+https://github.com/yetone/magpie/tree/74b30cb7f86763d9e7cc4574477379b939487fd4/internal/gui/assets
+
 ------------------------------------------------------------------------
 Magpie
 https://github.com/yetone/magpie

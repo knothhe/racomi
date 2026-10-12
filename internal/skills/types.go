@@ -45,6 +45,7 @@ type Preset struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
+	Icon        string   `json:"icon,omitempty"`
 	SkillIDs    []string `json:"skillIds"`
 }
 
@@ -76,6 +77,7 @@ type Target struct {
 	CustomPaths      []string     `json:"customPaths"`
 	ID               string       `json:"id"`
 	Name             string       `json:"name"`
+	Icon             string       `json:"icon,omitempty"`
 	Kind             string       `json:"kind"`
 	Path             string       `json:"path"`
 	EnabledSkillIDs  []string     `json:"enabledSkillIds"`
@@ -107,19 +109,28 @@ type SnapshotInfo struct {
 }
 
 type DirectoryPlan struct {
-	TargetID  string   `json:"targetId"`
-	Path      string   `json:"path"`
-	Add       []string `json:"add"`
-	Update    []string `json:"update"`
-	Remove    []string `json:"remove"`
-	Conflicts []string `json:"conflicts"`
+	TargetID          string   `json:"targetId"`
+	Path              string   `json:"path"`
+	Add               []string `json:"add"`
+	Update            []string `json:"update"`
+	Remove            []string `json:"remove"`
+	Conflicts         []string `json:"conflicts"`
+	BlockingConflicts []string `json:"blockingConflicts"`
+	// Overwrite lists existing absolute paths that only a force apply may replace
+	// or remove. Symlinks refer to the link itself, never to their destination.
+	Overwrite []string `json:"overwrite"`
+	// Fingerprint is opaque. Reviewed force applies and staging rechecks require
+	// the same filesystem content, including the current overwritten content.
+	Fingerprint string `json:"fingerprint"`
 }
 
 type ApplyPlan struct {
-	Directories []DirectoryPlan `json:"directories"`
-	TargetID    string          `json:"targetId"`
-	Add         []string        `json:"add"`
-	Update      []string        `json:"update"`
-	Remove      []string        `json:"remove"`
-	Conflicts   []string        `json:"conflicts"`
+	Directories       []DirectoryPlan `json:"directories"`
+	TargetID          string          `json:"targetId"`
+	Add               []string        `json:"add"`
+	Update            []string        `json:"update"`
+	Remove            []string        `json:"remove"`
+	Conflicts         []string        `json:"conflicts"`
+	BlockingConflicts []string        `json:"blockingConflicts"`
+	Overwrite         []string        `json:"overwrite"`
 }

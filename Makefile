@@ -1,6 +1,11 @@
 GO ?= go
 NPM ?= npm
 VITE_PORT ?= 9245
+VERSION ?= 0.1.0
+BUILD_NUMBER ?= 1
+APP_DIR ?= $(HOME)/Applications
+BIN_DIR ?= $(HOME)/.local/bin
+GOARCH ?= $(shell $(GO) env GOARCH 2>/dev/null)
 MACOSX_DEPLOYMENT_TARGET ?= 13.0
 export MACOSX_DEPLOYMENT_TARGET
 CGO_CFLAGS ?= -O2 -g
@@ -9,21 +14,36 @@ export CGO_CFLAGS := $(CGO_CFLAGS) -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARG
 NATIVE_ICON_OUTPUTS := build/macos/Assets.car build/appicon.png build/appicon-dark.png build/macos/racomi.icns
 NATIVE_ICON_MISSING := $(filter-out $(wildcard $(NATIVE_ICON_OUTPUTS)),$(NATIVE_ICON_OUTPUTS))
 
-.PHONY: help install icons frontend frontend-dev dev check test build package run force-native-icons
+.PHONY: help doctor deps bootstrap install uninstall icons frontend frontend-dev dev check test test-install build package release run force-native-icons
 
 help:
-	@echo "install       Install dependencies from lockfiles"
+	@echo "deps          Install Go and frontend dependencies from lockfiles (alias: bootstrap)"
+	@echo "doctor        Check the macOS source-build requirements"
+	@echo "install       Build and install ~/Applications/racomi.app and ~/.local/bin/racomi"
+	@echo "uninstall     Remove the local app and launcher; preserve all user data"
 	@echo "icons         Generate macOS icons, appearance catalog and web icon"
 	@echo "frontend-dev  Start the Vite development server"
 	@echo "dev           Start the desktop shell (requires frontend-dev)"
 	@echo "check         Build frontend, check TypeScript, vet and test Go"
 	@echo "build         Build the macOS executable in bin/racomi"
-	@echo "package       Create the unsigned macOS app in bin/racomi.app"
+	@echo "package       Create the macOS app in bin/racomi.app (local ad-hoc signature)"
+	@echo "release       Create a versioned macOS ZIP and SHA-256 checksum in bin/releases"
+	@echo "test-install  Check install, replacement and uninstall using temporary directories"
 	@echo "run           Build and launch the macOS executable"
 
-install:
+doctor:
+	sh scripts/check-build-tools.sh "$(GO)" "$(NPM)"
+
+deps bootstrap: doctor
 	$(NPM) ci --prefix frontend
 	$(GO) mod download
+
+install: deps
+	$(MAKE) package
+	sh scripts/install-macos.sh install "$(CURDIR)/bin/racomi.app" "$(APP_DIR)" "$(BIN_DIR)"
+
+uninstall:
+	sh scripts/install-macos.sh uninstall "$(CURDIR)/bin/racomi.app" "$(APP_DIR)" "$(BIN_DIR)"
 
 icons: $(NATIVE_ICON_OUTPUTS) frontend/public/appicon.png
 
@@ -56,24 +76,25 @@ dev: frontend
 
 check: frontend
 	$(NPM) test --prefix frontend
+	$(MAKE) test-install
 	$(GO) vet ./...
 	$(GO) test -ldflags="-extldflags=-mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)" ./...
 
 test:
 	$(GO) test -ldflags="-extldflags=-mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)" ./internal/...
 
+test-install:
+	sh scripts/install-macos.test.sh
+
 build: frontend
 	mkdir -p bin
-	CGO_ENABLED=1 $(GO) build -trimpath -tags production -ldflags="-s -w -extldflags=-mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)" -o bin/racomi .
+	CGO_ENABLED=1 GOARCH=$(GOARCH) $(GO) build -trimpath -tags production -ldflags="-s -w -extldflags=-mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)" -o bin/racomi .
 
 package: build $(NATIVE_ICON_OUTPUTS)
-	mkdir -p bin/racomi.app/Contents/MacOS bin/racomi.app/Contents/Resources
-	cp bin/racomi bin/racomi.app/Contents/MacOS/racomi
-	cp build/macos/Info.plist bin/racomi.app/Contents/Info.plist
-	cp build/macos/racomi.icns bin/racomi.app/Contents/Resources/racomi.icns
-	cp build/macos/Assets.car bin/racomi.app/Contents/Resources/Assets.car
-	cp build/appicon.png bin/racomi.app/Contents/Resources/NSApplicationIcon.png
-	touch bin/racomi.app
+	sh scripts/package-macos.sh package "$(VERSION)" "$(BUILD_NUMBER)" "$(MACOSX_DEPLOYMENT_TARGET)" "$(GOARCH)"
+
+release: package
+	sh scripts/package-macos.sh release "$(VERSION)" "$(BUILD_NUMBER)" "$(MACOSX_DEPLOYMENT_TARGET)" "$(GOARCH)"
 
 run: build
 	./bin/racomi

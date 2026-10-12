@@ -41,6 +41,7 @@ func projectCustomPath(root, input string) (stored, resolved string, err error) 
 
 func (l *Store) prepareTarget(state State, target Target) (Target, error) {
 	target.Name = strings.TrimSpace(target.Name)
+	target.Icon = strings.TrimSpace(target.Icon)
 	if target.Kind == "" {
 		target.Kind = "global"
 	}

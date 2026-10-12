@@ -67,18 +67,31 @@ export function t(key: string, variables?: TranslationVariables): string {
 
 const backendExact = new Map(Object.entries(backendMessages).flatMap(([key, translations]) => [...new Set([key, ...Object.values(translations)])].filter((value) => !/\{\w+\}/.test(value)).map((value) => [value, translations] as const)));
 
+// Only these diagnostic wrappers contain another backend message in slot 1.
+const backendReasonTemplates = new Set([
+  "unsupported skill content at {0}: {1}",
+  "skipped repository entry {0}: {1}",
+  "skill {0} was skipped during refresh: {1}",
+  "no usable skills were found; skipped {0}: {1}",
+]);
+
 const backendTemplates = Object.entries(backendMessages).flatMap(([key, translations]) => [...new Set([key, ...Object.values(translations)])].filter((value) => /\{\w+\}/.test(value)).map((template) => {
+  const reasonSlot = backendReasonTemplates.has(key) ? "1" : undefined;
   const names: string[] = [];
   const parts = template.split(/\{(\w+)\}/g);
   const pattern = parts.map((part, index) => {
-    if (index % 2) { names.push(part); return "([\\s\\S]*?)"; }
+    if (index % 2) {
+      names.push(part);
+      // Go quotes paths and skill names; delimiters inside them are user data.
+      return reasonSlot && part === "0" ? String.raw`("(?:\\.|[^"\\])*"|[\s\S]*?)` : "([\\s\\S]*?)";
+    }
     return part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }).join("");
-  return { translations, names, pattern: new RegExp(`^${pattern}$`), specificity: parts.filter((_, index) => index % 2 === 0).join("").length };
+  return { translations, names, reasonSlot, pattern: new RegExp(`^${pattern}$`), specificity: parts.filter((_, index) => index % 2 === 0).join("").length };
 })).sort((a, b) => b.specificity - a.specificity);
 
-// Translate only known backend message templates. Captured names, paths,
-// commands and diagnostic details are inserted verbatim, never translated.
+// Translate known messages and explicitly marked nested diagnostic reasons.
+// Captured names, paths, commands and unknown reasons remain verbatim.
 export function tMessage(message: string | null | undefined): string {
   if (!message) return "";
   const exact = Object.hasOwn(backendMessages, message) ? backendMessages[message] : backendExact.get(message);
@@ -87,6 +100,7 @@ export function tMessage(message: string | null | undefined): string {
     const match = message.match(entry.pattern);
     if (!match) continue;
     const variables = Object.fromEntries(entry.names.map((name, index) => [name, match[index + 1]]));
+    if (entry.reasonSlot) variables[entry.reasonSlot] = tMessage(variables[entry.reasonSlot]);
     return entry.translations[locale].replace(/\{(\w+)\}/g, (slot, name: string) => Object.hasOwn(variables, name) ? variables[name] : slot);
   }
   return message;

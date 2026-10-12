@@ -12,6 +12,13 @@ type SearchResult struct {
 	UnsupportedReason string `json:"unsupportedReason"`
 }
 
+type SkillListPage struct {
+	Skills  []SearchResult `json:"skills"`
+	Total   int            `json:"total"`
+	HasMore bool           `json:"hasMore"`
+	Page    int            `json:"page"`
+}
+
 type CandidateInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -23,12 +30,14 @@ type CandidateInfo struct {
 // SkippedSkill identifies skill content that could not be safely read. Its
 // previous catalog entry must be retained instead of treated as removed.
 type SkippedSkill struct {
-	Subpath string `json:"subpath"`
-	Reason  string `json:"reason"`
+	Subpath        string `json:"subpath"`
+	Reason         string `json:"reason"`
+	blockedSubtree bool   // A failed walk can hide previously known descendants.
 }
 
 type Preview struct {
 	ID         string          `json:"id"`
+	Local      bool            `json:"local,omitempty"`
 	Source     string          `json:"source"`
 	Ref        string          `json:"ref"`
 	Revision   string          `json:"revision"`

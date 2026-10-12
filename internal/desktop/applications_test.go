@@ -74,9 +74,13 @@ func TestGlobalApplicationBrowseAndEmptyPreviewDoNotWrite(t *testing.T) {
 		"claude-user":  filepath.Join(home, ".claude", "skills"),
 		"cursor-user":  filepath.Join(home, ".cursor", "skills"),
 	}
+	agentIDs := map[string]string{"codex-user": "agents", "codex-legacy": "codex", "claude-user": "claude", "cursor-user": "cursor"}
 	for _, application := range app.GlobalApplications {
-		if application.Target != nil || application.Path != expected[application.Key] || application.AgentID == "" || application.AgentName == "" {
+		if application.Target != nil || application.Path != expected[application.Key] || application.AgentID != agentIDs[application.Key] || application.AgentName == "" {
 			t.Fatalf("incorrect empty Agent directory: %+v", application)
+		}
+		if application.Key == "codex-user" && (application.AgentName != "共享" || application.Name != "用户技能目录") {
+			t.Fatalf("shared user directory was mislabeled as one Agent's directory: %+v", application)
 		}
 		plan, err := service.PlanGlobal(application.Key)
 		if err != nil || plan.TargetID != application.Key || len(plan.Add)+len(plan.Update)+len(plan.Remove)+len(plan.Conflicts) != 0 {
@@ -238,8 +242,11 @@ func TestLegacyGlobalTargetsKeepIdentityAndOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	global := applicationByKey(t, app, "codex-user")
-	if len(app.State.Targets) != 2 || global.Target.ID != legacy.ID || global.Target.Name != legacy.Name || len(global.Target.Deployments) != 1 {
+	if len(app.State.Targets) != 2 || global.AgentID != "agents" || global.Target.ID != legacy.ID || global.Target.Name != legacy.Name || len(global.Target.Deployments) != 1 {
 		t.Fatalf("new global flow replaced an existing record: %+v", app.State.Targets)
+	}
+	if !slices.Equal(app.State.Settings.DefaultGlobalDirectories, []string{"codex-user"}) {
+		t.Fatalf("correcting shared-directory metadata changed saved default keys: %+v", app.State.Settings)
 	}
 	plan, err := service.PlanGlobal("codex-user")
 	if err != nil || len(plan.Add)+len(plan.Update)+len(plan.Remove)+len(plan.Conflicts) != 0 {

@@ -245,6 +245,12 @@ func (s *Service) installFromPreview(previewID string, paths []string) error {
 	if err != nil || len(candidates) == 0 {
 		return err
 	}
+	if preview.Local {
+		if _, err = s.store.Install(candidates); err != nil {
+			return err
+		}
+		return s.sources.Release(previewID)
+	}
 	state, err := s.store.State()
 	if err != nil {
 		return err

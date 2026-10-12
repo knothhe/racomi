@@ -27,14 +27,55 @@ const maxRepositoryEntries = 20000
 // Keeping the original path lets catalog refresh protect previous skills below
 // an unsupported directory as well as skills with unsupported child files.
 type repositoryIssue struct {
-	Path   string
-	Reason string
+	Path      string
+	Reason    string
+	SkillOnly bool // A valid data file can still be an invalid nested skill marker.
 }
 
-func extractCommit(parent context.Context, repo, revision, root string) ([]repositoryIssue, error) {
+func extractCommit(parent context.Context, repo, revision, root, subpath, skill string, priorityPaths ...string) ([]repositoryIssue, error) {
 	ctx, cancel := context.WithTimeout(parent, 60*time.Second)
 	defer cancel()
-	cmd := gitExec(ctx, repo, "archive", "--format=tar", revision)
+	entries, issues, err := inspectCommit(ctx, repo, revision)
+	if err != nil {
+		return nil, err
+	}
+	paths, issues, err := planSkillExtraction(ctx, repo, entries, issues, subpath, skill, priorityPaths...)
+	if err != nil {
+		return nil, err
+	}
+	// Preserve a real but empty selected scope, without inventing directories
+	// for missing paths or links that replaced previously known skill trees.
+	for _, entry := range entries {
+		if entry.Path == subpath && entry.Kind == "tree" {
+			if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(subpath)), 0755); err != nil {
+				return nil, err
+			}
+			break
+		}
+	}
+	var extractedBytes int64
+	// Bounded argument batches work on macOS even with long repository paths.
+	for len(paths) > 0 {
+		n, size := 0, 0
+		for n < len(paths) && (size+len(paths[n]) < 32<<10 || n == 0) {
+			size += len(paths[n]) + 1
+			n++
+		}
+		batchIssues, err := extractPaths(ctx, repo, revision, root, paths[:n], &extractedBytes)
+		if err != nil {
+			return nil, err
+		}
+		issues = append(issues, batchIssues...)
+		paths = paths[n:]
+	}
+	return issues, nil
+}
+
+func extractPaths(parent context.Context, repo, revision, root string, paths []string, extractedBytes *int64) ([]repositoryIssue, error) {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	args := append([]string{"--literal-pathspecs", "archive", "--format=tar", revision, "--"}, paths...)
+	cmd := gitExec(ctx, repo, args...)
 	errOut := &limitedBuffer{limit: 4 << 10}
 	cmd.Stderr = errOut
 	pipe, err := cmd.StdoutPipe()
@@ -44,7 +85,7 @@ func extractCommit(parent context.Context, repo, revision, root string) ([]repos
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	issues, archiveErr := unpackArchive(pipe, root)
+	issues, archiveErr := unpackArchiveBudget(pipe, root, extractedBytes)
 	if archiveErr != nil {
 		cancel()
 	}
@@ -59,9 +100,13 @@ func extractCommit(parent context.Context, repo, revision, root string) ([]repos
 }
 
 func unpackArchive(reader io.Reader, root string) ([]repositoryIssue, error) {
+	var bytesRead int64
+	return unpackArchiveBudget(reader, root, &bytesRead)
+}
+
+func unpackArchiveBudget(reader io.Reader, root string, bytesRead *int64) ([]repositoryIssue, error) {
 	tr := tar.NewReader(reader)
 	issues := make([]repositoryIssue, 0)
-	var bytesRead int64
 	count := 0
 	for {
 		header, err := tr.Next()
@@ -90,10 +135,10 @@ func unpackArchive(reader io.Reader, root string) ([]repositoryIssue, error) {
 				return nil, errors.New("repository archive contains a reserved .git path")
 			}
 		}
-		if header.Size < 0 || header.Size > maxRepositoryBytes-bytesRead {
+		if header.Size < 0 || header.Size > maxRepositoryBytes-*bytesRead {
 			return nil, errors.New("repository content exceeds the 100 MiB preview limit")
 		}
-		bytesRead += header.Size
+		*bytesRead += header.Size
 		if header.Typeflag != tar.TypeDir && header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
 			reason := "unsupported repository file type"
 			if header.Typeflag == tar.TypeSymlink {
@@ -197,7 +242,7 @@ func scanSkills(root, subpath, revision string, issues []repositoryIssue, allowE
 				// have been removed. Report its path so catalog merging retains it.
 				reason := fmt.Sprintf("cannot read repository path %q: %v", rel, walkErr)
 				scanIssues = append(scanIssues, repositoryIssue{Path: rel, Reason: reason})
-				skipped = append(skipped, SkippedSkill{Subpath: rel, Reason: reason})
+				skipped = append(skipped, SkippedSkill{Subpath: rel, Reason: reason, blockedSubtree: true})
 				return nil
 			}
 			if entry.Type()&os.ModeSymlink != 0 {
@@ -240,7 +285,7 @@ func scanSkills(root, subpath, revision string, issues []repositoryIssue, allowE
 	for _, path := range paths {
 		reason := ""
 		for i, issue := range scanIssues {
-			if repositoryPathWithin(path, issue.Path) || repositoryPathWithin(issue.Path, path) {
+			if repositoryIssueAffectsSkill(issue, path) {
 				relevant[i] = true
 				if reason == "" {
 					reason = fmt.Sprintf("unsupported skill content at %q: %s", issue.Path, issue.Reason)
@@ -283,6 +328,14 @@ func repositoryPathWithin(parent, path string) bool {
 		parent, path = strings.ToLower(parent), strings.ToLower(path)
 	}
 	return parent == "." || parent == path || strings.HasPrefix(path, parent+"/")
+}
+
+func repositoryIssueAffectsSkill(issue repositoryIssue, skillPath string) bool {
+	if issue.SkillOnly {
+		owner := filepath.ToSlash(filepath.Dir(issue.Path))
+		return repositoryPathWithin(owner, skillPath) && repositoryPathWithin(skillPath, owner)
+	}
+	return repositoryPathsOverlap(skillPath, issue.Path)
 }
 
 func readSkill(root, subpath, revision string) (CandidateInfo, error) {

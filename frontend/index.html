@@ -10,6 +10,16 @@
     <script>
       // Apply the saved choice before the app or its stylesheet can paint.
       (() => {
+        let layout = "auto";
+        let sideWidth = 0;
+        try {
+          const savedLayout = localStorage.getItem("racomi.navLayout");
+          if (savedLayout === "side" || savedLayout === "top") layout = savedLayout;
+          sideWidth = Number(localStorage.getItem("racomi.sideWidth"));
+        } catch {}
+        document.documentElement.dataset.navLayout = layout === "auto" ? (innerWidth >= 1024 ? "side" : "top") : layout;
+        document.documentElement.dataset.navLayoutPreference = layout;
+        if (Number.isFinite(sideWidth) && sideWidth > 0) document.documentElement.style.setProperty("--side-w", `${Math.round(Math.max(168, Math.min(sideWidth, 320, innerWidth * .36)))}px`);
         let preference = "system";
         try {
           const saved = localStorage.getItem("racomi.theme");

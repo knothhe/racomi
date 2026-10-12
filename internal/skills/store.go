@@ -31,6 +31,7 @@ type Store struct {
 var locks sync.Map
 var safeName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
 var hashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var localIconPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
 
 type snapshotFile struct {
 	Info  SnapshotInfo `json:"info"`
@@ -226,6 +227,10 @@ func (l *Store) validate(s State) error {
 		if !safeName.MatchString(preset.ID) || strings.TrimSpace(preset.Name) == "" || presetIDs[preset.ID] {
 			return fmt.Errorf("invalid or duplicate preset %q", preset.ID)
 		}
+		// Only local glyph keys are persisted. Empty keeps the default layers icon.
+		if preset.Icon != "" && !localIconPattern.MatchString(preset.Icon) {
+			return errors.New("invalid preset icon")
+		}
 		presetIDs[preset.ID] = true
 		if len(unique(preset.SkillIDs)) != len(preset.SkillIDs) {
 			return fmt.Errorf("duplicate members in preset %q", preset.ID)
@@ -243,6 +248,10 @@ func (l *Store) validate(s State) error {
 		targetIDs[target.ID] = true
 		if target.Kind != "global" && target.Kind != "project" {
 			return fmt.Errorf("invalid target kind %q", target.Kind)
+		}
+		// The UI resolves this local glyph key; empty keeps legacy/default icons.
+		if target.Icon != "" && !localIconPattern.MatchString(target.Icon) {
+			return errors.New("invalid target icon")
 		}
 		paths := targetPaths(target)
 		if len(paths) == 0 || target.Path != paths[0] || len(unique(paths)) != len(paths) {
@@ -475,6 +484,7 @@ func (l *Store) SavePreset(preset Preset) (Preset, error) {
 	}
 	before := cloneState(s)
 	preset.Name = strings.TrimSpace(preset.Name)
+	preset.Icon = strings.TrimSpace(preset.Icon)
 	if preset.ID == "" {
 		preset.ID = id("preset")
 	}

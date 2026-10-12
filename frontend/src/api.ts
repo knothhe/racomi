@@ -14,9 +14,10 @@ export interface Source {
   mode: "selected" | "all"; revision: string; refreshedAt: string; lastError: string;
   catalog: SourceSkill[]; warnings?: string[];
 }
-export interface Preset { id: string; name: string; description: string; skillIds: string[] }
+export interface Preset { id: string; name: string; description: string; skillIds: string[]; icon?: string }
 export interface Target {
   id: string; name: string; kind: string; path: string; enabledSkillIds: string[]; enabledPresetIds: string[];
+  icon?: string;
   paths?: string[]; projectRoot?: string; directoryIds?: string[]; customPaths?: string[];
   deployments: { skillId: string; name: string; contentHash: string; path?: string; mode?: "copy" | "symlink" }[]; pending: boolean;
 }
@@ -42,16 +43,19 @@ export interface AppState {
   snapshots: Snapshot[];
 }
 export interface Preview {
+  local?: boolean;
   id: string; source: string; ref: string; revision: string;
   candidates: { name: string; description: string; subpath: string; revision: string }[];
   warnings?: string[];
   skipped?: { subpath: string; reason: string }[];
 }
 export interface SearchResult { name: string; slug: string; source: string; installs: number; url: string; supported?: boolean; unsupportedReason?: string }
+export interface SkillListPage { skills: SearchResult[]; total: number; hasMore: boolean; page: number }
 export interface Update { skillId: string; revision: string; summary: string; available: boolean; removed: boolean; error: string }
 export interface ApplyPlan {
   targetId: string; add: string[]; update: string[]; remove: string[]; conflicts: string[];
-  directories?: { targetId: string; path: string; add: string[]; update: string[]; remove: string[]; conflicts: string[] }[];
+  overwrite?: string[]; blockingConflicts?: string[];
+  directories?: { targetId: string; path: string; add: string[]; update: string[]; remove: string[]; conflicts: string[]; overwrite?: string[]; blockingConflicts?: string[]; fingerprint?: string }[];
 }
 export interface SkillsManagerPreview {
   id: string; databasePath: string; skillCount: number; presetCount: number; sourceCount: number;
@@ -73,7 +77,9 @@ export const api = {
   setLocale: (locale: "zh-CN" | "zh-TW" | "en") => invoke<void>("SetLocale", locale),
   saveSettings: (settings: AppSettings) => invoke<AppState>("SaveSettings", settings),
   search: (query: string) => invoke<SearchResult[]>("Search", query),
+  listSkills: (page: number) => invoke<SkillListPage>("ListSkills", page),
   preview: (source: string, ref: string, subpath: string) => invoke<Preview>("Preview", source, ref, subpath),
+  previewLocal: (path: string) => invoke<Preview>("PreviewLocal", path),
   install: (id: string, paths: string[]) => invoke<AppState>("Install", id, paths),
   saveSource: (source: Source) => invoke<AppState>("SaveSource", source),
   deleteSource: (id: string) => invoke<AppState>("DeleteSource", id),
@@ -94,12 +100,15 @@ export const api = {
   setProjectSelection: (id: string, skillIDs: string[], presetIDs: string[]) => invoke<AppState>("SetProjectSelection", id, skillIDs, presetIDs),
   planProject: (id: string) => invoke<ApplyPlan>("PlanProject", id),
   applyProject: (id: string) => invoke<AppState>("ApplyProject", id),
+  forceApplyProject: (id: string, plan: ApplyPlan) => invoke<AppState>("ForceApplyProject", id, plan),
   setGlobalSelection: (key: string, skillIDs: string[], presetIDs: string[]) => invoke<AppState>("SetGlobalSelection", key, skillIDs, presetIDs),
   setGlobalSelections: (keys: string[], skillIDs: string[], presetIDs: string[]) => invoke<AppState>("SetGlobalSelections", keys, skillIDs, presetIDs),
   planGlobals: (keys: string[]) => invoke<ApplyPlan>("PlanGlobals", keys),
   applyGlobals: (keys: string[]) => invoke<AppState>("ApplyGlobals", keys),
+  forceApplyGlobals: (keys: string[], plan: ApplyPlan) => invoke<AppState>("ForceApplyGlobals", keys, plan),
   planGlobal: (key: string) => invoke<ApplyPlan>("PlanGlobal", key),
   applyGlobal: (key: string) => invoke<AppState>("ApplyGlobal", key),
+  forceApplyGlobal: (key: string, plan: ApplyPlan) => invoke<AppState>("ForceApplyGlobal", key, plan),
   createSnapshot: () => invoke<AppState>("CreateSnapshot"),
   restoreSnapshot: (id: string) => invoke<AppState>("RestoreSnapshot", id),
   exportBackup: (path: string) => invoke<string>("ExportBackup", path),

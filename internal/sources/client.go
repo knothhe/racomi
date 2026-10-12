@@ -23,6 +23,7 @@ import (
 )
 
 const maxSearchBytes = 2 << 20
+const skillListPageSize = 200
 
 // Clients in different application services must not race over the same bare
 // repository. A preview holds this cache lock until its commit is extracted.
@@ -55,11 +56,75 @@ func New(cacheDir string) *Client {
 
 func (c *Client) Search(ctx context.Context, q string) ([]SearchResult, error) {
 	q = strings.TrimSpace(q)
+	if q == "" {
+		page, err := c.ListSkills(ctx, 0)
+		return page.Skills, err
+	}
 	if len(q) < 2 || len(q) > 200 {
 		return nil, errors.New("search query must contain between 2 and 200 bytes")
 	}
 	params := url.Values{"q": {q}, "limit": {"20"}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.searchBase+"/api/search?"+params.Encode(), nil)
+	body, err := c.searchResponse(ctx, "/api/search?"+params.Encode())
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		Skills *[]searchSkill `json:"skills"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil || payload.Skills == nil {
+		return nil, errors.New("skills.sh returned an invalid search response")
+	}
+	results, err := searchResults(*payload.Skills)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(results, func(i, j int) bool { return results[i].Installs > results[j].Installs })
+	return results, nil
+}
+
+// ListSkills uses the same public all-time leaderboard as skills.sh. Its pages
+// contain 200 entries and the server order is preserved across loading pages.
+func (c *Client) ListSkills(ctx context.Context, page int) (SkillListPage, error) {
+	if page < 0 {
+		return SkillListPage{}, errors.New("skills.sh leaderboard page must be non-negative")
+	}
+	body, err := c.searchResponse(ctx, fmt.Sprintf("/api/skills/all-time/%d", page))
+	if err != nil {
+		return SkillListPage{}, err
+	}
+	var payload struct {
+		Skills  *[]searchSkill `json:"skills"`
+		Total   *int           `json:"total"`
+		HasMore *bool          `json:"hasMore"`
+		Page    *int           `json:"page"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil || payload.Skills == nil || payload.Total == nil || payload.HasMore == nil || payload.Page == nil {
+		return SkillListPage{}, errors.New("skills.sh returned an invalid leaderboard response")
+	}
+	if *payload.Page != page || *payload.Total < len(*payload.Skills) || len(*payload.Skills) > skillListPageSize || (*payload.HasMore && len(*payload.Skills) == 0) {
+		return SkillListPage{}, errors.New("skills.sh returned invalid leaderboard pagination")
+	}
+	for i := range *payload.Skills {
+		item := &(*payload.Skills)[i]
+		item.ID = item.Source + "/" + item.SkillID
+	}
+	results, err := searchResults(*payload.Skills)
+	if err != nil {
+		return SkillListPage{}, err
+	}
+	return SkillListPage{Skills: results, Total: *payload.Total, HasMore: *payload.HasMore, Page: *payload.Page}, nil
+}
+
+type searchSkill struct {
+	ID       string `json:"id"`
+	SkillID  string `json:"skillId"`
+	Name     string `json:"name"`
+	Source   string `json:"source"`
+	Installs int    `json:"installs"`
+}
+
+func (c *Client) searchResponse(ctx context.Context, path string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.searchBase+path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -77,19 +142,12 @@ func (c *Client) Search(ctx context.Context, q string) ([]SearchResult, error) {
 	if err != nil || len(body) > maxSearchBytes {
 		return nil, errors.New("skills.sh search response could not be read or exceeds 2 MiB")
 	}
-	var payload struct {
-		Skills *[]struct {
-			ID       string `json:"id"`
-			Name     string `json:"name"`
-			Source   string `json:"source"`
-			Installs int    `json:"installs"`
-		} `json:"skills"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil || payload.Skills == nil {
-		return nil, errors.New("skills.sh returned an invalid search response")
-	}
-	results := make([]SearchResult, 0, len(*payload.Skills))
-	for _, item := range *payload.Skills {
+	return body, nil
+}
+
+func searchResults(items []searchSkill) ([]SearchResult, error) {
+	results := make([]SearchResult, 0, len(items))
+	for _, item := range items {
 		parts := strings.Split(item.ID, "/")
 		if (len(parts) != 2 && len(parts) != 3) || !repoPart.MatchString(parts[0]) || !repoPart.MatchString(parts[1]) || !safeSkillName.MatchString(parts[len(parts)-1]) || item.Name == "" || strings.ContainsAny(item.Name, "\x00\r\n") || item.Installs < 0 {
 			return nil, errors.New("skills.sh returned malformed skill metadata")
@@ -117,7 +175,6 @@ func (c *Client) Search(ctx context.Context, q string) ([]SearchResult, error) {
 		}
 		results = append(results, result)
 	}
-	sort.SliceStable(results, func(i, j int) bool { return results[i].Installs > results[j].Installs })
 	return results, nil
 }
 
@@ -139,7 +196,7 @@ func (c *Client) previewLocked(ctx context.Context, spec sourceSpec, refresh boo
 	return c.previewOptionsLocked(ctx, spec, refresh, false)
 }
 
-func (c *Client) previewOptionsLocked(ctx context.Context, spec sourceSpec, refresh, allowEmpty bool) (Preview, error) {
+func (c *Client) previewOptionsLocked(ctx context.Context, spec sourceSpec, refresh, allowEmpty bool, priorityPaths ...string) (Preview, error) {
 	repo, err := c.repository(ctx, spec.source, refresh)
 	if err != nil {
 		return Preview{}, err
@@ -188,7 +245,7 @@ func (c *Client) previewOptionsLocked(ctx context.Context, spec sourceSpec, refr
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return Preview{}, err
 	}
-	issues, err := extractCommit(ctx, repo, revision, root)
+	issues, err := extractCommit(ctx, repo, revision, root, spec.subpath, spec.skill, priorityPaths...)
 	if err != nil {
 		os.RemoveAll(root)
 		return Preview{}, err
@@ -254,6 +311,15 @@ func (c *Client) Candidates(previewID string, paths []string) ([]skillstore.Cand
 			Name: found.Name, Description: found.Description, Source: record.preview.Source,
 			Ref: record.preview.Ref, Subpath: cleaned, Revision: record.preview.Revision, ContentHash: found.ContentHash,
 		}, Path: candidatePath})
+		if record.preview.Local {
+			// Keep identity tied to the original skill directory, including when
+			// it is previewed through its parent rather than on its own. The
+			// source stays empty because local imports have no Git provenance.
+			origin := filepath.Join(record.preview.Source, filepath.FromSlash(cleaned))
+			hash := sha256.Sum256([]byte(origin))
+			result[len(result)-1].Skill.ID = "skill-local-" + hex.EncodeToString(hash[:12])
+			result[len(result)-1].Skill.Source = ""
+		}
 	}
 	return result, nil
 }

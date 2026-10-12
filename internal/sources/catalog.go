@@ -86,7 +86,7 @@ func (c *Client) CatalogForPreview(previewID string, source skillstore.Source) (
 		// A link replacing a directory hides its descendants from discovery.
 		// Preserve known skills below it, rather than interpreting them as deleted.
 		for _, issue := range record.issues {
-			if repositoryPathsOverlap(old.Subpath, issue.Path) {
+			if repositoryIssueAffectsSkill(issue, old.Subpath) {
 				old.SkipReason = fmt.Sprintf("unsupported skill content at %q: %s", issue.Path, issue.Reason)
 				break
 			}
@@ -94,7 +94,7 @@ func (c *Client) CatalogForPreview(previewID string, source skillstore.Source) (
 		// A failed subtree walk can also hide previously known descendants.
 		if old.SkipReason == "" {
 			for _, item := range skipped {
-				if repositoryPathsOverlap(old.Subpath, item.Subpath) {
+				if item.blockedSubtree && repositoryPathsOverlap(old.Subpath, item.Subpath) {
 					old.SkipReason = item.Reason
 					break
 				}
@@ -168,10 +168,16 @@ func (c *Client) PrepareSourceSync(ctx context.Context, source skillstore.Source
 	if len(paths) == 0 {
 		return []skillstore.Candidate{}, "", nil
 	}
-	for _, selected := range paths {
+	priorityPaths := make([]string, len(paths))
+	for i, selected := range paths {
+		cleaned, err := cleanSubpath(selected)
+		if err != nil {
+			return nil, "", err
+		}
+		priorityPaths[i] = cleaned
 		for _, item := range source.Catalog {
-			if item.Subpath == selected && item.SkipReason != "" {
-				return nil, "", fmt.Errorf("skill %q was skipped during refresh: %s", selected, item.SkipReason)
+			if item.Subpath == cleaned && item.SkipReason != "" {
+				return nil, "", fmt.Errorf("skill %q was skipped during refresh: %s", cleaned, item.SkipReason)
 			}
 		}
 	}
@@ -180,7 +186,7 @@ func (c *Client) PrepareSourceSync(ctx context.Context, source skillstore.Source
 		return nil, "", err
 	}
 	c.mu.Lock()
-	preview, err := c.previewOptionsLocked(ctx, spec, false, true)
+	preview, err := c.previewOptionsLocked(ctx, spec, false, true, priorityPaths...)
 	c.mu.Unlock()
 	if err != nil {
 		return nil, "", err

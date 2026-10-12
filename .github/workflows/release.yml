@@ -1,0 +1,95 @@
+name: macOS Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: amd64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Validate tag and native architecture
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          BUILD_ARCH: ${{ matrix.arch }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]
+          test "$(go env GOARCH)" = "$BUILD_ARCH"
+          xcrun --find clang
+      - name: Install dependencies and verify
+        run: |
+          make deps
+          make check
+      - name: Package release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          BUILD_ARCH: ${{ matrix.arch }}
+        run: make release VERSION="${RELEASE_TAG#v}" BUILD_NUMBER="$GITHUB_RUN_NUMBER" GOARCH="$BUILD_ARCH"
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: racomi-macos-${{ matrix.arch }}
+          path: |
+            bin/releases/*.zip
+            bin/releases/*.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: racomi-macos-*
+          merge-multiple: true
+          path: release-assets
+      - name: Verify and publish both architectures
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cd release-assets
+          test -f "racomi-${RELEASE_TAG#v}-aarch64-macos.zip"
+          test -f "racomi-${RELEASE_TAG#v}-x86_64-macos.zip"
+          test -f "racomi-${RELEASE_TAG#v}-aarch64-macos.zip.sha256"
+          test -f "racomi-${RELEASE_TAG#v}-x86_64-macos.zip.sha256"
+          sha256sum --check ./*.sha256
+          args=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then args+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" ./*.zip ./*.sha256 \
+            --verify-tag --title "racomi $RELEASE_TAG" \
+            --generate-notes --notes-file ../build/macos/RELEASE_NOTES.md "${args[@]}"
