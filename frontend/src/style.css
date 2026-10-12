@@ -839,10 +839,10 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .selection-row .skill-origin { display: block; font-size: 10px; margin-top: 3px; }
 
 /* Settings and multiple deployment destinations. */
-.settings-tabs { margin-bottom: 14px; }
-.settings-tab-panel { min-width: 0; }
-.settings-tab-panel:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 8px; }
-html[data-nav-layout="side"] .settings-tabs { display: none; }
+.settings-tabs, .guide-tabs { margin-bottom: 14px; }
+.settings-tab-panel, .guide-tab-panel { min-width: 0; }
+.settings-tab-panel:focus-visible, .guide-tab-panel:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 8px; }
+html[data-nav-layout="side"] .settings-tabs, html[data-nav-layout="side"] .guide-tabs { display: none; }
 .settings-page { min-width: 0; }
 .settings-layout { display: grid; gap: 16px; }
 .settings-section { min-width: 0; }
@@ -1101,4 +1101,48 @@ html[data-nav-layout="side"] #toast-root.feedback-lift { left: 50%; }
 @media (prefers-reduced-motion: reduce) {
   .side-toggle .st-pane, .nav-item { transition: none; }
   .sidebar .nav-sub { animation: none; }
+}
+/* Cloud storage settings use the same compact rows as local preferences. */
+.cloud-sync-actions { display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+.settings-tab-panel > .cloud-sync-section { margin-bottom: 20px; }
+.cloud-sync-status { min-width: 0; }
+.cloud-sync-status .cloud-sync-error { color: var(--red); overflow-wrap: anywhere; }
+.cloud-sync-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.cloud-sync-form-grid .field { margin: 0; min-width: 0; }
+.cloud-sync-wide { grid-column: 1 / -1; }
+.cloud-sync-check { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; }
+.cloud-sync-check input { margin-top: 3px; flex-shrink: 0; }
+.cloud-sync-check small { display: block; color: var(--muted); margin-top: 4px; font-size: 12px; }
+.cloud-conflict-list { display: grid; gap: 16px; }
+.cloud-conflict { border: 1px solid var(--line); border-radius: 9px; padding: 14px; }
+.cloud-conflict h3 { margin: 0 0 10px; overflow-wrap: anywhere; font-size: 14px; }
+.cloud-conflict-versions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.cloud-conflict-versions details { min-width: 0; }
+.cloud-conflict-versions summary { font-size: 12px; cursor: pointer; }
+.cloud-conflict-versions pre { max-height: 220px; overflow: auto; padding: 9px; background: var(--bg); border-radius: 6px; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cloud-sync-deleted { color: var(--red); font-size: 12px; }
+.cloud-backup-list { display: grid; gap: 10px; }
+.cloud-backup-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; border-bottom: 1px solid var(--line); padding: 10px 0; }
+.cloud-backup-row > div { min-width: 0; }
+.cloud-backup-row p { margin: 4px 0; color: var(--muted); font-size: 12px; }
+.cloud-backup-row code { display: block; font-size: 10px; overflow-wrap: anywhere; color: var(--muted); }
+.guide-cloud { margin-top: 28px; }
+.guide-page > .guide-cloud, .guide-page > .guide-questions { margin-top: 0; }
+.guide-cloud .guide-section-heading { margin-bottom: 12px; }
+.guide-cloud .guide-section-heading > .button { margin-left: auto; flex-shrink: 0; }
+.guide-cloud-content { padding: 4px 20px 12px; font-size: 13px; line-height: 1.65; }
+.guide-cloud-content details { border-top: 1px solid var(--line); padding: 13px 0; }
+.guide-cloud-content summary { cursor: pointer; font-weight: 600; }
+.guide-cloud-content li { margin-top: 9px; }
+.guide-cloud-content p { overflow-wrap: anywhere; }
+.guide-cloud-table { overflow-x: auto; margin: 10px 0; }
+.guide-cloud-table table { width: 100%; border-collapse: collapse; }
+.guide-cloud-table th, .guide-cloud-table td { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.guide-cloud-table th { font-weight: 500; white-space: nowrap; }
+@media (max-width: 640px) {
+  .cloud-sync-section .settings-row { align-items: flex-start; }
+  .cloud-sync-actions { flex-direction: column; }
+  .cloud-sync-form-grid, .cloud-conflict-versions { grid-template-columns: minmax(0, 1fr); }
+  .guide-cloud .guide-section-heading { flex-wrap: wrap; }
+  .guide-cloud .guide-section-heading > .button { margin-left: 0; }
 }

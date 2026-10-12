@@ -80,6 +80,15 @@ func relativeProjectTemplatePath(path string) bool {
 }
 
 func validateSettings(settings Settings, targets []Target) error {
+	if settings.Theme != "" && !slices.Contains([]string{"system", "light", "dark"}, settings.Theme) {
+		return errors.New("theme must be system, light, or dark")
+	}
+	if settings.Locale != "" && !slices.Contains([]string{"system", "zh-CN", "zh-TW", "en"}, settings.Locale) {
+		return errors.New("locale must be system, zh-CN, zh-TW, or en")
+	}
+	if settings.NavLayout != "" && !slices.Contains([]string{"auto", "top", "side"}, settings.NavLayout) {
+		return errors.New("navigation layout must be auto, top, or side")
+	}
 	if settings.DeploymentMode != DeploymentCopy && settings.DeploymentMode != DeploymentSymlink {
 		return errors.New("deployment mode must be copy or symlink")
 	}
@@ -117,6 +126,17 @@ func (l *Store) SaveSettings(settings Settings) error {
 	// An explicit empty array removes them without changing any project paths.
 	if settings.CustomProjectDirectories == nil {
 		settings.CustomProjectDirectories = state.Settings.CustomProjectDirectories
+	}
+	// Older clients omit these WebView preferences. Preserve them until a
+	// client explicitly chooses a supported value, including system/auto.
+	if settings.Theme == "" {
+		settings.Theme = state.Settings.Theme
+	}
+	if settings.Locale == "" {
+		settings.Locale = state.Settings.Locale
+	}
+	if settings.NavLayout == "" {
+		settings.NavLayout = state.Settings.NavLayout
 	}
 	directories, err := normalizeProjectDirectories(settings.CustomProjectDirectories)
 	if err != nil {

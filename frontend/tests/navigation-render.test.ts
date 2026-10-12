@@ -99,3 +99,15 @@ test("settings tabs retain focus targets while moving their selected and keyboar
   assert.deepEqual(controls.map((control) => control.getAttribute("tabindex")), ["-1", "0"]);
   assert.ok(controls.every((control) => control.getAttribute("aria-controls") === "settings-tab-panel"));
 });
+
+test("guide tabs retain their focus targets when switching sections", () => {
+  const guideTabs = (active: string) => node("DIV", { class: "tabs guide-tabs", role: "tablist" }, ["start", "sync", "faq"].map((id) => node("BUTTON", {
+    role: "tab", "data-action": "guide-tab", "data-tab": id,
+    "aria-controls": "guide-tab-panel", "aria-selected": String(id === active), tabindex: id === active ? "0" : "-1",
+  }, [id])));
+  const tabs = guideTabs("start"), controls = [...tabs.childNodes];
+  sync(tabs, guideTabs("sync"));
+  assert.deepEqual(tabs.childNodes, controls);
+  assert.deepEqual(controls.map((control) => control.getAttribute("aria-selected")), ["false", "true", "false"]);
+  assert.deepEqual(controls.map((control) => control.getAttribute("tabindex")), ["-1", "0", "-1"]);
+});

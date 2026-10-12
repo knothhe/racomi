@@ -65,7 +65,7 @@ function harness() {
   const setup = `
     const projectDrafts = new Map(), globalDrafts = new Map(), plans = new Map();
     let selectedGlobalKeys = new Set(["A", "B"]), selectedGlobalKey = "batch:A,B";
-    let data = initial, stateRevision = 0, updates = null, selectedSkill = "", selectedSource = "";
+    let data = initial, stateRevision = 0, updates = null, selectedSkill = "", selectedSource = "", loadedCloudSyncAt = "";
     let bulkSkillSelection = new Set(), skillsSourceFilter = "all";
     const documents = new Map(), sourceSelections = new Map(), detailTab = "overview";
     const arr = (value) => value || [], t = (value) => value;
@@ -74,6 +74,7 @@ function harness() {
     const projects = () => data.projects, sources = () => data.state.sources;
     const globalApplications = () => data.globalApplications, uniqueApplications = (value) => value;
     const settingsAutosave = { idle: () => Promise.resolve() };
+    const applySharedPreferences = () => {};
     const activeTasks = new Set(), actionTasks = {}, formTasks = {}, skillSelectionActions = [], applicationActions = [];
     const applicationBusy = () => false, hasPendingMutation = () => false, discoveryBusy = () => false;
     const skillsManagerBusy = () => false, settingsControlsBusy = () => false;

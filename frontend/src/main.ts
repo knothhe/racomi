@@ -6,21 +6,22 @@ import { changeSelection } from "./skill-selection";
 import { matchesProject, matchesProjectSkill, projectSkillApplied } from "./project-browser";
 import { applicationPlanDisposition, hasApplicationChanges } from "./application-plan";
 import { createSettingsAutosave } from "./settings-autosave";
+import { cloudBackupsList, cloudConflictFields, cloudSyncConfigFields, cloudSyncSection, readCloudResolutions, readCloudSyncConfig } from "./cloud-sync";
 import { showFeedback } from "./feedback";
 import { getNavLayout, getNavLayoutPreference, installSidebarResize, setNavLayoutPreference, syncSidebarWidth, toggleNavLayout, type NavLayoutPreference } from "./layout";
 import { icon, projectIcons, projectIconName, presetIcons, presetIconName } from "./icons";
 import { createProjectSelectionAutosave } from "./project-selection-autosave";
-import { guidePage } from "./guide";
+import { guidePage, guideTabs, type GuideTab } from "./guide";
 import { agentIcon } from "./agent-icons";
 import { homeRelativePath } from "./paths";
-import { enableNativeLocaleSync, getLocale, setLocale, t, tMessage, type LocalePreference, type TranslationVariables } from "./i18n";
+import { enableNativeLocaleSync, getLocale, getLocalePreference, setLocale, t, tMessage, type LocalePreference, type TranslationVariables } from "./i18n";
 import "./style.css";
 import "./source-filter.css";
 import { defaultSkillFilters, filterSkills, pendingSkills, skillSource, type SkillFilters } from "./skill-filters";
 import { catalogEntries, sourceSyncPaths, summarizeSource, type SourceEntry } from "./source-catalog";
 import { defaultSettings, projectDirectories, settingsPage } from "./settings";
 import { enableNativeThemeSync, getThemePreference, setThemePreference, type ThemePreference } from "./theme";
-import { api, type AppSettings, type AppState, type ApplyPlan, type Source, type ImportResult, type Preset, type Preview, type SearchResult, type SkillListPage, type Skill, type SkillsManagerPreview, type Target, type Update } from "./api";
+import { api, type AppSettings, type AppState, type ApplyPlan, type CloudBackup, type SyncConflict, type Source, type ImportResult, type Preset, type Preview, type SearchResult, type SkillListPage, type Skill, type SkillsManagerPreview, type Target, type Update } from "./api";
 
 type Page = "skills" | "sources" | "discover" | "presets" | "projects" | "global" | "settings" | "guide";
 type SkillsFilter = "all" | "updates" | "pending";
@@ -74,8 +75,17 @@ let selectedGlobalKey = "";
 let selectedGlobalKeys = new Set<string>();
 let globalDirectoriesInitialized = false;
 let settingsBackups = false;
+let guideTab: GuideTab = "start";
 let settingsDraft: AppSettings | null = null;
 let settingsWriteRevision = 0;
+let applyingSharedPreferences = false;
+let preferencesMigrated = false;
+let cloudPollBusy = false;
+let loadedCloudSyncAt = "";
+let cloudConflictDraft: SyncConflict[] = [];
+let cloudBackupDraft: CloudBackup[] = [];
+const sourceEditorBaselines = new WeakMap<HTMLFormElement, Source | null>();
+const presetEditorBaselines = new WeakMap<HTMLFormElement, Preset | null>();
 const documents = new Map<string, { hash: string; text: string }>();
 const loadingDocuments = new Set<string>();
 let modalPreviousFocus: HTMLElement | null = null;
@@ -127,6 +137,7 @@ const stateChangingTasks = new Set([
   "正在重新关联技能…", "正在检查技能更新…", "正在读取刷新结果…", "正在更新技能…", "正在移除技能…", "正在导入所选技能…",
   "正在保存预设…", "正在删除预设…", "正在保存项目…", "正在保存项目选择…", "正在保存全局选择…", "正在移除项目…", "正在保存全局目录…", "正在删除全局目录…", "正在保存项目目录…", "正在删除项目目录…",
   "正在保存设置…", "正在创建本地快照…", "正在应用技能到项目…", "正在应用技能到全局…", "正在恢复快照…", "正在导入备份…", skillsManagerImportTask,
+  "Saving sync settings…", "Syncing with cloud…", "Resolving sync conflicts…", "Restoring cloud backup…",
 ]);
 const hasPendingMutation = () => [...activeTasks].some((label) => stateChangingTasks.has(label));
 const skillSelectionActions = ["select-all-skills", "update-selected-skills", "remove-selected-skills"];
@@ -140,6 +151,7 @@ const actionTasks: Record<string, string> = {
   "select-all-candidates": "正在导入所选技能…",
   "install": "正在导入所选技能…", "plan-project": "正在检查项目变化…", "plan-global": "正在检查全局变化…",
   "apply-project": "正在应用技能到项目…", "apply-global": "正在应用技能到全局…", "create-snapshot": "正在创建本地快照…",
+  "sync-cloud": "Syncing with cloud…", "test-cloud-sync": "Testing cloud connection…", "cloud-backups": "Loading cloud backups…",
 };
 const formTasks: Record<string, string> = {
   "hub-search": "正在搜索 skills.sh…", "source-preview": "正在读取仓库并发现技能…",
@@ -148,6 +160,7 @@ const formTasks: Record<string, string> = {
   "preset-editor": "正在保存预设…", "project-editor": "正在保存项目…", "global-directory-editor": "正在保存全局目录…", "project-directory-editor": "正在保存项目目录…",
   "backup-export": "正在导出工作空间…", "backup-import": "正在导入备份…",
   "skills-manager-import": "正在预览 skills-manager 数据库…",
+  "cloud-sync-editor": "Saving sync settings…", "cloud-conflicts-editor": "Resolving sync conflicts…",
 };
 const applicationActions = ["plan-project", "apply-project", "plan-global", "apply-global", "clear-application", "retry-selection", "select-global-directories", "default-global-directories", "new-global-directory", "edit-global-directory", "delete-global-directory", "new-project-directory", "edit-project-directory", "delete-project-directory"];
 const applicationBusy = () => hasPendingMutation() || ["正在检查项目变化…", "正在检查全局变化…"].some((label) => activeTasks.has(label));
@@ -155,7 +168,7 @@ const discoveryBusy = () => ["正在读取仓库并发现技能…", "正在读�
 const settingsControlsBusy = () => selectionAutosave.busy || [...activeTasks].some((label) => label !== "正在保存设置…" && (stateChangingTasks.has(label) || ["正在检查项目变化…", "正在检查全局变化…"].includes(label)));
 const settingsAutosave = createSettingsAutosave<AppState>({
   read: () => data!.state.settings,
-  write: (settings) => api.saveSettings(settings),
+  write: (_settings, patch) => api.saveSettingsPatch(patch),
   settings: (next) => next.state.settings,
   start: () => { activeTasks.add("正在保存设置…"); status(); syncBusyControls(); },
   error: (err) => toast(t("设置保存失败：{0}", { 0: tMessage(err instanceof Error ? err.message : String(err)) }), true),
@@ -200,7 +213,8 @@ function syncBusyControls() {
     const skillControl = control.name === "bulk-skill" || ["update-skill", "remove-skill", ...skillSelectionActions].includes(control.dataset.action || "");
     const discoveryControl = control.closest(".discover-content") || control.dataset.action === "discover-tab";
     const globalDirectoryControl = control.name === "global-directory-selection" || ["select-global-directories", "default-global-directories"].includes(control.dataset.action || "");
-    const busy = (!!globalDirectoryControl && globalDirectorySelectionBlocked()) || (!!discoveryControl && discoveryBusy()) || (!!skillControl && hasPendingMutation()) || (form?.id === "settings-editor" && settingsControlsBusy()) || importerBusy || importerEntryBusy || (control.dataset.action === "update-skill" && hasPendingMutation()) || (!!label && activeTasks.has(label)) || (!!applicationControl && applicationBusy());
+    const cloudControl = ["cloud-sync-editor", "cloud-conflicts-editor"].includes(form?.id || "") || ["configure-cloud-sync", "sync-cloud", "cloud-conflicts", "cloud-backups", "restore-cloud-backup"].includes(control.dataset.action || "");
+    const busy = (!!cloudControl && (hasPendingMutation() || !!data?.cloudSync?.syncing || activeTasks.has("Testing cloud connection…"))) || (!!globalDirectoryControl && globalDirectorySelectionBlocked()) || (!!discoveryControl && discoveryBusy()) || (!!skillControl && hasPendingMutation()) || (form?.id === "settings-editor" && settingsControlsBusy()) || importerBusy || importerEntryBusy || (control.dataset.action === "update-skill" && hasPendingMutation()) || (!!label && activeTasks.has(label)) || (!!applicationControl && applicationBusy());
     if (busy) { if (control.dataset.busyDisabled === undefined) control.dataset.busyDisabled = String(control.disabled); control.disabled = true; control.setAttribute("aria-busy", "true"); }
     if (!busy && control.dataset.busyDisabled !== undefined) { control.disabled = control.dataset.busyDisabled === "true"; delete control.dataset.busyDisabled; control.removeAttribute("aria-busy"); }
   }
@@ -231,6 +245,7 @@ function accept(next: AppState, preserveUpdates = false) {
   data = next;
   data.state.settings = { ...defaultSettings(), ...data.state.settings };
   data.state.settings.customProjectDirectories = arr(data.state.settings.customProjectDirectories);
+  loadedCloudSyncAt = data.cloudSync?.lastSyncAt || "";
   stateRevision++;
   data.state.skills = arr(data.state.skills);
   data.state.sources = arr(data.state.sources);
@@ -265,12 +280,68 @@ function accept(next: AppState, preserveUpdates = false) {
   }
   plans.clear();
   for (const [id, doc] of documents) { if (skills().find((skill) => skill.id === id)?.contentHash !== doc.hash) documents.delete(id); }
+  applySharedPreferences();
   render();
   for (const repair of selectionRepairs) {
     selectionAutosave.forget(repair.key);
     if (repair.selection) selectionAutosave.save(repair.key, repair.selection);
   }
   if (detailTab === "document" && selectedSkill) void loadSkillDocument(selectedSkill);
+}
+function savePreference(patch: Partial<AppSettings>) {
+  if (!data || applyingSharedPreferences) return;
+  const current = settingsDraft || data.state.settings;
+  if (Object.entries(patch).every(([key, value]) => current[key as keyof AppSettings] === value)) return;
+  settingsWriteRevision++;
+  settingsDraft = { ...(settingsDraft || data.state.settings), ...patch };
+  settingsAutosave.save(patch);
+}
+function applySharedPreferences() {
+  if (!data) return;
+  const settings = data.state.settings;
+  applyingSharedPreferences = true;
+  try {
+    if (settings.theme && settings.theme !== getThemePreference()) setThemePreference(settings.theme);
+    if (settings.locale && settings.locale !== getLocalePreference()) setLocale(settings.locale);
+    if (settings.navLayout && settings.navLayout !== getNavLayoutPreference()) setNavLayoutPreference(settings.navLayout);
+  } finally { applyingSharedPreferences = false; }
+  if (!preferencesMigrated) {
+    preferencesMigrated = true;
+    const patch: Partial<AppSettings> = {};
+    if (!settings.theme) patch.theme = getThemePreference();
+    if (!settings.locale) patch.locale = getLocalePreference();
+    if (!settings.navLayout) patch.navLayout = getNavLayoutPreference();
+    if (Object.keys(patch).length) void migrateSharedPreferences(patch);
+  }
+}
+async function migrateSharedPreferences(patch: Partial<AppSettings>) {
+  const revision = stateRevision, settingsRevision = settingsWriteRevision;
+  try {
+    const next = await api.saveSettingsPatch(patch, true);
+    if (revision === stateRevision && settingsRevision === settingsWriteRevision && !settingsDraft && !hasPendingMutation() && !settingsAutosave.busy && !selectionAutosave.busy) accept(next);
+  } catch (err) {
+    toast(t("设置保存失败：{0}", { 0: tMessage(err instanceof Error ? err.message : String(err)) }), true);
+  }
+}
+async function pollCloudSync() {
+  if (!data || cloudPollBusy || hasPendingMutation() || settingsAutosave.busy || selectionAutosave.busy) return;
+  cloudPollBusy = true;
+  const revision = stateRevision, settingsRevision = settingsWriteRevision;
+  try {
+    const next = await api.cloudSyncStatus();
+    if (!data || revision !== stateRevision || settingsRevision !== settingsWriteRevision || hasPendingMutation() || settingsAutosave.busy || selectionAutosave.busy) return;
+    const changed = JSON.stringify(next) !== JSON.stringify(data.cloudSync);
+    data.cloudSync = next;
+    if (!next.syncing && next.lastSyncAt !== loadedCloudSyncAt && !settingsDraft) {
+      const state = await api.state();
+      if (revision === stateRevision && settingsRevision === settingsWriteRevision && !hasPendingMutation() && !settingsAutosave.busy && !selectionAutosave.busy) accept(state);
+    } else if (changed && currentPage === "settings" && settingsBackups) {
+      const section = app.querySelector(".cloud-sync-section");
+      if (section) section.outerHTML = cloudSyncSection(next);
+      syncBusyControls();
+    }
+  } catch { /* A transient poll failure leaves the usable local workspace intact. */ }
+  finally { cloudPollBusy = false; }
 }
 async function mutate(label: string, action: () => Promise<AppState>, message: string) {
   const next = await task(label, action);
@@ -304,6 +375,7 @@ function navigationSubitems(page: Page) {
   if (page === "discover") return `<div class="nav-sub" data-nav-section="discover">${subitem("Skill Hub", "discover-tab", discoverTab === "hub", 'data-tab="hub"')}${subitem(t("Git 仓库"), "discover-tab", discoverTab === "git", 'data-tab="git"')}${subitem(t("本地目录"), "discover-tab", discoverTab === "local", 'data-tab="local"')}</div>`;
   if (page === "skills") return `<div class="nav-sub" data-nav-section="skills">${subitem(t("全部"), "filter-skills", skillsFilter === "all", 'data-filter="all"', skills().length)}${subitem(t("有更新"), "filter-skills", skillsFilter === "updates", 'data-filter="updates"', updatedSkillIDs().size)}${subitem(t("待应用"), "filter-skills", skillsFilter === "pending", 'data-filter="pending"', pendingSkillIDs().size)}</div>`;
   if (page === "settings") return `<div class="nav-sub settings-nav-sub" data-nav-section="settings">${subitem(t("设置"), "close-backups", !settingsBackups)}${subitem(t("Backup and migration"), "open-backups", settingsBackups)}</div>`;
+  if (page === "guide") return `<div class="nav-sub guide-nav-sub" data-nav-section="guide">${guideTabs.map((tab) => subitem(t(tab.label), "guide-tab", guideTab === tab.id, `data-tab="${tab.id}"`)).join("")}</div>`;
   return "";
 }
 function navigationItem(item: typeof nav[number]) {
@@ -319,7 +391,7 @@ function utilityNavigation() {
 }
 function navigationCrumb() {
   const current = nav.find((item) => item.id === currentPage)!;
-  const detail = currentPage === "discover" ? discoverTab === "hub" ? "Skill Hub" : t(discoverTab === "local" ? "本地目录" : "Git 仓库") : currentPage === "settings" && settingsBackups ? t("Backup and migration") : "";
+  const detail = currentPage === "guide" ? t(guideTabs.find((tab) => tab.id === guideTab)!.label) : currentPage === "discover" ? discoverTab === "hub" ? "Skill Hub" : t(discoverTab === "local" ? "本地目录" : "Git 仓库") : currentPage === "settings" && settingsBackups ? t("Backup and migration") : "";
   return `<span class="crumb-group">${e(navigationGroup(currentPage))}</span><span class="crumb-separator" aria-hidden="true">/</span><span class="crumb-current">${e(t(current.title))}</span>${detail ? `<span class="crumb-separator" aria-hidden="true">/</span><span class="crumb-current">${e(detail)}</span>` : ""}`;
 }
 function syncNavigationLayout(event?: Event) {
@@ -375,9 +447,20 @@ function renderSettingsWorkspace(content: HTMLElement) {
   panel.setAttribute("aria-labelledby", settingsBackups ? "settings-tab-backups" : "settings-tab-general");
   panel.innerHTML = settingsBackups ? backupsPage() : settingsPage(settingsDraft || data!.state.settings, globalApplications(), data!.dataDir, data!.homeDir);
 }
+function guideTabNavigation() {
+  return `<div class="tabs guide-tabs" role="tablist" aria-label="${e(t("指南"))}">${guideTabs.map((tab) => `<button type="button" id="guide-tab-${tab.id}" class="tab-button ${guideTab === tab.id ? "active" : ""}" data-action="guide-tab" data-tab="${tab.id}" role="tab" aria-controls="guide-tab-panel" aria-selected="${guideTab === tab.id}" tabindex="${guideTab === tab.id ? 0 : -1}">${e(t(tab.label))}</button>`).join("")}</div>`;
+}
+function renderGuideWorkspace(content: HTMLElement) {
+  const tabs = content.querySelector(".guide-tabs");
+  if (tabs) syncNavigationMarkup(tabs, guideTabNavigation());
+  else content.innerHTML = `${guideTabNavigation()}<div id="guide-tab-panel" class="guide-tab-panel" role="tabpanel" tabindex="0"></div>`;
+  const panel = content.querySelector<HTMLElement>("#guide-tab-panel")!;
+  panel.setAttribute("aria-labelledby", `guide-tab-${guideTab}`);
+  panel.innerHTML = guidePage(guideTab);
+}
 function render() {
   const current = nav.find((item) => item.id === currentPage)!;
-  const view = currentPage === "settings" && settingsBackups ? "backups" : currentPage;
+  const view = currentPage === "guide" ? `guide-${guideTab}` : currentPage === "settings" && settingsBackups ? "backups" : currentPage;
   const oldContent = document.querySelector<HTMLElement>(".workspace");
   const scrollTop = oldContent?.dataset.view === view ? oldContent.scrollTop : 0;
   const focused = document.activeElement instanceof HTMLInputElement && document.activeElement.dataset.pageSearch && oldContent?.dataset.page === currentPage ? { page: document.activeElement.dataset.pageSearch, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
@@ -386,6 +469,7 @@ function render() {
   const selectionFocus = activeElement instanceof HTMLInputElement && activeElement.form?.classList.contains("application-selection") && activeElement.type === "checkbox" ? { scope: activeElement.form.dataset.scope, id: activeElement.form.dataset.id, name: activeElement.name, value: activeElement.value } : null;
   const disclosureFocus = activeElement instanceof HTMLElement && activeElement.tagName === "SUMMARY" && activeElement.parentElement?.dataset.projectDisclosure ? { id: activeElement.parentElement.dataset.id, section: activeElement.parentElement.dataset.projectDisclosure } : null;
   const projectSearchFocus = activeElement instanceof HTMLInputElement && activeElement.dataset.projectSkillSearch ? { id: activeElement.dataset.projectSkillSearch, start: activeElement.selectionStart, end: activeElement.selectionEnd } : null;
+  const pageSearchFocus = activeElement instanceof HTMLInputElement && activeElement.dataset.pageSearch && oldContent?.dataset.page === currentPage ? { page: activeElement.dataset.pageSearch, start: activeElement.selectionStart, end: activeElement.selectionEnd } : null;
   for (const element of app.querySelectorAll<HTMLElement>("[data-preserve-scroll]")) preservedScroll.set(element.dataset.preserveScroll!, element.scrollTop);
   // The native toggle event is queued; read disclosures before a search or
   // autosave render can replace them and discard their latest open state.
@@ -410,8 +494,9 @@ function render() {
   workspace.dataset.view = view;
   const content = app.querySelector<HTMLElement>("#page-content")!;
   content.dataset.page = currentPage;
-  if (currentPage === "settings" && data) renderSettingsWorkspace(content);
-  else content.innerHTML = currentPage === "guide" ? guidePage() : !data ? loadingPage() : currentPage === "skills" ? skillsPage() : currentPage === "sources" ? sourcesPage() : currentPage === "discover" ? discoverPage() : currentPage === "presets" ? presetsPage() : currentPage === "projects" ? projectsPage() : currentPage === "global" ? globalPage() : "";
+  if (currentPage === "guide") renderGuideWorkspace(content);
+  else if (currentPage === "settings" && data) renderSettingsWorkspace(content);
+  else content.innerHTML = !data ? loadingPage() : currentPage === "skills" ? skillsPage() : currentPage === "sources" ? sourcesPage() : currentPage === "discover" ? discoverPage() : currentPage === "presets" ? presetsPage() : currentPage === "projects" ? projectsPage() : currentPage === "global" ? globalPage() : "";
   app.querySelector(".statusbar-meta > span")!.textContent = `${skills().length}${t(" 个技能 · ")}${presets().length}${t(" 个预设 · ")}${projects().length}${t(" 个项目")}`;
   const shortcut = app.querySelector<HTMLElement>(".search-shortcut")!;
   shortcut.setAttribute("aria-label", t("搜索当前页面"));
@@ -434,6 +519,11 @@ function render() {
     if (projectSearchFocus.start !== null && projectSearchFocus.end !== null) input?.setSelectionRange(projectSearchFocus.start, projectSearchFocus.end);
   }
   status(); syncBusyControls();
+  if (pageSearchFocus && !modalRoot.children.length) {
+    const input = [...app.querySelectorAll<HTMLInputElement>("input[data-page-search]")].find((input) => input.dataset.pageSearch === pageSearchFocus.page);
+    input?.focus({ preventScroll: true });
+    if (pageSearchFocus.start !== null && pageSearchFocus.end !== null) input?.setSelectionRange(pageSearchFocus.start, pageSearchFocus.end);
+  }
   if (settingsFocus && !modalRoot.children.length) {
     [...app.querySelectorAll<HTMLInputElement | HTMLSelectElement>('.settings-page input,.settings-page select')].find((input) => input.name === settingsFocus.name && input.value === settingsFocus.value)?.focus({ preventScroll: true });
   }
@@ -562,6 +652,7 @@ function sourceCatalogRow(source: Source, entry: SourceEntry, removedLocals: Ski
 function sourceEditor(id = "") {
   const source = sources().find((item) => item.id === id);
   modal(source ? t("编辑来源") : t("添加来源"), source ? t("修改名称和安装方式。仓库地址、引用和范围如需变更，请添加新来源。") : t("保存 Git 仓库作为持续追踪的技能来源。"), `<input type="hidden" name="entityId" value="${e(source?.id)}"><label class="field"><span>${t("名称")}</span><input name="name" value="${e(source?.name)}" required maxlength="80" placeholder="${t("例如：团队技能")}"></label><label class="field"><span>${t("仓库地址")}</span><input name="repository" value="${e(source?.repository)}" required ${source ? "readonly" : ""} placeholder="${t("owner/repo 或 https://github.com/owner/repo")}"></label><div class="form-grid"><label class="field"><span>${t("分支、标签或 Commit ")}<i>${t("可选")}</i></span><input name="ref" value="${e(source?.ref)}" ${source ? "readonly" : ""} placeholder="${t("默认分支")}"></label><label class="field"><span>${t("扫描子目录 ")}<i>${t("可选")}</i></span><input name="subpath" value="${e(source?.subpath)}" ${source ? "readonly" : ""} placeholder="${t("整个仓库")}"></label></div><div class="field"><span>${t("安装方式")}</span><div class="source-mode-options"><label class="source-mode-option"><input type="radio" name="mode" value="selected" ${source?.mode !== "all" ? "checked" : ""}><span><strong>${t("挑选安装")}</strong><small>${t("新增技能只提示，手动选择安装和更新。")}</small></span></label><label class="source-mode-option"><input type="radio" name="mode" value="all" ${source?.mode === "all" ? "checked" : ""}><span><strong>${t("整库订阅")}</strong><small>${t("每次同步安装全部技能，包含后续新增技能。")}</small></span></label></div></div><div class="info-note">${t("刷新只读取仓库变化。同步修改本地技能，项目与全局配置需另行手动应用。")}</div>`, `<button class="button primary" type="submit">${t("保存来源")}</button>`, "source-editor");
+  sourceEditorBaselines.set(modalRoot.querySelector<HTMLFormElement>("#source-editor")!, source ? structuredClone(source) : null);
 }
 function relinkSourceEditor(source: Source, subpath: string) {
   const entry = sourceEntries(source).find((item) => item.item.subpath === subpath && item.kind === "install");
@@ -791,7 +882,7 @@ function conflictMessage(message: string) { return tMessage(message); }
 function backupsPage() {
   const snapshots = arr(data?.snapshots);
   const list = snapshots.filter((snapshot) => `${date(snapshot.createdAt)} ${snapshotReason(snapshot.reason)} ${snapshot.reason} ${snapshot.id}`.toLowerCase().includes(pageQueries.backups.toLowerCase()));
-  return `${heading(t("备份与恢复"), t("本地快照保留历史，ZIP 压缩包用于迁移。"), button(t("创建快照"), "create-snapshot", "primary", "", "plus"))}<div class="backup-grid"><section class="panel backup-card"><div class="backup-card-heading"><span class="card-icon">${icon("upload")}</span><h2>${t("导出工作空间")}</h2></div><p>${t("技能文件、来源与预设保存为 ZIP。本机项目与全局配置不随包导出。")}</p>${button(t("导出 ZIP"), "export-backup", "", "", "upload")}</section><section class="panel backup-card"><div class="backup-card-heading"><span class="card-icon">${icon("download")}</span><h2>${t("从压缩包恢复")}</h2></div><p>${t("恢复技能与预设后，重新配置项目与全局技能并手动应用。")}</p>${button(t("导入 ZIP"), "import-backup", "", "", "download")}</section>${skillsManagerCard()}</div><section class="panel snapshots-panel"><div class="panel-toolbar"><div><h2>${t("本地快照")}</h2><p>${t("快照不设数量或保留时间上限，暂不自动清理。")}</p><p>${t("恢复不会直接修改已应用的技能文件。")}</p></div>${pageSearch("backups", t("搜索时间或快照原因"))}<span class="badge">${list.length}${t(" 个快照")}</span></div>${!snapshots.length ? empty(t("还没有快照"), t("创建一份快照，为当前技能留下可恢复的版本。"), button(t("创建快照"), "create-snapshot", "", "", "archive"), "archive") : !list.length ? `<div class="small-empty">${t("没有匹配的快照")}</div>` : `<div class="snapshot-table"><div class="table-head"><span>${t("创建时间 / 原因")}</span><span>${t("内容")}</span><span></span></div>${list.map((snapshot) => `<div class="snapshot-row"><div><strong>${e(date(snapshot.createdAt))}</strong><small>${e(snapshotReason(snapshot.reason))}</small></div><span>${snapshot.skillCount}${t(" 个技能 ")}<span class="muted">·</span> ${snapshot.presetCount}${t(" 个预设")}</span>${button(t("恢复"), "restore-snapshot", "small", `data-id="${e(snapshot.id)}"`, "restore")}</div>`).join("")}</div>`}</section><div class="storage-note">${icon("archive")}<div><strong>${t("本地数据目录")}</strong><code>${e(data?.dataDir || "—")}</code></div></div>`;
+  return `${heading(t("备份与恢复"), t("Back up locally, migrate with ZIP, or sync between devices with S3 / R2."), button(t("创建快照"), "create-snapshot", "primary", "", "plus"))}${cloudSyncSection(data?.cloudSync)}<div class="backup-grid"><section class="panel backup-card"><div class="backup-card-heading"><span class="card-icon">${icon("upload")}</span><h2>${t("导出工作空间")}</h2></div><p>${t("技能文件、来源与预设保存为 ZIP。本机项目与全局配置不随包导出。")}</p>${button(t("导出 ZIP"), "export-backup", "", "", "upload")}</section><section class="panel backup-card"><div class="backup-card-heading"><span class="card-icon">${icon("download")}</span><h2>${t("从压缩包恢复")}</h2></div><p>${t("恢复技能与预设后，重新配置项目与全局技能并手动应用。")}</p>${button(t("导入 ZIP"), "import-backup", "", "", "download")}</section>${skillsManagerCard()}</div><section class="panel snapshots-panel"><div class="panel-toolbar"><div><h2>${t("本地快照")}</h2><p>${t("快照不设数量或保留时间上限，暂不自动清理。")}</p><p>${t("恢复不会直接修改已应用的技能文件。")}</p></div>${pageSearch("backups", t("搜索时间或快照原因"))}<span class="badge">${list.length}${t(" 个快照")}</span></div>${!snapshots.length ? empty(t("还没有快照"), t("创建一份快照，为当前技能留下可恢复的版本。"), button(t("创建快照"), "create-snapshot", "", "", "archive"), "archive") : !list.length ? `<div class="small-empty">${t("没有匹配的快照")}</div>` : `<div class="snapshot-table"><div class="table-head"><span>${t("创建时间 / 原因")}</span><span>${t("内容")}</span><span></span></div>${list.map((snapshot) => `<div class="snapshot-row"><div><strong>${e(date(snapshot.createdAt))}</strong><small>${e(snapshotReason(snapshot.reason))}</small></div><span>${snapshot.skillCount}${t(" 个技能 ")}<span class="muted">·</span> ${snapshot.presetCount}${t(" 个预设")}</span>${button(t("恢复"), "restore-snapshot", "small", `data-id="${e(snapshot.id)}"`, "restore")}</div>`).join("")}</div>`}</section><div class="storage-note">${icon("archive")}<div><strong>${t("本地数据目录")}</strong><code>${e(data?.dataDir || "—")}</code></div></div>`;
 }
 function skillsManagerCard() {
   return `<section class="panel backup-card skills-manager-card"><div class="skills-manager-card-heading"><div class="backup-card-heading"><span class="card-icon">${icon("download")}</span><h2>${t("从 skills-manager 导入")}</h2></div>${button(t("导入数据库"), "import-skills-manager", "", "", "download")}</div><p>${t("选择 skills-manager 的 .db 数据库，预览后合并技能、预设与来源。保留 racomi 现有数据，导入前自动创建快照。")}</p>${skillsManagerImportResult ? `<div class="skills-manager-result" role="status"><strong>${icon("check")}${t("最近一次导入已完成")}</strong>${skillsManagerResultView(skillsManagerImportResult)}</div>` : ""}</section>`;
@@ -833,12 +924,27 @@ function confirm(title: string, description: string, body = "", label = t("确�
   modalRoot.querySelector<HTMLElement>('.modal-footer [data-action="close-modal"]')?.focus();
   return new Promise((resolve) => { confirmResolve = resolve; });
 }
+function cloudSyncEditor() {
+  modal(t("S3 / R2 sync"), t("Connect a private bucket and use the same encryption passphrase on every device."), cloudSyncConfigFields(data?.cloudSync?.config), `<button type="button" class="button" data-action="test-cloud-sync">${t("Test connection")}</button><button class="button primary" type="submit">${t("Save sync settings")}</button>`, "cloud-sync-editor");
+}
+function cloudConflictsEditor() {
+  cloudConflictDraft = structuredClone(arr(data?.cloudSync?.conflicts));
+  if (!cloudConflictDraft.length) { toast(t("No sync conflicts to review.")); return; }
+  modal(t("Review sync conflicts"), t("Changes to different records merge automatically. Choose a version for every record edited on both devices."), cloudConflictFields(cloudConflictDraft), `<button class="button primary" type="submit">${t("Apply choices and sync")}</button>`, "cloud-conflicts-editor");
+}
+async function showCloudBackups() {
+  const backups = await task("Loading cloud backups…", () => api.listCloudBackups());
+  if (!backups) return;
+  cloudBackupDraft = backups;
+  modal(t("Cloud backups"), t("Restore sources, skill files, presets, and shared settings from an earlier sync. This creates a new sync version."), cloudBackupsList(backups), "");
+}
 function presetEditor(id = "") {
   const p = presets().find((p) => p.id === id);
   presetFilters = defaultSkillFilters();
   presetSkillDetailsOpen.clear();
   presetSkillSelection = new Set(arr(p?.skillIds).filter((id) => skills().some((skill) => skill.id === id)));
   modal(p ? t("编辑预设") : t("新建预设"), t("将常用技能组织成一个可复用的预设。"), `<input type="hidden" name="entityId" value="${e(p?.id)}"><label class="field"><span>${t("名称")}</span><input name="name" value="${e(p?.name)}" required placeholder="${t("例如：日常开发")}" maxlength="80"></label><label class="field"><span>${t("描述 ")}<i>${t("可选")}</i></span><textarea name="description" rows="2" placeholder="${t("这个预设适合什么场景？")}">${e(p?.description)}</textarea></label>${entityIconPicker("preset", p?.icon)}<div class="label-line preset-selection-heading"><h3>${t("选择技能")}</h3><div class="preset-selection-tools"><span id="preset-selection-count" aria-live="polite"></span>${iconButton(t("全选当前筛选结果"), "select-filtered-preset-skills", "check-square", 'aria-controls="preset-skill-list" aria-pressed="false"')}</div></div><div class="preset-skill-filters"><label class="search-field">${icon("search")}<input name="preset-search" aria-label="${t("搜索已安装技能")}" placeholder="${t("搜索名称、描述或来源")}"></label>${sourceFilter("preset-source", presetFilters.source)}</div><div id="preset-skill-list" class="selection-list modal-selection"></div>`, `<button class="button primary" type="submit">${t("保存预设")}</button>`, "preset-editor");
+  presetEditorBaselines.set(modalRoot.querySelector<HTMLFormElement>("#preset-editor")!, p ? structuredClone(p) : null);
   renderPresetSkills();
 }
 function renderPresetSkills() {
@@ -1140,13 +1246,22 @@ document.addEventListener("submit", async (ev) => {
   const form = ev.target as HTMLFormElement;
   const formID = form.getAttribute("id") || "";
   if (formID === "settings-editor" || form.classList.contains("application-selection")) { ev.preventDefault(); return; }
-  if (!["hub-search", "source-preview", "local-preview", "source-editor", "source-relink", "preset-editor", "project-editor", "global-directory-editor", "project-directory-editor", "backup-import", "backup-export", "skills-manager-import"].includes(formID) && !form.classList.contains("application-selection")) return;
+  if (!["hub-search", "source-preview", "local-preview", "source-editor", "source-relink", "preset-editor", "project-editor", "global-directory-editor", "project-directory-editor", "backup-import", "backup-export", "skills-manager-import", "cloud-sync-editor", "cloud-conflicts-editor"].includes(formID) && !form.classList.contains("application-selection")) return;
   ev.preventDefault();
   const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
   if (submit?.disabled) return;
   if (submit) submit.disabled = true;
   try {
-    if (formID === "hub-search") {
+    if (formID === "cloud-sync-editor") {
+      const config = readCloudSyncConfig(form, data?.cloudSync?.config);
+      const next = await task("Saving sync settings…", () => api.saveCloudSyncConfig(config));
+      if (next) { accept(next); closeSubmittedModal(form); toast(t("Sync settings saved. You can now sync this device.")); }
+    } else if (formID === "cloud-conflicts-editor") {
+      const resolutions = readCloudResolutions(form, cloudConflictDraft);
+      if (!resolutions) { toast(t("Choose a version for every conflict."), true); return; }
+      const next = await task("Resolving sync conflicts…", () => api.resolveCloudSync(resolutions));
+      if (next) { accept(next); closeSubmittedModal(form); toast(t(next.cloudSync.conflicts?.length ? "Cloud changed again. Review the latest conflicts." : "Two-way sync completed.")); }
+    } else if (formID === "hub-search") {
       await searchHub(field(form, "query"));
     } else if (formID === "source-preview") {
       await doPreview(field(form, "source"), field(form, "ref"), field(form, "subpath"));
@@ -1157,7 +1272,7 @@ document.addEventListener("submit", async (ev) => {
       const existing = sources().find((source) => source.id === id);
       const source: Source = { id, name: field(form, "name"), repository: field(form, "repository"), ref: field(form, "ref"), subpath: field(form, "subpath"), mode: field(form, "mode") === "all" ? "all" : "selected", revision: existing?.revision || "", refreshedAt: existing?.refreshedAt || "", lastError: existing?.lastError || "", catalog: arr(existing?.catalog), warnings: existing?.warnings };
       const previousIDs = new Set(sources().map((item) => item.id));
-      const next = await task("正在保存来源…", () => api.saveSource(source));
+      const next = await task("正在保存来源…", () => api.saveSource(source, sourceEditorBaselines.get(form) ?? null));
       if (next) {
         if (existing && existing.mode !== source.mode) sourceSelections.delete(id);
         selectedSource = id || arr(next.state.sources).find((item) => !previousIDs.has(item.id))?.id || "";
@@ -1169,9 +1284,9 @@ document.addEventListener("submit", async (ev) => {
       const id = field(form, "sourceId");
       if (await mutate("正在重新关联技能…", () => api.relinkSourceSkill(field(form, "skillId"), id, field(form, "subpath")), t("技能已关联并更新，预设引用已保留，相关项目与全局配置需手动应用。"))) { updates = null; closeSubmittedModal(form); }
     } else if (formID === "preset-editor") {
-      const preset: Preset = { id: field(form, "entityId"), name: field(form, "name"), icon: field(form, "icon"), description: field(form, "description"), skillIds: [...presetSkillSelection].filter((id) => skills().some((skill) => skill.id === id)) };
+      const preset: Preset = { id: field(form, "entityId"), name: field(form, "name"), icon: field(form, "icon"), description: field(form, "description"), skillIds: [...presetSkillSelection] };
       const previousIDs = new Set(presets().map((item) => item.id));
-      const next = await task("正在保存预设…", () => api.savePreset(preset));
+      const next = await task("正在保存预设…", () => api.savePreset(preset, presetEditorBaselines.get(form) ?? null));
       if (next) {
         const showResult = form.isConnected && modalRoot.contains(form);
         if (showResult) {
@@ -1216,7 +1331,7 @@ document.addEventListener("submit", async (ev) => {
         const existing = settings.customProjectDirectories.find((item) => item.id === id);
         if (absoluteProjectTemplatePath(directory.path) && directory.path !== existing?.path) throw new Error(t("项目目录必须使用相对项目根目录的路径。"));
         const customProjectDirectories = existing ? settings.customProjectDirectories.map((item) => item.id === id ? directory : item) : [...settings.customProjectDirectories, directory];
-        return api.saveSettings({ ...settings, customProjectDirectories });
+        return api.saveSettingsPatch({ customProjectDirectories });
       }, t("项目目录已保存。"))) closeSubmittedModal(form);
     } else if (formID === "global-directory-editor") {
       if (applicationBusy()) { toast(t("工作空间正在更新，请完成后保存目录。"), true); return; }
@@ -1264,6 +1379,44 @@ document.addEventListener("click", async (ev) => {
   const action = target.dataset.action;
   const id = target.dataset.id || "";
   if (!action) return;
+  if (action === "open-cloud-guide") { guideTab = "sync"; currentPage = "guide"; render(); document.querySelector<HTMLElement>("#guide-tab-panel")?.focus({ preventScroll: true }); return; }
+  if (action === "guide-tab") {
+    if (!guideTabs.some((tab) => tab.id === target.dataset.tab)) return;
+    guideTab = target.dataset.tab as GuideTab;
+    render();
+    if (!target.isConnected) [...app.querySelectorAll<HTMLButtonElement>('.guide-tabs [aria-selected="true"], .guide-nav-sub [aria-pressed="true"]')].find((button) => button.getClientRects().length)?.focus({ preventScroll: true });
+    return;
+  }
+  if (action === "open-cloud-settings") { currentPage = "settings"; settingsBackups = true; render(); document.querySelector<HTMLElement>("#settings-tab-panel")?.focus({ preventScroll: true }); document.querySelector("#settings-cloud-title")?.scrollIntoView({ block: "start" }); return; }
+  if (action === "configure-cloud-sync") { cloudSyncEditor(); return; }
+  if (action === "cloud-conflicts") { cloudConflictsEditor(); return; }
+  if (action === "cloud-backups") { await showCloudBackups(); return; }
+  if (action === "test-cloud-sync") {
+    const form = modalRoot.querySelector<HTMLFormElement>("#cloud-sync-editor");
+    if (!form || !form.reportValidity()) return;
+    const config = readCloudSyncConfig(form, data?.cloudSync?.config);
+    const success = await task("Testing cloud connection…", async () => { await api.testCloudSyncConnection(config); return true; });
+    if (success) toast(t("Connection successful. The bucket supports sync reads and writes."));
+    return;
+  }
+  if (action === "sync-cloud") {
+    const next = await task("Syncing with cloud…", () => api.syncCloud());
+    if (next) {
+      accept(next);
+      if (next.cloudSync.conflicts?.length) cloudConflictsEditor();
+      else toast(t("Two-way sync completed."));
+    }
+    return;
+  }
+  if (action === "restore-cloud-backup") {
+    const backup = cloudBackupDraft.find((backup) => backup.id === id);
+    if (!backup) return;
+    const description = t("Restore {0} skills and {1} presets from {2}? A local snapshot is created first. Project paths and deployment files stay on this device; apply changes manually afterward.", { 0: backup.skillCount, 1: backup.presetCount, 2: date(backup.createdAt) });
+    if (!await confirm(t("Restore cloud backup"), description, `<p class="mono">${e(backup.id)}</p>`, t("Restore and sync"), true)) { await showCloudBackups(); return; }
+    const next = await task("Restoring cloud backup…", () => api.restoreCloudBackup(id));
+    if (next) { accept(next); toast(t("Cloud backup restored and published as a new sync version. Review pending applications.")); }
+    return;
+  }
   if (action === "focus-search") { focusSearch(); return; }
   if (action === "retry-selection") { if (!applicationBusy()) selectionAutosave.retry(applicationKey(target.dataset.scope as ApplicationScope, id)); return; }
   if (action === "select-skill") { selectedSkill = id; detailTab = "overview"; render(); return; }
@@ -1453,7 +1606,7 @@ document.addEventListener("click", async (ev) => {
       if (await confirm(t("删除项目目录"), t("删除后不再出现在可选目录中，现有项目保留已保存的路径。"), `<p><strong>${e(directory.name)}</strong></p><p class="mono">${e(directory.path)}</p>`, t("删除目录"), true)) {
         await mutate("正在删除项目目录…", async () => {
           const settings = data!.state.settings;
-          return api.saveSettings({ ...settings, customProjectDirectories: settings.customProjectDirectories.filter((item) => item.id !== id) });
+          return api.saveSettingsPatch({ customProjectDirectories: settings.customProjectDirectories.filter((item) => item.id !== id) });
         }, t("项目目录已删除。"));
       }
     } else if (action === "delete-global-directory") {
@@ -1575,9 +1728,10 @@ function focusSearch() {
   input?.focus();
   input?.select();
 }
-document.addEventListener("racomi:nav-layout-change", syncNavigationLayout);
-document.addEventListener("racomi:locale-change", () => render());
+document.addEventListener("racomi:nav-layout-change", () => { syncNavigationLayout(); savePreference({ navLayout: getNavLayoutPreference() }); });
+document.addEventListener("racomi:locale-change", () => { savePreference({ locale: getLocalePreference() }); render(); });
 document.addEventListener("racomi:theme-change", () => {
+  savePreference({ theme: getThemePreference() });
   for (const button of document.querySelectorAll<HTMLButtonElement>("button[data-theme-preference]")) {
     const active = button.dataset.themePreference === getThemePreference();
     button.classList.toggle("active", active);
@@ -1598,7 +1752,7 @@ document.addEventListener("keydown", (ev) => {
     const current = tabs.indexOf(document.activeElement as HTMLButtonElement);
     const index = ev.key === "Home" ? 0 : ev.key === "End" ? tabs.length - 1 : (current + (ev.key === "ArrowLeft" ? -1 : 1) + tabs.length) % tabs.length;
     ev.preventDefault(); tabs[index]?.click();
-    const activeTab = document.querySelector<HTMLButtonElement>(currentPage === "discover" ? '.discover-tabs [aria-selected="true"]' : currentPage === "settings" ? '.settings-tabs [aria-selected="true"]' : '.detail-tabs [aria-selected="true"]');
+    const activeTab = document.querySelector<HTMLButtonElement>(currentPage === "guide" ? '.guide-tabs [aria-selected="true"]' : currentPage === "discover" ? '.discover-tabs [aria-selected="true"]' : currentPage === "settings" ? '.settings-tabs [aria-selected="true"]' : '.detail-tabs [aria-selected="true"]');
     activeTab?.focus();
   }
   if (ev.key === "Tab" && modalRoot.children.length) {
@@ -1612,3 +1766,4 @@ installSourceFilters();
 installSidebarResize();
 installWorkspaceResize();
 void load();
+window.setInterval(() => { void pollCloudSync(); }, 5000);

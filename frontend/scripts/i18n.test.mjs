@@ -65,7 +65,7 @@ test("product names use the agreed vocabulary without old-name aliases", () => {
 
 test("all literal UI translation keys and authored guide text have catalog entries", () => {
   const missing = [];
-  for (const name of ["main.ts", "settings.ts", "guide.ts"]) {
+  for (const name of ["main.ts", "settings.ts", "guide.ts", "cloud-sync.ts"]) {
     const text = source(name);
     const tree = ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true);
     const checkArgument = (node) => {
@@ -73,7 +73,7 @@ test("all literal UI translation keys and authored guide text have catalog entri
       if (ts.isConditionalExpression(node)) { checkArgument(node.whenTrue); checkArgument(node.whenFalse); }
     };
     const visit = (node) => {
-      if (ts.isCallExpression(node) && node.expression.getText(tree) === "t" && node.arguments[0]) checkArgument(node.arguments[0]);
+      if (ts.isCallExpression(node) && ["t", "text"].includes(node.expression.getText(tree)) && node.arguments[0]) checkArgument(node.arguments[0]);
       // Guide copy also lives in structured steps and FAQ entries.
       if (name === "guide.ts" && ts.isStringLiteral(node) && /[\u3400-\u9fff]/.test(node.text)) checkArgument(node);
       ts.forEachChild(node, visit);
@@ -207,4 +207,13 @@ test("backend templates have complete locales and matching placeholders", () => 
     assert.deepEqual(Object.keys(translations).sort(), ["en", "zh-CN", "zh-TW"]);
     for (const [locale, value] of Object.entries(translations)) assert.deepEqual(slots(key), slots(value), `${locale}: ${key}`);
   }
+});
+
+test("cloud sync connection and conflict diagnostics are localized without changing HTTP details", () => {
+  const i = setup({ saved: "zh-CN" });
+  assert.equal(i.tMessage("S3 PUT failed (HTTP 403)"), "S3 PUT 请求失败（HTTP 403）");
+  assert.equal(i.tMessage("sync encryption passphrase must contain at least 12 characters"), "同步加密口令至少需要 12 个字符");
+  assert.equal(i.tMessage("sync conflict versions changed; run synchronization again before resolving"), "同步冲突的版本已变化，请重新同步后处理");
+  i.setLocale("en");
+  assert.equal(i.tMessage("S3 PUT 请求失败（HTTP 403）"), "S3 PUT failed (HTTP 403)");
 });

@@ -2,7 +2,7 @@ import type { AppSettings } from "./api";
 
 export interface SettingsAutosaveOptions<T> {
   read: () => AppSettings;
-  write: (settings: AppSettings) => Promise<T>;
+  write: (settings: AppSettings, patch: Partial<AppSettings>) => Promise<T>;
   settings: (result: T) => AppSettings;
   start: () => void;
   error: (error: unknown) => void;
@@ -17,6 +17,9 @@ export interface SettingsAutosave {
 
 function cloneSettings(settings: AppSettings): AppSettings {
   return {
+    ...(settings.theme ? { theme: settings.theme } : {}),
+    ...(settings.locale ? { locale: settings.locale } : {}),
+    ...(settings.navLayout ? { navLayout: settings.navLayout } : {}),
     deploymentMode: settings.deploymentMode,
     defaultProjectDirectories: [...settings.defaultProjectDirectories],
     defaultGlobalDirectories: [...settings.defaultGlobalDirectories],
@@ -26,6 +29,9 @@ function cloneSettings(settings: AppSettings): AppSettings {
 
 function clonePatch(patch: Partial<AppSettings>): Partial<AppSettings> {
   const snapshot: Partial<AppSettings> = {};
+  if (patch.theme !== undefined) snapshot.theme = patch.theme;
+  if (patch.locale !== undefined) snapshot.locale = patch.locale;
+  if (patch.navLayout !== undefined) snapshot.navLayout = patch.navLayout;
   if (patch.deploymentMode !== undefined) snapshot.deploymentMode = patch.deploymentMode;
   if (patch.defaultProjectDirectories !== undefined) snapshot.defaultProjectDirectories = [...patch.defaultProjectDirectories];
   if (patch.defaultGlobalDirectories !== undefined) snapshot.defaultGlobalDirectories = [...patch.defaultGlobalDirectories];
@@ -61,7 +67,7 @@ export function createSettingsAutosave<T>(options: SettingsAutosaveOptions<T>): 
     while (queue.length) {
       const patch = queue.shift()!;
       try {
-        const result = await options.write(cloneSettings({ ...committed, ...patch }));
+        const result = await options.write(cloneSettings({ ...committed, ...patch }), clonePatch(patch));
         committed = cloneSettings(options.settings(result));
         latestResult = result;
       } catch (error) {

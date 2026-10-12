@@ -23,6 +23,9 @@ export interface Target {
 }
 export interface ProjectDirectoryTemplate { id: string; name: string; path: string }
 export interface AppSettings {
+  theme?: "light" | "dark" | "system";
+  locale?: "zh-CN" | "zh-TW" | "en" | "system";
+  navLayout?: "auto" | "side" | "top";
   deploymentMode: "copy" | "symlink";
   defaultProjectDirectories: string[];
   defaultGlobalDirectories: string[];
@@ -32,8 +35,21 @@ export interface GlobalApplication {
   key: string; agentId: string; agentName: string; name: string; path: string; description: string; target: Target | null;
 }
 export interface Snapshot { id: string; createdAt: string; reason: string; skillCount: number; presetCount: number }
+export interface CloudSyncConfig {
+  endpoint: string; region: string; bucket: string; prefix: string;
+  accessKeyId: string; secretAccessKey: string; sessionToken: string; passphrase: string;
+  pathStyle: boolean; autoSync: boolean; intervalMinutes: number;
+  hasSecretAccessKey: boolean; hasSessionToken: boolean; hasPassphrase: boolean;
+}
+export interface SyncConflict { key: string; kind: string; name: string; local: unknown; remote: unknown }
+export interface CloudSyncStatus {
+  config: CloudSyncConfig; configured: boolean; syncing: boolean;
+  lastSyncAt: string; lastError: string; conflicts: SyncConflict[];
+}
+export interface CloudBackup { id: string; createdAt: string; skillCount: number; presetCount: number }
 export interface DirectoryOption { id: string; name: string; path: string; kind: "global" | "project"; description: string }
 export interface AppState {
+  cloudSync: CloudSyncStatus;
   directoryOptions: DirectoryOption[];
   dataDir: string;
   homeDir?: string;
@@ -72,16 +88,24 @@ export async function invoke<T>(method: string, ...args: unknown[]): Promise<T> 
 }
 export const api = {
   state: () => invoke<AppState>("GetState"),
+  cloudSyncStatus: () => invoke<CloudSyncStatus>("GetCloudSyncStatus"),
+  saveCloudSyncConfig: (config: CloudSyncConfig) => invoke<AppState>("SaveCloudSyncConfig", config),
+  testCloudSyncConnection: (config: CloudSyncConfig) => invoke<void>("TestCloudSyncConnection", config),
+  syncCloud: () => invoke<AppState>("SyncCloud"),
+  resolveCloudSync: (resolutions: Record<string, "local" | "remote">) => invoke<AppState>("ResolveCloudSync", resolutions),
+  listCloudBackups: () => invoke<CloudBackup[]>("ListCloudBackups"),
+  restoreCloudBackup: (id: string) => invoke<AppState>("RestoreCloudBackup", id),
   readSkillDocument: (id: string) => invoke<string>("ReadSkillDocument", id),
   setTheme: (preference: "light" | "dark" | "system") => invoke<void>("SetTheme", preference),
   setLocale: (locale: "zh-CN" | "zh-TW" | "en") => invoke<void>("SetLocale", locale),
   saveSettings: (settings: AppSettings) => invoke<AppState>("SaveSettings", settings),
+  saveSettingsPatch: (patch: Partial<AppSettings>, onlyMissing = false) => invoke<AppState>("SaveSettingsPatch", patch, onlyMissing),
   search: (query: string) => invoke<SearchResult[]>("Search", query),
   listSkills: (page: number) => invoke<SkillListPage>("ListSkills", page),
   preview: (source: string, ref: string, subpath: string) => invoke<Preview>("Preview", source, ref, subpath),
   previewLocal: (path: string) => invoke<Preview>("PreviewLocal", path),
   install: (id: string, paths: string[]) => invoke<AppState>("Install", id, paths),
-  saveSource: (source: Source) => invoke<AppState>("SaveSource", source),
+  saveSource: (source: Source, expected: Source | null = null) => invoke<AppState>("SaveSourceChecked", source, expected),
   deleteSource: (id: string) => invoke<AppState>("DeleteSource", id),
   refreshSource: (id: string) => invoke<AppState>("RefreshSource", id),
   syncSource: (id: string, revision: string, paths: string[]) => invoke<AppState>("SyncSource", id, revision, paths),
@@ -91,7 +115,7 @@ export const api = {
   updateSkills: (ids: string[]) => invoke<AppState>("UpdateSkills", ids),
   removeSkills: (ids: string[]) => invoke<AppState>("RemoveSkills", ids),
   removeSkill: (id: string) => invoke<AppState>("RemoveSkill", id),
-  savePreset: (preset: Preset) => invoke<AppState>("SavePreset", preset),
+  savePreset: (preset: Preset, expected: Preset | null = null) => invoke<AppState>("SavePresetChecked", preset, expected),
   deletePreset: (id: string) => invoke<AppState>("DeletePreset", id),
   saveProject: (project: Target) => invoke<AppState>("SaveProject", project),
   deleteProject: (id: string) => invoke<AppState>("DeleteProject", id),

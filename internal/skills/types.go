@@ -56,6 +56,9 @@ type ProjectDirectory struct {
 }
 
 type Settings struct {
+	Theme                     string             `json:"theme,omitempty"`
+	Locale                    string             `json:"locale,omitempty"`
+	NavLayout                 string             `json:"navLayout,omitempty"`
 	DeploymentMode            string             `json:"deploymentMode"`
 	DefaultProjectDirectories []string           `json:"defaultProjectDirectories"`
 	DefaultGlobalDirectories  []string           `json:"defaultGlobalDirectories"`

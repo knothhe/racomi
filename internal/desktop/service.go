@@ -27,6 +27,7 @@ type AppState struct {
 	DirectoryOptions   []DirectoryOption         `json:"directoryOptions"`
 	Projects           []skillstore.Target       `json:"projects"`
 	GlobalApplications []GlobalApplication       `json:"globalApplications"`
+	CloudSync          CloudSyncStatus           `json:"cloudSync"`
 }
 
 type Service struct {
@@ -38,6 +39,7 @@ type Service struct {
 	locale        string
 	app           *application.App
 	legacyPreview *skillsManagerSession
+	cloud         *cloudSyncRuntime
 }
 
 func New(root string) (*Service, error) {
@@ -56,7 +58,13 @@ func New(root string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{store: store, sources: sources.New(filepath.Join(store.Root(), "cache", "sources")), theme: "system", locale: "zh-CN"}, nil
+	cloud, err := loadCloudSync(store.Root())
+	if err != nil {
+		// Optional cloud configuration must never prevent opening the local library.
+		cloud = newCloudSyncRuntime(store.Root())
+		cloud.lastError = err.Error()
+	}
+	return &Service{store: store, sources: sources.New(filepath.Join(store.Root(), "cache", "sources")), theme: "system", locale: "zh-CN", cloud: cloud}, nil
 }
 
 func Attach(service *Service, app *application.App) {
@@ -76,7 +84,8 @@ func Attach(service *Service, app *application.App) {
 
 // ServiceStartup runs after the platform environment is ready and before windows
 // are opened, so the first native background follows the system appearance.
-func (s *Service) ServiceStartup(_ context.Context, _ application.ServiceOptions) error {
+func (s *Service) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
+	s.startCloudSync(ctx)
 	s.themeMu.Lock()
 	defer s.themeMu.Unlock()
 	s.applyThemeLocked()
@@ -186,6 +195,10 @@ func (s *Service) ReadSkillDocument(skillID string) (string, error) {
 }
 
 func (s *Service) GetState() (AppState, error) {
+	// Sample completion before the library. A concurrent sync may make this
+	// marker older than the returned data, which polling can safely reload;
+	// sampling it afterward could acknowledge data this response never read.
+	cloud := s.GetCloudSyncStatus()
 	state, err := s.store.State()
 	if err != nil {
 		return AppState{}, err
@@ -216,7 +229,7 @@ func (s *Service) GetState() (AppState, error) {
 			projects = append(projects, target)
 		}
 	}
-	return AppState{DataDir: s.store.Root(), HomeDir: applicationPath(home), State: state, Snapshots: snapshots, DirectoryOptions: directories, Projects: projects, GlobalApplications: globals}, nil
+	return AppState{DataDir: s.store.Root(), HomeDir: applicationPath(home), State: state, Snapshots: snapshots, DirectoryOptions: directories, Projects: projects, GlobalApplications: globals, CloudSync: cloud}, nil
 }
 
 func (s *Service) Search(ctx context.Context, query string) ([]sources.SearchResult, error) {

@@ -27,14 +27,16 @@ function harness(initial = initialSettings()) {
   let active = 0;
   let maxActive = 0;
   const writes: AppSettings[] = [];
+  const patches: Partial<AppSettings>[] = [];
   const requests: ReturnType<typeof deferred<Result>>[] = [];
   const starts: boolean[] = [];
   const errors: unknown[] = [];
   const settlements: { result: Result | undefined; busy: boolean }[] = [];
   const autosave = createSettingsAutosave<Result>({
     read: () => current,
-    write: async (settings) => {
+    write: async (settings, patch) => {
       writes.push(settings);
+      patches.push(patch);
       const request = deferred<Result>();
       requests.push(request);
       active += 1;
@@ -50,7 +52,7 @@ function harness(initial = initialSettings()) {
     },
   });
   return {
-    autosave, writes, requests, starts, errors, settlements,
+    autosave, writes, patches, requests, starts, errors, settlements,
     get maxActive() { return maxActive; },
     set current(settings: AppSettings) { current = settings; },
   };
@@ -285,4 +287,38 @@ test("settled receives the last successful response even when the tail of the qu
   await h.autosave.idle();
   assert.equal(h.errors.length, 2);
   assert.deepEqual(h.settlements, [{ result: successful, busy: false }]);
+});
+
+test("shared appearance preferences survive unrelated settings saves and serialize as patches", async () => {
+  const h = harness({ ...initialSettings(), theme: "dark", locale: "zh-TW", navLayout: "top" });
+  h.autosave.save({ deploymentMode: "symlink" });
+  h.autosave.save({ theme: "light", locale: "en", navLayout: "side" });
+  assert.deepEqual(h.patches[0], { deploymentMode: "symlink" });
+  assert.deepEqual(h.writes[0], { ...initialSettings(), deploymentMode: "symlink", theme: "dark", locale: "zh-TW", navLayout: "top" });
+  h.requests[0].resolve({ id: 1, settings: copy(h.writes[0]) });
+  await nextTurn();
+  assert.deepEqual(h.patches[1], { theme: "light", locale: "en", navLayout: "side" });
+  assert.deepEqual(h.writes[1], { ...initialSettings(), deploymentMode: "symlink", theme: "light", locale: "en", navLayout: "side" });
+  h.requests[1].resolve({ id: 2, settings: copy(h.writes[1]) });
+  await h.autosave.idle();
+});
+
+test("a queued settings write sends only its explicit patch after cloud changed unrelated preferences", async () => {
+  let server = { ...initialSettings(), theme: "light" as const, locale: "en" as const, navLayout: "auto" as const } as AppSettings;
+  const patches: Partial<AppSettings>[] = [];
+  const autosave = createSettingsAutosave<AppSettings>({
+    read: () => ({ ...initialSettings(), theme: "dark", locale: "zh-CN", navLayout: "side" }),
+    write: async (_staleSettings, patch) => {
+      patches.push(patch);
+      // A remote commit arrived while this form was still based on old settings.
+      server = { ...server, ...patch };
+      return server;
+    },
+    settings: (result) => result,
+    start() {}, error(error) { throw error; }, settled() {},
+  });
+  autosave.save({ deploymentMode: "symlink" });
+  await autosave.idle();
+  assert.deepEqual(patches, [{ deploymentMode: "symlink" }]);
+  assert.deepEqual(server, { ...initialSettings(), deploymentMode: "symlink", theme: "light", locale: "en", navLayout: "auto" });
 });

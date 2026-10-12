@@ -1,8 +1,13 @@
 // An isolated browser fixture. All mutations affect this in-memory workspace;
 // no Wails service, user's skills or deployment directory is accessed.
 import { api, type AppState, type ApplyPlan, type Target } from "../src/api";
+import { defaultCloudSyncConfig } from "../src/cloud-sync";
+import { getLocalePreference } from "../src/i18n";
+import { getThemePreference } from "../src/theme";
+import { getNavLayoutPreference } from "../src/layout";
 
 const state: AppState = {
+  cloudSync: { config: defaultCloudSyncConfig(), configured: false, syncing: false, lastSyncAt: "", lastError: "", conflicts: [] },
   dataDir: "/test/racomi", homeDir: "/test/home", directoryOptions: [], snapshots: [], projects: [],
   globalApplications: [
     { key: "codex-user", agentId: "agents", agentName: "共享", name: "用户技能目录", path: "/test/home/.agents/skills", description: "Codex 与 Cursor 共用的本机用户技能目录，适用于所有项目。", target: null },
@@ -11,7 +16,7 @@ const state: AppState = {
     { key: "cursor-user", agentId: "cursor", agentName: "Cursor", name: "用户技能目录", path: "/test/home/.cursor/skills", description: "Cursor 的本机用户技能目录，适用于所有项目。", target: null },
   ],
   state: {
-    schema: 2, settings: { deploymentMode: "copy", defaultProjectDirectories: ["agents"], defaultGlobalDirectories: ["codex-user"], customProjectDirectories: [] },
+    schema: 2, settings: { theme: getThemePreference(), locale: getLocalePreference(), navLayout: getNavLayoutPreference(), deploymentMode: "copy", defaultProjectDirectories: ["agents"], defaultGlobalDirectories: ["codex-user"], customProjectDirectories: [] },
     skills: [
       { id: "design", name: "Design Skill", description: "Design interface", source: "https://example.com/team/design", sourceId: "source-design" },
       { id: "code", name: "Code Skill", description: "Code review", source: "https://example.com/team/code", sourceId: "source-code" },
@@ -27,6 +32,14 @@ const state: AppState = {
 };
 
 const testParameters = new URLSearchParams(location.search);
+if (testParameters.has("cloud-sync") || testParameters.has("cloud-conflicts")) {
+  state.cloudSync.config = { ...defaultCloudSyncConfig(), endpoint: "https://example.r2.cloudflarestorage.com", bucket: "racomi-test", accessKeyId: "test-access-id", hasSecretAccessKey: true, hasPassphrase: true };
+  state.cloudSync.configured = true;
+}
+if (testParameters.has("cloud-conflicts")) state.cloudSync.conflicts = [
+  { key: "preset/preset-dev", kind: "preset", name: "Development", local: { name: "Development", skillIds: ["design", "code"] }, remote: { name: "Development on laptop", skillIds: ["code"] } },
+  { key: "source/source-design", kind: "source", name: "Design source", local: null, remote: { repository: "https://example.com/team/design", ref: "main" } },
+];
 let projectSelectionFailures = testParameters.has("project-selection-fail-once") ? 1 : 0;
 // Opt in to realistic, populated pages without changing regression-test fixtures.
 const visualReview = testParameters.has("visual-review");
@@ -332,6 +345,30 @@ const installLocal = async (id: string, paths: string[]) => {
 };
 Object.assign(api, {
   state: async () => copy(), setTheme: async () => {}, setLocale: async () => {},
+  saveSettingsPatch: async (patch: Partial<AppState["state"]["settings"]>, onlyMissing = false) => {
+    const fields = onlyMissing ? Object.fromEntries(Object.entries(patch).filter(([key]) => !state.state.settings[key as keyof AppState["state"]["settings"]])) : patch;
+    return api.saveSettings({ ...state.state.settings, ...fields });
+  },
+  cloudSyncStatus: async () => structuredClone(state.cloudSync),
+  saveCloudSyncConfig: async (config: AppState["cloudSync"]["config"]) => {
+    if (!config.endpoint || !config.bucket || !config.accessKeyId) throw new Error("Endpoint, bucket, and access key are required");
+    if (!config.secretAccessKey && !state.cloudSync.config.hasSecretAccessKey) throw new Error("Secret access key is required");
+    if (!config.passphrase && !state.cloudSync.config.hasPassphrase || config.passphrase && config.passphrase.length < 12) throw new Error("Encryption passphrase must contain at least 12 characters");
+    state.cloudSync.config = { ...config, secretAccessKey: "", sessionToken: "", passphrase: "", hasSecretAccessKey: !!config.secretAccessKey || state.cloudSync.config.hasSecretAccessKey, hasSessionToken: !!config.sessionToken || state.cloudSync.config.hasSessionToken, hasPassphrase: !!config.passphrase || state.cloudSync.config.hasPassphrase };
+    state.cloudSync.configured = true;
+    return copy();
+  },
+  testCloudSyncConnection: async () => { document.documentElement.dataset.cloudConnectionTested = "true"; },
+  syncCloud: async () => { state.cloudSync.lastSyncAt = new Date().toISOString(); document.documentElement.dataset.cloudSynced = "true"; return copy(); },
+  resolveCloudSync: async (resolutions: Record<string, "local" | "remote">) => {
+    if (state.cloudSync.conflicts.some((conflict) => !resolutions[conflict.key])) throw new Error("Choose every conflict");
+    document.documentElement.dataset.cloudResolutions = JSON.stringify(resolutions);
+    state.cloudSync.conflicts = [];
+    state.cloudSync.lastSyncAt = new Date().toISOString();
+    return copy();
+  },
+  listCloudBackups: async () => [{ id: "cloud-backup-test", createdAt: "2026-10-12T01:00:00Z", skillCount: 3, presetCount: 1 }],
+  restoreCloudBackup: async (id: string) => { document.documentElement.dataset.cloudBackupRestored = id; state.cloudSync.lastSyncAt = new Date().toISOString(); return copy(); },
   search: async (query: string) => state.state.skills.filter((skill) => skill.sourceId && `${skill.name} ${skill.source}`.toLowerCase().includes(query.trim().toLowerCase())).map((skill) => ({ name: skill.name, slug: `${skill.sourceId}/${skill.name}`, source: skill.source, installs: 100, url: skill.source, supported: true })),
   listSkills: async (page: number) => {
     const results = await api.search("");
