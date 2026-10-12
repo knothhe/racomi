@@ -354,6 +354,16 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .preview-heading h3 { display: flex; align-items: center; gap: 6px; }
 .preview-heading p { color: var(--muted); font-size: 10.5px; margin-top: 4px; }
+.preview-request { gap: 12px; }
+.preview-request .preview-heading { margin-bottom: 0; }
+.preview-request-source { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.preview-request > p { line-height: 1.65; }
+.preview-elapsed { color: var(--accent); font-variant-numeric: tabular-nums; }
+.preview-request .button { align-self: flex-start; }
+.preview-request-error { padding: 12px; border-radius: 8px; background: var(--red-soft); color: var(--red); line-height: 1.65; }
+.preview-error-details { color: var(--muted); font-size: 11px; }
+.preview-error-details summary { cursor: pointer; }
+.preview-error-details pre { margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.65 var(--code); }
 .selection-list { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .preview-panel .selection-list { flex: 1; min-height: 80px; overflow: auto; overscroll-behavior: contain; }
 .selection-row { display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border-bottom: 1px solid var(--line-2); cursor: pointer; }

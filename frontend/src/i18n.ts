@@ -75,8 +75,14 @@ const backendReasonTemplates = new Set([
   "no usable skills were found; skipped {0}: {1}",
 ]);
 
+const backendSingleReasonTemplates = new Set([
+  "cannot clone repository: {0}", "cannot refresh repository: {0}",
+  "Git operation timed out: {0}", "Git operation was canceled: {0}",
+  "Git operation timed out or was canceled: {0}",
+]);
+
 const backendTemplates = Object.entries(backendMessages).flatMap(([key, translations]) => [...new Set([key, ...Object.values(translations)])].filter((value) => /\{\w+\}/.test(value)).map((template) => {
-  const reasonSlot = backendReasonTemplates.has(key) ? "1" : undefined;
+  const reasonSlot = backendReasonTemplates.has(key) ? "1" : backendSingleReasonTemplates.has(key) ? "0" : undefined;
   const names: string[] = [];
   const parts = template.split(/\{(\w+)\}/g);
   const pattern = parts.map((part, index) => {

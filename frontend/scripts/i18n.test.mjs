@@ -162,6 +162,17 @@ test("preview limit reasons are localized inside unsupported-content diagnostics
   }
 });
 
+test("Git timeout and cancellation reasons translate inside clone and fetch errors", () => {
+  const i = setup({ saved: "zh-CN" });
+  assert.equal(i.tMessage("cannot clone repository: Git operation timed out: context deadline exceeded"), "无法下载仓库：Git 操作超时，请检查网络或代理连接后重试。详情：已达到等待时限");
+  assert.equal(i.tMessage("cannot refresh repository: Git operation was canceled: context canceled"), "无法刷新仓库：Git 操作已取消。详情：请求已取消");
+  assert.equal(i.tMessage("cannot clone repository: fatal: unable to access 'https://example.com/team/repo': connection reset"), "无法下载仓库：fatal: unable to access 'https://example.com/team/repo': connection reset");
+  i.setLocale("zh-TW");
+  assert.match(i.tMessage("cannot clone repository: Git operation timed out: context deadline exceeded"), /無法下載儲存庫：Git 操作逾時/);
+  i.setLocale("en");
+  assert.match(i.tMessage("cannot refresh repository: Git operation was canceled: context canceled"), /Could not refresh the repository: Git operation was canceled/);
+});
+
 test("force apply review errors explain how to retry and preserve literal paths", () => {
   const i = setup({ saved: "zh-CN" });
   assert.equal(i.tMessage("target contents changed since review; preview and apply again"), "目标内容在预览后发生变化，请重新预览并应用");

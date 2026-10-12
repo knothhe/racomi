@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,9 +14,36 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	skillstore "racomi/internal/skills"
 )
+
+func TestGitCommandDistinguishesTimeoutAndCancellation(t *testing.T) {
+	for _, timeout := range []bool{false, true} {
+		name := "canceled"
+		cause := context.Canceled
+		message := "Git operation was canceled"
+		if timeout {
+			name, cause, message = "timeout", context.DeadlineExceeded, "Git operation timed out"
+		}
+		t.Run(name, func(t *testing.T) {
+			var ctx context.Context
+			var cancel context.CancelFunc
+			if timeout {
+				ctx, cancel = context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+			} else {
+				ctx, cancel = context.WithCancel(context.Background())
+				cancel()
+			}
+			defer cancel()
+			_, err := gitCommand(ctx, "", "--version")
+			if !errors.Is(err, cause) || !strings.Contains(err.Error(), message) {
+				t.Fatalf("incorrect Git failure reason: %v", err)
+			}
+		})
+	}
+}
 
 func testGit(t *testing.T, repo string, args ...string) string {
 	t.Helper()

@@ -594,7 +594,10 @@ func gitCommand(parent context.Context, repo string, args ...string) (string, er
 	cmd.Stdout, cmd.Stderr = out, errOut
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
-			return "", fmt.Errorf("Git operation timed out or was canceled: %w", ctx.Err())
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return "", fmt.Errorf("Git operation timed out: %w", ctx.Err())
+			}
+			return "", fmt.Errorf("Git operation was canceled: %w", ctx.Err())
 		}
 		message := strings.TrimSpace(string(errOut.data))
 		if message == "" {

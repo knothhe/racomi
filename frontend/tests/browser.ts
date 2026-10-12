@@ -560,6 +560,7 @@ Object.assign(api, {
 if (visualReview) {
   // Keep discovery, backup, and editing interactions inside the fixture as well.
   let nextVisualID = 1;
+  let previewAttempts = 0;
   const snapshotStates = new Map(state.snapshots.map((snapshot) => [snapshot.id, structuredClone(state.state)]));
   const availableSkills = state.state.sources[0].catalog.filter((skill) => !skill.removed && !skill.skipReason);
   let previewSource = "https://example.com/team/design";
@@ -581,6 +582,11 @@ if (visualReview) {
     },
     preview: async (source: string, ref: string) => {
       previewSource = source;
+      const delay = Math.min(60000, Math.max(0, Number(testParameters.get("preview-delay")) || 0));
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+      if (testParameters.has("preview-timeout-once") && previewAttempts++ === 0) {
+        throw new Error("cannot clone repository: Git operation timed out: context deadline exceeded");
+      }
       return { id: "visual-preview", source, ref: ref || "main", revision: "9e8d7c6b5a40", candidates: availableSkills.map((skill) => ({ name: skill.name, description: skill.description, subpath: skill.subpath, revision: skill.revision })), warnings: [], skipped: [] };
     },
     install: async (id: string, paths: string[]) => {

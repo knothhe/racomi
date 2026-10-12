@@ -97,6 +97,8 @@ let searchQuery = "";
 let hubResultQuery = "";
 let hubListing: Pick<SkillListPage, "page" | "total" | "hasMore"> | null = null;
 let preview: Preview | null = null;
+type PreviewRequest = { source: string; ref: string; subpath: string; matchName: string; kind: "git" | "local"; startedAt: number; loading: boolean; error: string };
+let previewRequest: PreviewRequest | null = null;
 let sourceDraft = "";
 let localSourceDraft = "";
 let refDraft = "";
@@ -705,7 +707,28 @@ function ensureHubResults() {
 function discoverPage() {
   const tabs = ([["hub", 'Skill Hub <span class="tab-note">skills.sh</span>'], ["git", e(t("Git 仓库"))], ["local", e(t("本地目录"))]] as const).map(([tab, label]) => `<button type="button" id="discover-tab-${tab}" class="tab-button ${discoverTab === tab ? "active" : ""}" data-action="discover-tab" data-tab="${tab}" role="tab" aria-controls="discover-tab-panel" aria-selected="${discoverTab === tab}" tabindex="${discoverTab === tab ? 0 : -1}">${label}</button>`).join("");
   const local = `<section class="panel import-panel" data-preserve-scroll="discover-local"><form id="local-preview"><label class="field"><span>${t("本地技能目录")}</span><div class="input-with-button"><input name="localSource" data-page-search="discover" aria-label="${e(t("本地技能目录"))}" aria-describedby="local-source-help" required placeholder="/Users/you/skills" value="${e(localSourceDraft)}">${iconButton(t("选择目录"), "choose-local-dir", "folder")}</div><small id="local-source-help">${t("选择包含 SKILL.md 的技能目录，或包含多个技能的父目录。")}</small></label><div class="form-footer"><button class="button primary" type="submit">${icon("search")}${t("预览本地技能")}</button></div></form></section>`;
-  return `${heading(t("发现"), "")}<div class="tabs discover-tabs" role="tablist" aria-label="${t("导入方式")}">${tabs}</div><div id="discover-tab-panel" class="discover-content ${preview ? "has-preview" : ""}" role="tabpanel" aria-labelledby="discover-tab-${discoverTab}" tabindex="0">${discoverTab === "hub" ? `<section class="panel hub-panel" data-preserve-scroll="discover-hub:${e(hubResultQuery)}"><form id="hub-search" class="inline-form"><label class="search-field">${icon("search")}<input name="query" data-page-search="discover" placeholder="${t("搜索 skills.sh，留空浏览默认榜单")}" value="${e(searchQuery)}" aria-label="${t("搜索 skills.sh")}">${searchShortcut()}</label><button class="button primary" type="submit">${t("搜索")}</button></form><div id="search-results" data-preserve-scroll="discover-results:${e(hubResultQuery)}" tabindex="0" role="region" aria-label="${t("搜索结果")}">${hubResults()}</div></section>` : discoverTab === "local" ? local : `<section class="panel import-panel" data-preserve-scroll="discover-git"><form id="source-preview"><div class="form-grid"><label class="field span-2"><span>${t("仓库地址 ")}<i>${t("必填")}</i></span><input name="source" data-page-search="discover" required placeholder="${t("owner/repo 或 https://github.com/owner/repo")}" value="${e(sourceDraft)}"></label><label class="field"><span>${t("分支、标签或 Commit ")}<i>${t("可选")}</i></span><input name="ref" placeholder="${t("默认分支")}" value="${e(refDraft)}"></label><label class="field"><span>${t("技能子目录 ")}<i>${t("可选")}</i></span><input name="subpath" placeholder="${t("自动扫描仓库")}" value="${e(subpathDraft)}"></label></div><div class="form-footer"><button class="button primary" type="submit">${icon("search")}${t("预览仓库")}</button></div></form></section>`}${preview ? previewPanel() : ""}</div>`;
+  return `${heading(t("发现"), "")}<div class="tabs discover-tabs" role="tablist" aria-label="${t("导入方式")}">${tabs}</div><div id="discover-tab-panel" class="discover-content ${preview || previewRequest ? "has-preview" : ""}" role="tabpanel" aria-labelledby="discover-tab-${discoverTab}" tabindex="0">${discoverTab === "hub" ? `<section class="panel hub-panel" data-preserve-scroll="discover-hub:${e(hubResultQuery)}"><form id="hub-search" class="inline-form"><label class="search-field">${icon("search")}<input name="query" data-page-search="discover" placeholder="${t("搜索 skills.sh，留空浏览默认榜单")}" value="${e(searchQuery)}" aria-label="${t("搜索 skills.sh")}">${searchShortcut()}</label><button class="button primary" type="submit">${t("搜索")}</button></form><div id="search-results" data-preserve-scroll="discover-results:${e(hubResultQuery)}" tabindex="0" role="region" aria-label="${t("搜索结果")}">${hubResults()}</div></section>` : discoverTab === "local" ? local : `<section class="panel import-panel" data-preserve-scroll="discover-git"><form id="source-preview"><div class="form-grid"><label class="field span-2"><span>${t("仓库地址 ")}<i>${t("必填")}</i></span><input name="source" data-page-search="discover" required placeholder="${t("owner/repo 或 https://github.com/owner/repo")}" value="${e(sourceDraft)}"></label><label class="field"><span>${t("分支、标签或 Commit ")}<i>${t("可选")}</i></span><input name="ref" placeholder="${t("默认分支")}" value="${e(refDraft)}"></label><label class="field"><span>${t("技能子目录 ")}<i>${t("可选")}</i></span><input name="subpath" placeholder="${t("自动扫描仓库")}" value="${e(subpathDraft)}"></label></div><div class="form-footer"><button class="button primary" type="submit">${icon("search")}${t("预览仓库")}</button></div></form></section>`}${preview ? previewPanel() : previewRequest ? previewRequestPanel() : ""}</div>`;
+}
+function previewWaitHint(request: PreviewRequest, seconds: number) {
+  if (request.kind === "local") return t("正在读取本地技能文件，请稍候。");
+  if (seconds >= 45) return t("等待时间较长，请检查网络或代理连接。超时后可以重试。");
+  if (seconds >= 15) return t("仍在等待仓库内容，网络较慢或仓库较大时可能需要更久。");
+  return t("正在获取仓库内容并查找技能。首次预览可能需要更长时间。");
+}
+function updatePreviewWait() {
+  if (!previewRequest?.loading) return;
+  const seconds = Math.max(0, Math.floor((Date.now() - previewRequest.startedAt) / 1000));
+  const elapsed = document.querySelector("#preview-elapsed");
+  const hint = document.querySelector("#preview-wait-hint");
+  if (elapsed) elapsed.textContent = t("已等待 {0} 秒", { 0: seconds });
+  if (hint) hint.textContent = previewWaitHint(previewRequest, seconds);
+}
+function previewRequestPanel() {
+  const request = previewRequest!;
+  const seconds = Math.max(0, Math.floor((Date.now() - request.startedAt) / 1000));
+  const timedOut = /timed out|timeout|deadline exceeded/i.test(request.error);
+  const title = request.loading ? t("正在准备预览…") : timedOut ? t("预览超时") : t("未能完成预览");
+  return `<section class="panel preview-panel preview-request" aria-labelledby="preview-request-title" aria-busy="${request.loading}"><div class="preview-heading"><h3 id="preview-request-title">${request.loading ? '<span class="spinner" aria-hidden="true"></span>' : icon("alert")}${title}</h3></div><p class="mono preview-request-source">${e(request.source)}</p>${request.loading ? `<p id="preview-elapsed" class="preview-elapsed" role="timer" aria-live="off">${t("已等待 {0} 秒", { 0: seconds })}</p><p id="preview-wait-hint" role="status">${previewWaitHint(request, seconds)}</p><p class="muted">${t("可以切换到其他页面，预览会继续进行。")}</p>` : `<div class="preview-request-error" role="alert"><p>${request.kind === "local" ? t("请检查目录是否存在且可读取，然后重试。") : timedOut ? t("获取仓库或读取技能内容超时。请检查网络或代理连接后重试。") : t("请检查网络、仓库地址和访问权限后重试。")}</p></div>${button(t("重试预览"), "retry-preview", "primary", "", "refresh")}<details class="preview-error-details"><summary>${t("错误详情")}</summary><pre>${e(tMessage(request.error))}</pre></details>`}</section>`;
 }
 function previewPanel() {
   const skipped = arr(preview!.skipped);
@@ -1101,12 +1124,27 @@ async function doPreview(source: string, ref: string, subpath: string, matchName
   if (kind === "local") localSourceDraft = source;
   else { sourceDraft = source; refDraft = ref; subpathDraft = subpath; }
   preview = null; selectedCandidates.clear();
-  if (currentPage === "discover") render();
-  const result = await task(kind === "local" ? "正在读取本地目录并发现技能…" : "正在读取来源并发现技能…", () => kind === "local" ? api.previewLocal(source) : api.preview(source, ref, subpath));
-  if (result) {
-    preview = result;
-    selectedCandidates = new Set(arr(result.candidates).filter((c) => matchName ? c.name === matchName || c.subpath.split("/").pop() === matchName : true).map((c) => c.subpath));
-    if (matchName && !selectedCandidates.size) toast(t("来源预览已完成，请根据名称手动选择技能。"));
+  const request: PreviewRequest = { source, ref, subpath, matchName, kind, startedAt: Date.now(), loading: true, error: "" };
+  previewRequest = request;
+  const timer = window.setInterval(updatePreviewWait, 1000);
+  try {
+    const result = await task(kind === "local" ? "正在读取本地目录并发现技能…" : "正在读取来源并发现技能…", async () => {
+      if (currentPage === "discover") {
+        render();
+        document.querySelector(".preview-panel")?.scrollIntoView({ behavior: "auto", block: "start" });
+      }
+      try { return await (kind === "local" ? api.previewLocal(source) : api.preview(source, ref, subpath)); }
+      catch (err) { request.error = err instanceof Error ? err.message : String(err); return undefined; }
+    });
+    if (result) {
+      preview = result;
+      previewRequest = null;
+      selectedCandidates = new Set(arr(result.candidates).filter((c) => matchName ? c.name === matchName || c.subpath.split("/").pop() === matchName : true).map((c) => c.subpath));
+      if (matchName && !selectedCandidates.size) toast(t("来源预览已完成，请根据名称手动选择技能。"));
+    }
+  } finally {
+    window.clearInterval(timer);
+    request.loading = false;
     if (currentPage === "discover") {
       render();
       const panel = document.querySelector<HTMLElement>(".preview-panel");
@@ -1116,6 +1154,7 @@ async function doPreview(source: string, ref: string, subpath: string, matchName
     }
   }
 }
+
 app.addEventListener("input", (ev) => {
   if ((ev as InputEvent).isComposing) return;
   const input = ev.target as HTMLInputElement;
@@ -1509,6 +1548,10 @@ document.addEventListener("click", async (ev) => {
     return;
   }
   if (action === "clear-selected-skills") { bulkSkillSelection.clear(); render(); return; }
+  if (action === "retry-preview" && previewRequest && !previewRequest.loading) {
+    const { source, ref, subpath, matchName, kind } = previewRequest;
+    await doPreview(source, ref, subpath, matchName, kind); return;
+  }
   if (action === "load-more-hub") { await searchHub("", true); return; }
   if (action === "discover-tab") {
     if (discoveryBusy() || !["hub", "git", "local"].includes(target.dataset.tab || "")) return;

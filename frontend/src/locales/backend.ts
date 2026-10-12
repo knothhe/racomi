@@ -1,5 +1,13 @@
 // Explicit backend message templates. Placeholders preserve names, paths, and nested errors.
 const messages: ReadonlyArray<readonly [string, string, string, string]> = [
+  ["cannot clone repository: {0}", "Could not download the repository: {0}", "无法下载仓库：{0}", "無法下載儲存庫：{0}"],
+  ["cannot refresh repository: {0}", "Could not refresh the repository: {0}", "无法刷新仓库：{0}", "無法重新整理儲存庫：{0}"],
+  ["Git operation timed out: {0}", "Git operation timed out. Check your network or proxy connection and retry. Details: {0}", "Git 操作超时，请检查网络或代理连接后重试。详情：{0}", "Git 操作逾時，請檢查網路或 Proxy 連線後重試。詳情：{0}"],
+  ["Git operation was canceled: {0}", "Git operation was canceled. Details: {0}", "Git 操作已取消。详情：{0}", "Git 操作已取消。詳情：{0}"],
+  ["Git operation timed out or was canceled: {0}", "Git operation timed out or was canceled. Details: {0}", "Git 操作超时或已取消。详情：{0}", "Git 操作逾時或已取消。詳情：{0}"],
+  ["context deadline exceeded", "The time limit was reached", "已达到等待时限", "已達等待時限"],
+  ["context canceled", "The request was canceled", "请求已取消", "請求已取消"],
+
   ["preset changed or was deleted while editing; reopen the editor and review the latest version", "The preset changed or was deleted while you were editing. Reopen the editor and review the latest version.", "编辑期间预设已变更或删除，请重新打开编辑器并检查最新版本。", "編輯期間預設已變更或刪除，請重新開啟編輯器並檢查最新版本。"],
   ["source changed or was deleted while editing; reopen the editor and review the latest version", "The source changed or was deleted while you were editing. Reopen the editor and review the latest version.", "编辑期间来源已变更或删除，请重新打开编辑器并检查最新版本。", "編輯期間來源已變更或刪除，請重新開啟編輯器並檢查最新版本。"],
   ["cannot save preset; reopen the editor to review the latest library: {0}", "Cannot save the preset; reopen the editor to review the latest library: {0}", "无法保存预设，请重新打开编辑器并检查最新资料：{0}", "無法儲存預設，請重新開啟編輯器並檢查最新資料：{0}"],
