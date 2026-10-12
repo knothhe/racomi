@@ -25,6 +25,7 @@ type CloudSyncConfig struct {
 	AccessKeyID        string `json:"accessKeyId"`
 	SecretAccessKey    string `json:"secretAccessKey"`
 	SessionToken       string `json:"sessionToken"`
+	ClearSessionToken  bool   `json:"clearSessionToken,omitempty"` // Request-only; never persisted or returned.
 	Passphrase         string `json:"passphrase"`
 	PathStyle          bool   `json:"pathStyle"`
 	AutoSync           bool   `json:"autoSync"`
@@ -94,6 +95,7 @@ func loadCloudSync(root string) (*cloudSyncRuntime, error) {
 	}
 	c.config = saved.Config
 	c.config.HasSecretAccessKey, c.config.HasSessionToken, c.config.HasPassphrase = false, false, false
+	c.config.ClearSessionToken = false
 	if c.config.IntervalMinutes < 1 {
 		c.config.IntervalMinutes = 5
 	}
@@ -107,6 +109,7 @@ func loadCloudSync(root string) (*cloudSyncRuntime, error) {
 // persistLocked uses an atomic rename so interrupted saves cannot lose credentials.
 func (c *cloudSyncRuntime) persistLocked(config CloudSyncConfig, lastSyncAt string) error {
 	config.HasSecretAccessKey, config.HasSessionToken, config.HasPassphrase = false, false, false
+	config.ClearSessionToken = false
 	contents, err := json.MarshalIndent(savedCloudSync{Version: 1, Config: config, LastSyncAt: lastSyncAt}, "", "  ")
 	if err != nil {
 		return err
@@ -146,6 +149,7 @@ func (config CloudSyncConfig) public() CloudSyncConfig {
 	config.HasSessionToken = config.SessionToken != ""
 	config.HasPassphrase = config.Passphrase != ""
 	config.SecretAccessKey, config.SessionToken, config.Passphrase = "", "", ""
+	config.ClearSessionToken = false
 	return config
 }
 
@@ -171,13 +175,16 @@ func mergedCloudConfig(input, previous CloudSyncConfig) (CloudSyncConfig, error)
 	if input.SecretAccessKey == "" && !identityChanged {
 		input.SecretAccessKey = previous.SecretAccessKey
 	}
-	if input.SessionToken == "" && !identityChanged {
+	if input.ClearSessionToken {
+		input.SessionToken = ""
+	} else if input.SessionToken == "" && !identityChanged {
 		input.SessionToken = previous.SessionToken
 	}
 	if input.Passphrase == "" {
 		input.Passphrase = previous.Passphrase
 	}
 	input.HasSecretAccessKey, input.HasSessionToken, input.HasPassphrase = false, false, false
+	input.ClearSessionToken = false
 	if identityChanged && input.SecretAccessKey == "" {
 		return CloudSyncConfig{}, errors.New("enter the secret access key again after changing the endpoint or access key ID")
 	}

@@ -354,7 +354,7 @@ Object.assign(api, {
     if (!config.endpoint || !config.bucket || !config.accessKeyId) throw new Error("Endpoint, bucket, and access key are required");
     if (!config.secretAccessKey && !state.cloudSync.config.hasSecretAccessKey) throw new Error("Secret access key is required");
     if (!config.passphrase && !state.cloudSync.config.hasPassphrase || config.passphrase && config.passphrase.length < 12) throw new Error("Encryption passphrase must contain at least 12 characters");
-    state.cloudSync.config = { ...config, secretAccessKey: "", sessionToken: "", passphrase: "", hasSecretAccessKey: !!config.secretAccessKey || state.cloudSync.config.hasSecretAccessKey, hasSessionToken: !!config.sessionToken || state.cloudSync.config.hasSessionToken, hasPassphrase: !!config.passphrase || state.cloudSync.config.hasPassphrase };
+    state.cloudSync.config = { ...config, clearSessionToken: false, secretAccessKey: "", sessionToken: "", passphrase: "", hasSecretAccessKey: !!config.secretAccessKey || state.cloudSync.config.hasSecretAccessKey, hasSessionToken: !config.clearSessionToken && (!!config.sessionToken || state.cloudSync.config.hasSessionToken), hasPassphrase: !!config.passphrase || state.cloudSync.config.hasPassphrase };
     state.cloudSync.configured = true;
     return copy();
   },

@@ -3,6 +3,8 @@ package desktop
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,6 +102,108 @@ func TestCloudSyncRetargetDoesNotReuseStorageCredentials(t *testing.T) {
 	}
 	if s.cloud.config.SessionToken != "" || s.cloud.config.Passphrase != cloudFixtureConfig().Passphrase {
 		t.Fatal("a different account must not reuse its old session token; encryption key must remain")
+	}
+}
+
+func TestCloudSyncSessionTokenCanBeCleared(t *testing.T) {
+	root := t.TempDir()
+	s, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := cloudFixtureConfig()
+	if _, err = s.SaveCloudSyncConfig(config); err != nil {
+		t.Fatal(err)
+	}
+	input := s.GetCloudSyncStatus().Config
+	input.ClearSessionToken = true
+	input.SessionToken = "ignored-replacement-token"
+	state, err := s.SaveCloudSyncConfig(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.CloudSync.Config.HasSessionToken || state.CloudSync.Config.ClearSessionToken || s.cloud.config.SessionToken != "" || s.cloud.config.ClearSessionToken {
+		t.Fatal("explicit clearing did not remove the token and consume its request flag")
+	}
+	if s.cloud.config.SecretAccessKey != config.SecretAccessKey || s.cloud.config.Passphrase != config.Passphrase {
+		t.Fatal("clearing the optional token changed another credential")
+	}
+	saved, err := os.ReadFile(filepath.Join(root, "cloud-sync-config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(saved), "clearSessionToken") || strings.Contains(string(saved), config.SessionToken) {
+		t.Fatal("saved configuration retained the cleared token or its transient request flag")
+	}
+	public, err := json.Marshal(state.CloudSync.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(public), "clearSessionToken") {
+		t.Fatal("public configuration returned the transient request flag")
+	}
+	reopened, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.cloud.config.SessionToken != "" || reopened.GetCloudSyncStatus().Config.HasSessionToken {
+		t.Fatal("the cleared token reappeared after reopening the application")
+	}
+}
+
+func TestCloudSyncConnectionTokenClearDoesNotChangeSavedConfiguration(t *testing.T) {
+	for _, clear := range []bool{false, true} {
+		name := "preserve"
+		if clear {
+			name = "clear for test"
+		}
+		t.Run(name, func(t *testing.T) {
+			observed := make(chan string, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				observed <- r.Header.Get("X-Amz-Security-Token")
+				// Stop at the initial read, before the connection probe writes anything.
+				w.WriteHeader(http.StatusForbidden)
+			}))
+			defer server.Close()
+			root := t.TempDir()
+			s, err := New(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			config := cloudFixtureConfig()
+			config.Endpoint = server.URL
+			if _, err = s.SaveCloudSyncConfig(config); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(filepath.Join(root, "cloud-sync-config.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			input := s.GetCloudSyncStatus().Config
+			input.ClearSessionToken = clear
+			if err = s.TestCloudSyncConnection(t.Context(), input); err == nil {
+				t.Fatal("the forbidden test response was accepted")
+			}
+			wantToken := config.SessionToken
+			if clear {
+				wantToken = ""
+			}
+			select {
+			case token := <-observed:
+				if token != wantToken {
+					t.Fatal("the request did not honor the session token clearing choice")
+				}
+			default:
+				t.Fatal("the connection test did not reach the local server")
+			}
+			after, err := os.ReadFile(filepath.Join(root, "cloud-sync-config.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(before) != string(after) || s.cloud.config.SessionToken != config.SessionToken || s.cloud.config.ClearSessionToken || !s.GetCloudSyncStatus().Config.HasSessionToken {
+				t.Fatal("testing a draft configuration changed the saved session token")
+			}
+		})
 	}
 }
 

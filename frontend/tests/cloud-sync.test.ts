@@ -29,6 +29,9 @@ test("sync configuration never renders saved secret values, even if a response i
   assert.match(html, /Saved; leave blank to keep/);
   assert.match(html, /id&quot;&lt;&amp;/);
   assert.match(html, /minlength="12"/);
+  assert.match(html, /name="clearSessionToken" type="checkbox">/);
+  assert.match(html, /do not enter a Cloudflare API token/);
+  assert.doesNotMatch(ui.cloudSyncConfigFields(ui.defaultCloudSyncConfig()), /name="clearSessionToken"/);
 });
 
 test("configuration preserves passphrase bytes and submits empty saved secrets without copying them", () => {
@@ -39,10 +42,23 @@ test("configuration preserves passphrase bytes and submits empty saved secrets w
   assert.equal(config.passphrase, input.passphrase);
   assert.equal(config.secretAccessKey, "");
   assert.equal(config.sessionToken, "");
+  assert.equal(config.clearSessionToken, false);
   assert.equal(config.endpoint, "https://example.com");
   assert.equal(config.autoSync, false);
   assert.equal(config.pathStyle, true);
   assert.equal(config.intervalMinutes, 7);
+});
+
+test("clearing a saved session token is explicit and takes priority over a replacement", () => {
+  const ui = module();
+  const saved = { ...ui.defaultCloudSyncConfig(), hasSessionToken: true };
+  const input = { sessionToken: "replacement-token", clearSessionToken: "on" };
+  const config = ui.readCloudSyncConfig(input, saved);
+  assert.equal(config.clearSessionToken, true);
+  assert.equal(config.sessionToken, "");
+  const replacement = ui.readCloudSyncConfig({ sessionToken: "replacement-token" }, config);
+  assert.equal(replacement.clearSessionToken, false);
+  assert.equal(replacement.sessionToken, "replacement-token");
 });
 
 test("conflict review labels deletions and requires an explicit choice for every record", () => {

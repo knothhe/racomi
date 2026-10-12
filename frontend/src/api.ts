@@ -38,6 +38,7 @@ export interface Snapshot { id: string; createdAt: string; reason: string; skill
 export interface CloudSyncConfig {
   endpoint: string; region: string; bucket: string; prefix: string;
   accessKeyId: string; secretAccessKey: string; sessionToken: string; passphrase: string;
+  clearSessionToken?: boolean;
   pathStyle: boolean; autoSync: boolean; intervalMinutes: number;
   hasSecretAccessKey: boolean; hasSessionToken: boolean; hasPassphrase: boolean;
 }
