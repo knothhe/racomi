@@ -180,6 +180,8 @@ func Export(root string, state skillstore.State, destination string) (err error)
 
 // Import validates archive paths and content before restoring the store.
 func Import(store *skillstore.Store, filename string) error {
+	releaseContent := store.SuspendContentCleanup()
+	defer releaseContent()
 	info, err := os.Stat(filename)
 	if err != nil {
 		return err

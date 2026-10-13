@@ -162,6 +162,56 @@ func syncOK(t *testing.T, store *skills.Store, cfg Config) Result {
 	}
 	return result
 }
+
+func TestSnapshotReadsKeepIncomingCloudContentUntilCommit(t *testing.T) {
+	for _, restore := range []bool{false, true} {
+		t.Run(fmt.Sprint("restore=", restore), func(t *testing.T) {
+			fake, cfg := newFakeS3(t)
+			a, b := openStore(t), openStore(t)
+			skill := addSkill(t, a, "incoming")
+			first := syncOK(t, a, cfg)
+			if restore {
+				if err := a.RemoveSkills([]string{skill.ID}); err != nil {
+					t.Fatal(err)
+				}
+				syncOK(t, a, cfg)
+				syncOK(t, b, cfg)
+			} else {
+				savePreset(t, b, "", "Local preset")
+			}
+			checked := make(chan error, 1)
+			fake.mu.Lock()
+			fake.beforeHeadPut = func() {
+				_, err := b.Snapshots()
+				checked <- err
+			}
+			fake.mu.Unlock()
+			var err error
+			if restore {
+				_, err = RestoreBackup(context.Background(), b, cfg, first.Revision)
+			} else {
+				_, err = Sync(context.Background(), b, cfg, nil)
+			}
+			if err != nil {
+				t.Fatal("snapshot read disrupted cloud commit", err)
+			}
+			select {
+			case err = <-checked:
+				if err != nil {
+					t.Fatal(err)
+				}
+			default:
+				t.Fatal("snapshot read did not run between download and commit")
+			}
+			if _, err = b.Snapshots(); err != nil {
+				t.Fatal(err)
+			}
+			if actual, err := skills.HashDir(filepath.Join(b.Root(), "objects", skill.ContentHash)); err != nil || actual != skill.ContentHash {
+				t.Fatal("incoming cloud content was reclaimed", actual, err)
+			}
+		})
+	}
+}
 func presetNames(t *testing.T, store *skills.Store) string {
 	t.Helper()
 	state, err := store.State()

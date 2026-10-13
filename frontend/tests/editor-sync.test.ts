@@ -31,6 +31,7 @@ function harness() {
     }
     const modalRoot = { querySelector: () => currentForm };
     const renderPresetSkills = () => {};
+    const searchShortcut = () => "";
     const field = (form, name) => form.values[name] || "";
     const task = (_label, action) => action();
     ${production}

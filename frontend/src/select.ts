@@ -25,6 +25,19 @@ export function installSelects(root: Document = document) {
     popup.className = "select-popup";
     popup.setAttribute("role", "listbox");
     popup.setAttribute("aria-label", labelFor(select));
+    let search: HTMLInputElement | null = null;
+    if (select.dataset.selectSearch) {
+      search = root.createElement("input");
+      search.type = "search";
+      search.className = "select-search";
+      search.placeholder = select.dataset.selectSearch;
+      search.setAttribute("aria-label", select.dataset.selectSearch);
+      search.addEventListener("input", () => {
+        const query = search!.value.trim().toLocaleLowerCase();
+        for (const item of popup.querySelectorAll<HTMLButtonElement>(".select-option")) item.hidden = !item.textContent?.toLocaleLowerCase().includes(query);
+      });
+      popup.append(search);
+    }
     for (const option of select.options) {
       if (option.hidden) continue;
       const item = root.createElement("button");
@@ -60,7 +73,7 @@ export function installSelects(root: Document = document) {
     popup.style.maxHeight = `${Math.min(320 * scale, showAbove ? above : below) / scale}px`;
     popup.style.left = `${Math.max(12, Math.min(anchor.left, innerWidth - width - 12)) / scale}px`;
     popup.style.top = `${(showAbove ? Math.max(12, anchor.top - Math.min(height, above) - 5) : anchor.bottom + 5) / scale}px`;
-    (popup.querySelector<HTMLButtonElement>('[aria-selected="true"]:not(:disabled)') || popup.querySelector<HTMLButtonElement>("button:not(:disabled)"))?.focus({ preventScroll: true });
+    (search || popup.querySelector<HTMLButtonElement>('[aria-selected="true"]:not(:disabled)') || popup.querySelector<HTMLButtonElement>("button:not(:disabled)"))?.focus({ preventScroll: true });
   }
   function sync(select: HTMLSelectElement) {
     if (select.multiple || select.size > 1) return;
@@ -93,13 +106,15 @@ export function installSelects(root: Document = document) {
   root.addEventListener("keydown", (event) => {
     if (!opened) return;
     const { popup } = opened;
-    const items = [...popup.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+    const items = [...popup.querySelectorAll<HTMLButtonElement>("button:not(:disabled):not([hidden])")];
     const index = items.indexOf(root.activeElement as HTMLButtonElement);
     if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); close(true); return; }
     if (event.key === "Tab") { close(true); return; }
+    const searching = root.activeElement instanceof HTMLInputElement;
+    if (searching && !["ArrowDown", "ArrowUp"].includes(event.key)) return;
     let next: HTMLButtonElement | undefined;
     if (event.key === "ArrowDown") next = items[(index + 1) % items.length];
-    if (event.key === "ArrowUp") next = items[(index - 1 + items.length) % items.length];
+    if (event.key === "ArrowUp") next = items[index < 0 ? items.length - 1 : (index - 1 + items.length) % items.length];
     if (event.key === "Home") next = items[0];
     if (event.key === "End") next = items.at(-1);
     if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && event.key !== " ") {

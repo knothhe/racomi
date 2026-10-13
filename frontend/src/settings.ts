@@ -5,7 +5,7 @@ import { agentIcon } from "./agent-icons";
 import { homeRelativePath } from "./paths";
 import { getThemePreference } from "./theme";
 import { getNavLayoutPreference } from "./layout";
-import { textSizes } from "./interface";
+import { getInterfaceFonts, textSizes } from "./interface";
 
 export const projectDirectories = [
   { id: "agents", name: "共享技能目录", path: ".agents/skills", description: "Codex 与 Cursor 共用的项目技能目录。" },
@@ -14,7 +14,7 @@ export const projectDirectories = [
   { id: "cursor", name: "Cursor", path: ".cursor/skills", description: "Cursor 的项目技能目录。" },
 ];
 
-export const defaultSettings = (): AppSettings => ({ deploymentMode: "copy", defaultProjectDirectories: ["agents"], defaultGlobalDirectories: ["codex-user"], customProjectDirectories: [] });
+export const defaultSettings = (): AppSettings => ({ deploymentMode: "copy", defaultProjectDirectories: ["agents"], defaultGlobalDirectories: ["codex-user"], customProjectDirectories: [], snapshotRetentionDays: 7, snapshotMaxCount: 100 });
 const e = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const directoryActions = (kind: "project" | "global", id: string, name: string) => {
   const editLabel = `${kind === "project" ? t("编辑项目目录") : t("编辑全局目录")}: ${name}`;
@@ -23,6 +23,15 @@ const directoryActions = (kind: "project" | "global", id: string, name: string) 
 };
 
 export function settingsPage(settings: AppSettings, applications: GlobalApplication[], homeDir?: string, desktop?: DesktopPreferences) {
+  const family = settings.interfaceFont || "system";
+  const fontFamilies = getInterfaceFonts();
+  const legacyFonts = [["system", t("系统字体")], ["sans", t("无衬线")], ["serif", t("衬线")], ["mono", t("等宽")]];
+  const fontOptions = [...legacyFonts.filter(([id]) => id === "system" || id === family), ...fontFamilies.map((font) => [font.family, font.family])];
+  if (!fontOptions.some(([id]) => id === family)) fontOptions.push([family, family]);
+  const styles = fontFamilies.find((font) => font.family === family)?.styles || [];
+  const style = settings.interfaceFontStyle || "system";
+  const styleOptions = [["system", t("默认样式")], ...styles.map((item) => [item.postscriptName, item.name])];
+  if (style !== "system" && !styleOptions.some(([id]) => id === style)) styleOptions.push([style, style]);
   const themeOptions = ([ ["light", "Light", "sun"], ["dark", "Dark", "moon"], ["system", "Follow system", "monitor"] ] as const).map(([id, label, symbol]) => `<button type="button" class="theme-option settings-icon-option" data-theme-preference="${id}" title="${e(t(label))}" aria-label="${e(t(label))}" aria-pressed="${getThemePreference() === id}">${icon(symbol)}</button>`).join("");
   const navLayoutOptions = ([ ["auto", "自动", "layout-auto"], ["side", "侧边栏", "layout-side"], ["top", "顶部导航", "layout-top"] ] as const).map(([id, label, symbol]) => `<button type="button" class="theme-option settings-icon-option" data-nav-layout-preference="${id}" title="${e(t(label))}" aria-label="${e(t(label))}" aria-pressed="${getNavLayoutPreference() === id}">${icon(symbol)}</button>`).join("");
   const modeOptions = ([ ["copy", "Copy", "copy"], ["symlink", "Symbolic link", "link"] ] as const).map(([id, label, symbol]) => `<label class="theme-option settings-icon-option" title="${e(t(label))}"><input class="sr-only" type="radio" name="deploymentMode" value="${id}" ${settings.deploymentMode === id ? "checked" : ""} aria-label="${e(t(label))}" aria-describedby="settings-deployment-help">${icon(symbol)}</label>`).join("");
@@ -39,7 +48,7 @@ export function settingsPage(settings: AppSettings, applications: GlobalApplicat
           <div class="settings-row"><div class="settings-row-copy"><strong>${e(t("导航布局"))}</strong></div><div class="theme-picker settings-nav-layout-options settings-icon-switch" role="group" aria-label="${e(t("导航布局"))}">${navLayoutOptions}</div></div>
           <label class="settings-row"><span class="settings-row-copy"><strong>${e(t("Language"))}</strong></span><select name="locale-preference" aria-label="${e(t("Language"))}"><option value="system" ${getLocalePreference() === "system" ? "selected" : ""}>${e(t("Follow system"))}</option>${supportedLocales.map((locale) => `<option value="${locale.id}" ${getLocalePreference() === locale.id ? "selected" : ""}>${e(locale.label)}</option>`).join("")}</select></label>
           <div class="settings-row"><strong>${e(t("文字大小"))}</strong><div class="theme-picker settings-text-sizes" role="group" aria-label="${e(t("文字大小"))}">${textSizes.map((size) => `<button type="button" class="theme-option" data-action="set-text-size" data-size="${size}" aria-pressed="${(settings.textSize || 100) === size}">${size}%</button>`).join("")}</div></div>
-          <label class="settings-row"><strong>${e(t("界面字体"))}</strong><select name="interface-font" aria-label="${e(t("界面字体"))}">${([["system", "系统字体"], ["sans", "无衬线"], ["serif", "衬线"], ["mono", "等宽"]] as const).map(([id, label]) => `<option value="${id}" ${(settings.interfaceFont || "system") === id ? "selected" : ""}>${e(t(label))}</option>`).join("")}</select></label>
+          <div class="settings-row settings-font-row"><strong>${e(t("界面字体"))}</strong><div class="settings-font-controls"><div class="settings-font-selects"><select name="interface-font" data-select-search="${e(t("搜索字体…"))}" aria-label="${e(t("界面字体"))}">${fontOptions.map(([id, label]) => `<option value="${e(id)}" ${family === id ? "selected" : ""}>${e(label)}</option>`).join("")}</select><select name="interface-font-style" aria-label="${e(t("字体样式"))}" ${legacyFonts.some(([id]) => id === family) || !styles.length ? "disabled" : ""}>${styleOptions.map(([id, label]) => `<option value="${e(id)}" ${style === id ? "selected" : ""}>${e(label)}</option>`).join("")}</select></div><span class="settings-font-preview" aria-label="${e(t("字体预览"))}">Aa 0123 · 中文</span></div></div>
         </div>
       </section>
       ${desktop?.supported ? `<section class="settings-section" aria-labelledby="settings-desktop-title"><h2 id="settings-desktop-title" class="settings-section-title">${e(t("应用"))}</h2><div class="settings-group"><label class="settings-row"><span class="settings-row-copy"><strong>${e(t("轻量模式"))}</strong><span class="settings-row-description">${e(t("关闭窗口一分钟后释放页面，点击 Dock 图标重新打开。"))}</span></span><input class="settings-toggle" role="switch" type="checkbox" name="lightweight" aria-label="${e(t("轻量模式"))}" ${desktop.lightweight ? "checked" : ""}></label><label class="settings-row"><strong>${e(t("开机自启"))}</strong><input class="settings-toggle" role="switch" type="checkbox" name="open-at-login" aria-label="${e(t("开机自启"))}" ${desktop.openAtLogin ? "checked" : ""}></label></div></section>` : ""}

@@ -5,6 +5,25 @@ import { createSettingsAutosave } from "../src/settings-autosave.ts";
 
 interface Result { id: number; settings: AppSettings }
 
+test("font styles and retention survive queued saves and backend responses", async () => {
+  const h = harness({ ...initialSettings(), snapshotRetentionDays: 7, snapshotMaxCount: 100 });
+  h.autosave.save({ interfaceFont: "Avenir Next", interfaceFontStyle: "AvenirNext-Medium" });
+  h.autosave.save({ snapshotRetentionDays: 14 });
+  h.autosave.save({ snapshotMaxCount: 50 });
+  h.requests[0].resolve({ id: 1, settings: copy(h.writes[0]) });
+  await nextTurn();
+  assert.equal(h.writes[1].interfaceFontStyle, "AvenirNext-Medium");
+  assert.equal(h.writes[1].snapshotRetentionDays, 14);
+  assert.equal(h.writes[1].snapshotMaxCount, 100);
+  h.requests[1].resolve({ id: 2, settings: copy(h.writes[1]) });
+  await nextTurn();
+  assert.deepEqual(h.patches[2], { snapshotMaxCount: 50 });
+  assert.equal(h.writes[2].snapshotRetentionDays, 14);
+  h.requests[2].resolve({ id: 3, settings: copy(h.writes[2]) });
+  await h.autosave.idle();
+  assert.equal(h.settlements.at(-1)?.result?.settings.snapshotMaxCount, 50);
+});
+
 function initialSettings(): AppSettings {
   return { deploymentMode: "copy", defaultProjectDirectories: ["agents"], defaultGlobalDirectories: ["codex-user"], customProjectDirectories: [] };
 }

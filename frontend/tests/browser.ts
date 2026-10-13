@@ -350,6 +350,11 @@ const installLocal = async (id: string, paths: string[]) => {
   return copy();
 };
 Object.assign(api, {
+  listInterfaceFonts: async () => [
+    { family: "Avenir Next", styles: [{ name: "Regular", postscriptName: "AvenirNext-Regular" }, { name: "Medium", postscriptName: "AvenirNext-Medium" }, { name: "Italic", postscriptName: "AvenirNext-Italic" }] },
+    { family: "Menlo", styles: [{ name: "Regular", postscriptName: "Menlo-Regular" }, { name: "Bold", postscriptName: "Menlo-Bold" }] },
+    { family: "PingFang SC", styles: [{ name: "Regular", postscriptName: "PingFangSC-Regular" }] },
+  ],
   state: async () => copy(), setTextSize: async () => {},
   setLightweight: async (on: boolean) => { state.desktopPreferences!.lightweight = on; return copy(); },
   setOpenAtLogin: async (on: boolean) => { state.desktopPreferences!.openAtLogin = on; return copy(); },

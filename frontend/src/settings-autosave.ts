@@ -19,6 +19,9 @@ function cloneSettings(settings: AppSettings): AppSettings {
   return {
     ...(settings.textSize ? { textSize: settings.textSize } : {}),
     ...(settings.interfaceFont ? { interfaceFont: settings.interfaceFont } : {}),
+    ...(settings.interfaceFontStyle ? { interfaceFontStyle: settings.interfaceFontStyle } : {}),
+    ...(settings.snapshotRetentionDays ? { snapshotRetentionDays: settings.snapshotRetentionDays } : {}),
+    ...(settings.snapshotMaxCount ? { snapshotMaxCount: settings.snapshotMaxCount } : {}),
     ...(settings.theme ? { theme: settings.theme } : {}),
     ...(settings.locale ? { locale: settings.locale } : {}),
     ...(settings.navLayout ? { navLayout: settings.navLayout } : {}),
@@ -33,6 +36,9 @@ function clonePatch(patch: Partial<AppSettings>): Partial<AppSettings> {
   const snapshot: Partial<AppSettings> = {};
   if (patch.textSize !== undefined) snapshot.textSize = patch.textSize;
   if (patch.interfaceFont !== undefined) snapshot.interfaceFont = patch.interfaceFont;
+  if (patch.interfaceFontStyle !== undefined) snapshot.interfaceFontStyle = patch.interfaceFontStyle;
+  if (patch.snapshotRetentionDays !== undefined) snapshot.snapshotRetentionDays = patch.snapshotRetentionDays;
+  if (patch.snapshotMaxCount !== undefined) snapshot.snapshotMaxCount = patch.snapshotMaxCount;
   if (patch.theme !== undefined) snapshot.theme = patch.theme;
   if (patch.locale !== undefined) snapshot.locale = patch.locale;
   if (patch.navLayout !== undefined) snapshot.navLayout = patch.navLayout;

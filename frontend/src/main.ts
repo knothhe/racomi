@@ -1,5 +1,5 @@
 import { installSelects } from "./select";
-import { applyInterfaceSettings, textSizes } from "./interface";
+import { applyInterfaceSettings, defaultFontStyle, loadInterfaceFonts, textSizes } from "./interface";
 import { renderSourceFilter, installSourceFilters } from "./source-filter";
 import { syncNavigationMarkup } from "./navigation-render";
 import { installWorkspaceResize, syncWorkspaceResize } from "./workspace-resize";
@@ -65,7 +65,7 @@ const presetSkillDetailsOpen = new Set<string>();
 let detailTab: "overview" | "document" = "overview";
 type DiscoverTab = "hub" | "git" | "local";
 let discoverTab: DiscoverTab = "hub";
-const pageQueries = { sources: "", presets: "", projects: "", global: "", backups: "" };
+const pageQueries = { sources: "", presets: "", projects: "", global: "" };
 let selectedProject = "";
 let visibleProject = "";
 let projectsFilter: "all" | "pending" = "all";
@@ -142,7 +142,7 @@ const stateChangingTasks = new Set([
   "Saving sync settings…", "Syncing with cloud…", "Resolving sync conflicts…", "Restoring cloud backup…",
 ]);
 const hasPendingMutation = () => [...activeTasks].some((label) => stateChangingTasks.has(label));
-const skillSelectionActions = ["select-all-skills", "update-selected-skills", "remove-selected-skills"];
+const skillSelectionActions = ["clear-selected-skills", "update-selected-skills", "remove-selected-skills"];
 const actionTasks: Record<string, string> = {
   "update-selected-skills": "正在更新技能…", "remove-selected-skills": "正在移除技能…",
   "load-more-hub": "正在搜索 skills.sh…",
@@ -212,7 +212,7 @@ function syncBusyControls() {
     const importerControl = !!control.closest(".modal")?.querySelector("#skills-manager-import");
     const importerBusy = importerControl && skillsManagerBusy() && (control.dataset.action !== "close-modal" || activeTasks.has(skillsManagerImportTask));
     const importerEntryBusy = control.dataset.action === "import-skills-manager" && skillsManagerBusy();
-    const skillControl = control.name === "bulk-skill" || ["update-skill", "remove-skill", ...skillSelectionActions].includes(control.dataset.action || "");
+    const skillControl = ["bulk-skill", "bulk-skills-all"].includes(control.name) || ["update-skill", "remove-skill", ...skillSelectionActions].includes(control.dataset.action || "");
     const discoveryControl = control.closest(".discover-content") || control.dataset.action === "discover-tab";
     const globalDirectoryControl = control.name === "global-directory-selection" || ["select-global-directories", "default-global-directories"].includes(control.dataset.action || "");
     const cloudControl = ["cloud-sync-editor", "cloud-conflicts-editor"].includes(form?.id || "") || ["configure-cloud-sync", "sync-cloud", "cloud-conflicts", "cloud-backups", "restore-cloud-backup"].includes(control.dataset.action || "");
@@ -364,8 +364,11 @@ function iconButton(label: string, action: string, symbol: string, attrs = "", c
 function heading(title: string, description: string, actions = "") {
   return `<header class="page-heading"><div><h2 class="page-section-title">${e(title)}</h2>${description ? `<p class="page-description">${e(description)}</p>` : ""}</div><div class="heading-actions">${actions}</div></header>`;
 }
+function searchShortcut() {
+  return `<kbd class="search-key" aria-hidden="true">${navigator.platform.includes("Mac") ? "⌘" : "Ctrl"} K</kbd>`;
+}
 function pageSearch(page: keyof typeof pageQueries, placeholder: string) {
-  return `<label class="search-field toolbar-search">${icon("search")}<input data-page-search="${page}" aria-label="${e(placeholder)}" placeholder="${e(placeholder)}" value="${e(pageQueries[page])}"></label>`;
+  return `<label class="search-field toolbar-search">${icon("search")}<input data-page-search="${page}" aria-label="${e(placeholder)}" placeholder="${e(placeholder)}" value="${e(pageQueries[page])}">${searchShortcut()}</label>`;
 }
 function pendingApplicationCount(page: Page) {
   return page === "projects" ? projects().filter((project) => project.pending).length : page === "global" ? uniqueApplications(globalApplications().filter((application) => application.target?.pending)).length : 0;
@@ -377,7 +380,6 @@ function navigationSubitems(page: Page) {
   if (page !== currentPage) return "";
   const subitem = (label: string, action: string, active: boolean, attrs = "", count?: number) => `<button type="button" class="nav-sub-item ${active ? "active cur" : ""}" data-action="${action}" ${attrs} aria-pressed="${active}"><span>${e(label)}</span>${count === undefined ? "" : `<em>${count}</em>`}</button>`;
   if (page === "discover") return `<div class="nav-sub" data-nav-section="discover">${subitem("Skill Hub", "discover-tab", discoverTab === "hub", 'data-tab="hub"')}${subitem(t("Git 仓库"), "discover-tab", discoverTab === "git", 'data-tab="git"')}${subitem(t("本地目录"), "discover-tab", discoverTab === "local", 'data-tab="local"')}</div>`;
-  if (page === "skills") return `<div class="nav-sub" data-nav-section="skills">${subitem(t("全部"), "filter-skills", skillsFilter === "all", 'data-filter="all"', skills().length)}${subitem(t("有更新"), "filter-skills", skillsFilter === "updates", 'data-filter="updates"', updatedSkillIDs().size)}${subitem(t("待应用"), "filter-skills", skillsFilter === "pending", 'data-filter="pending"', pendingSkillIDs().size)}</div>`;
   if (page === "settings") return `<div class="nav-sub settings-nav-sub" data-nav-section="settings">${subitem(t("设置"), "close-backups", !settingsBackups)}${subitem(t("Backup and migration"), "open-backups", settingsBackups)}</div>`;
   if (page === "guide") return `<div class="nav-sub guide-nav-sub" data-nav-section="guide">${guideTabs.map((tab) => subitem(t(tab.label), "guide-tab", guideTab === tab.id, `data-tab="${tab.id}"`)).join("")}</div>`;
   return "";
@@ -485,7 +487,7 @@ function render() {
   const settingsFocus = (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLSelectElement) && activeElement.closest(".settings-page") && oldContent?.dataset.page === currentPage ? { name: activeElement.name, value: activeElement.value } : null;
   const selectFocus = activeElement instanceof HTMLButtonElement ? activeElement.dataset.selectTrigger : undefined;
   const activeButton = app.contains(activeElement) && activeElement instanceof HTMLButtonElement ? { dataset: Object.fromEntries(["page", "action", "id", "scope", "tab", "filter", "themePreference", "navLayoutPreference", "size", "selectTrigger"].map((key) => [key, activeElement.dataset[key]])), form: activeElement.form?.id, type: activeElement.type } : null;
-  if (!oldContent) app.innerHTML = `<aside class="sidebar" id="racomi-sidebar" aria-label="${e(t("侧边栏"))}" ${getNavLayout() === "side" ? "" : "hidden"}><div class="side-top" style="--wails-draggable: drag"></div><div class="side-scroll"></div><div class="side-foot"></div><div class="side-edge" data-side-edge role="separator" tabindex="0" aria-orientation="vertical" aria-controls="racomi-sidebar" aria-label="${e(t("调整侧边栏宽度"))}" title="${e(t("调整侧边栏宽度"))}"></div></aside><header class="app-header top"><div class="header-leading"><button type="button" class="icon-button side-toggle" data-action="toggle-sidebar" aria-controls="racomi-sidebar">${icon("layout-side")}</button><div class="brand"><span class="brand-mark"><img src="/appicon.png" alt="" width="20" height="20" draggable="false"></span><strong>racomi</strong></div></div><h1 class="sr-only">${e(t(current.title))}</h1><div class="header-nav">${navigation()}</div><div class="header-crumb">${navigationCrumb()}</div><div class="header-actions actions">${utilityNavigation()}</div></header><main class="workspace" data-page="${currentPage}" data-view="${view}"><div class="page-content" id="page-content" data-page="${currentPage}"></div></main><footer class="statusbar"><span id="activity" aria-live="polite"></span><div class="statusbar-meta"><span>${skills().length}${t(" 个技能 · ")}${presets().length}${t(" 个预设 · ")}${projects().length}${t(" 个项目")}</span><button type="button" class="search-shortcut" data-action="focus-search" aria-label="${t("搜索当前页面")}">${t("搜索 ")}<kbd>${navigator.platform.includes("Mac") ? "⌘" : "Ctrl"} K</kbd></button></div></footer>`;
+  if (!oldContent) app.innerHTML = `<aside class="sidebar" id="racomi-sidebar" aria-label="${e(t("侧边栏"))}" ${getNavLayout() === "side" ? "" : "hidden"}><div class="side-top" style="--wails-draggable: drag"></div><div class="side-scroll"></div><div class="side-foot"></div><div class="side-edge" data-side-edge role="separator" tabindex="0" aria-orientation="vertical" aria-controls="racomi-sidebar" aria-label="${e(t("调整侧边栏宽度"))}" title="${e(t("调整侧边栏宽度"))}"></div></aside><header class="app-header top"><div class="header-leading"><button type="button" class="icon-button side-toggle" data-action="toggle-sidebar" aria-controls="racomi-sidebar">${icon("layout-side")}</button><div class="brand"><span class="brand-mark"><img src="/appicon.png" alt="" width="20" height="20" draggable="false"></span><strong>racomi</strong></div></div><h1 class="sr-only">${e(t(current.title))}</h1><div class="header-nav">${navigation()}</div><div class="header-crumb">${navigationCrumb()}</div><div class="header-actions actions">${utilityNavigation()}</div></header><main class="workspace" data-page="${currentPage}" data-view="${view}"><div class="page-content" id="page-content" data-page="${currentPage}"></div></main><footer class="statusbar"><span id="activity" aria-live="polite"></span><div class="statusbar-meta"><span>${skills().length}${t(" 个技能 · ")}${presets().length}${t(" 个预设 · ")}${projects().length}${t(" 个项目")}</span></div></footer>`;
   syncNavigationMarkup(app.querySelector(".main-nav")!, navigation());
   syncNavigationMarkup(app.querySelector(".utility-navigation")!, utilityNavigation());
   app.querySelector(".app-header h1")!.textContent = t(current.title);
@@ -503,9 +505,8 @@ function render() {
   else if (currentPage === "settings" && data) renderSettingsWorkspace(content);
   else content.innerHTML = !data ? loadingPage() : currentPage === "skills" ? skillsPage() : currentPage === "sources" ? sourcesPage() : currentPage === "discover" ? discoverPage() : currentPage === "presets" ? presetsPage() : currentPage === "projects" ? projectsPage() : currentPage === "global" ? globalPage() : "";
   app.querySelector(".statusbar-meta > span")!.textContent = `${skills().length}${t(" 个技能 · ")}${presets().length}${t(" 个预设 · ")}${projects().length}${t(" 个项目")}`;
-  const shortcut = app.querySelector<HTMLElement>(".search-shortcut")!;
-  shortcut.setAttribute("aria-label", t("搜索当前页面"));
-  shortcut.innerHTML = `${t("搜索 ")}<kbd>${navigator.platform.includes("Mac") ? "⌘" : "Ctrl"} K</kbd>`;
+  const selectAll = app.querySelector<HTMLInputElement>('[name="bulk-skills-all"]');
+  if (selectAll) selectAll.indeterminate = !selectAll.checked && filteredSkills().some((skill) => bulkSkillSelection.has(skill.id));
   syncNavigationLayout();
   syncWorkspaceResize(t("调整两栏宽度"));
   document.querySelector<HTMLElement>(".workspace")!.scrollTop = scrollTop;
@@ -567,14 +568,14 @@ function skillsPage() {
   const selected = skills().find((skill) => skill.id === selectedSkill);
   const updateCount = updates?.filter((update) => skills().some((skill) => skill.id === update.skillId) && update.available && !update.removed && !update.error).length || 0;
   const pending = pendingSkillIDs();
-  return `${heading(t("技能"), "", button(t("检查更新"), "check-updates", "", "", "refresh") + button(t("导入技能"), "go-discover", "primary", "", "plus"))}<div class="skills-controls"><div class="skills-filters" role="group" aria-label="${t("技能筛选")}">${([["all", t("全部"), skills().length], ["updates", t("有更新"), updateCount], ["pending", t("待应用"), pending.size]] as const).map(([id, label, count]) => `<button type="button" class="filter-chip ${skillsFilter === id ? "active" : ""}" data-action="filter-skills" data-filter="${id}" aria-pressed="${skillsFilter === id}">${label}<span class="filter-count">${count}</span></button>`).join("")}</div><div class="sort-control source-filter-control"><span>${t("来源")}</span>${sourceFilter("skills-source", skillsSourceFilter)}</div><label class="sort-control"><span>${t("排序")}</span><select class="sort-select" name="skills-sort" aria-label="${t("技能排序")}"><option value="asc" ${skillsSort === "asc" ? "selected" : ""}>${t("名称 A → Z")}</option><option value="desc" ${skillsSort === "desc" ? "selected" : ""}>${t("名称 Z → A")}</option></select></label></div><div class="skills-layout"><section class="panel skill-browser" data-preserve-scroll="skills-browser"><div class="panel-toolbar"><label class="search-field">${icon("search")}<input id="skills-search" data-page-search="skills" aria-label="${t("搜索已安装技能")}" placeholder="${t("搜索名称、描述或来源")}" value="${e(skillsQuery)}"></label><span class="muted" id="skills-count">${list.length}${t(" 个")}</span></div>${skillsSelectionToolbar()}<div id="skill-list" data-preserve-scroll="skills-list" tabindex="0" role="region" aria-label="${t("技能")}">${skillList()}</div></section><aside class="panel skill-detail" data-preserve-scroll="skill-detail:${e(selectedSkill)}:${detailTab}" tabindex="0" aria-label="${t("技能详情")}">${selected ? skillDetail(selected) : !skills().length ? empty(t("开始管理你的技能"), t("从 skills.sh 发现技能，或导入 Git 仓库。"), button(t("发现技能"), "go-discover", "primary", "", "plus")) : empty(t("没有匹配的技能"), skillsFilter === "updates" && updates === null ? t("先检查更新，再查看可更新的技能。") : t("试试其他筛选条件或关键词。"))}</aside></div>`;
+  return `${heading(t("技能"), "", button(t("检查更新"), "check-updates", "", "", "refresh") + button(t("导入技能"), "go-discover", "primary", "", "plus"))}<div class="skills-controls"><label class="sort-control"><span>${t("状态")}</span><select class="sort-select" name="skills-status" aria-label="${t("技能状态筛选")}">${([["all", t("全部"), skills().length], ["updates", t("有更新"), updateCount], ["pending", t("待应用"), pending.size]] as const).map(([id, label, count]) => `<option value="${id}" ${skillsFilter === id ? "selected" : ""}>${label} · ${count}</option>`).join("")}</select></label><div class="sort-control source-filter-control"><span>${t("来源")}</span>${sourceFilter("skills-source", skillsSourceFilter)}</div><label class="sort-control"><span>${t("排序")}</span><select class="sort-select" name="skills-sort" aria-label="${t("技能排序")}"><option value="asc" ${skillsSort === "asc" ? "selected" : ""}>${t("名称 A → Z")}</option><option value="desc" ${skillsSort === "desc" ? "selected" : ""}>${t("名称 Z → A")}</option></select></label></div><div class="skills-layout"><section class="panel skill-browser" data-preserve-scroll="skills-browser">${skillsSelectionToolbar()}<div id="skill-list" data-preserve-scroll="skills-list" tabindex="0" role="region" aria-label="${t("技能")}">${skillList()}</div></section><aside class="panel skill-detail" data-preserve-scroll="skill-detail:${e(selectedSkill)}:${detailTab}" tabindex="0" aria-label="${t("技能详情")}">${selected ? skillDetail(selected) : !skills().length ? empty(t("开始管理你的技能"), t("从 skills.sh 发现技能，或导入 Git 仓库。"), button(t("发现技能"), "go-discover", "primary", "", "plus")) : empty(t("没有匹配的技能"), skillsFilter === "updates" && updates === null ? t("先检查更新，再查看可更新的技能。") : t("试试其他筛选条件或关键词。"))}</aside></div>`;
 }
 function skillsSelectionToolbar() {
   const list = filteredSkills();
   const allSelected = list.length > 0 && list.every((skill) => bulkSkillSelection.has(skill.id));
   const updateIDs = updatedSkillIDs();
   const updateCount = [...bulkSkillSelection].filter((id) => updateIDs.has(id)).length;
-  return `<div class="skills-selection-toolbar"><div class="skills-selection-summary">${iconButton(t(allSelected ? "取消全选当前筛选结果" : "全选当前筛选结果"), "select-all-skills", "check-square", `aria-controls="skill-list" aria-pressed="${allSelected}" ${list.length ? "" : "disabled"}`)}<span id="skills-selection-count" aria-live="polite">${t("已选择 {0} 个技能", { 0: bulkSkillSelection.size })}</span></div><div class="skills-bulk-actions">${button(t("更新所选（{0}）", { 0: updateCount }), "update-selected-skills", "small", updateCount ? "" : "disabled", "download")}${button(t("移除所选"), "remove-selected-skills", "danger-quiet small", bulkSkillSelection.size ? "" : "disabled", "trash")}</div></div>`;
+  return `<div class="panel-toolbar skills-list-toolbar"><label class="skills-select-all" title="${e(t(allSelected ? "取消全选当前筛选结果" : "全选当前筛选结果"))}"><input type="checkbox" name="bulk-skills-all" aria-label="${e(t("全选当前筛选结果"))}" aria-controls="skill-list" ${allSelected ? "checked" : ""} ${list.length ? "" : "disabled"}></label><label class="search-field">${icon("search")}<input id="skills-search" data-page-search="skills" aria-label="${t("搜索已安装技能")}" placeholder="${t("搜索名称、描述或来源")}" value="${e(skillsQuery)}">${searchShortcut()}</label>${bulkSkillSelection.size ? `<div class="skills-bulk-actions"><span id="skills-selection-count" aria-live="polite">${t("已选 {0}", { 0: bulkSkillSelection.size })}</span>${updateCount ? iconButton(t("更新所选（{0}）", { 0: updateCount }), "update-selected-skills", "download") : ""}${iconButton(t("移除所选"), "remove-selected-skills", "trash", "", "danger-quiet")}${iconButton(t("取消选择"), "clear-selected-skills", "close")}</div>` : `<span class="muted" id="skills-count">${list.length}${t(" 个")}</span>`}</div>`;
 }
 function skillList() {
   const list = filteredSkills();
@@ -701,7 +702,7 @@ function ensureHubResults() {
 function discoverPage() {
   const tabs = ([["hub", 'Skill Hub <span class="tab-note">skills.sh</span>'], ["git", e(t("Git 仓库"))], ["local", e(t("本地目录"))]] as const).map(([tab, label]) => `<button type="button" id="discover-tab-${tab}" class="tab-button ${discoverTab === tab ? "active" : ""}" data-action="discover-tab" data-tab="${tab}" role="tab" aria-controls="discover-tab-panel" aria-selected="${discoverTab === tab}" tabindex="${discoverTab === tab ? 0 : -1}">${label}</button>`).join("");
   const local = `<section class="panel import-panel" data-preserve-scroll="discover-local"><form id="local-preview"><label class="field"><span>${t("本地技能目录")}</span><div class="input-with-button"><input name="localSource" data-page-search="discover" aria-label="${e(t("本地技能目录"))}" aria-describedby="local-source-help" required placeholder="/Users/you/skills" value="${e(localSourceDraft)}">${iconButton(t("选择目录"), "choose-local-dir", "folder")}</div><small id="local-source-help">${t("选择包含 SKILL.md 的技能目录，或包含多个技能的父目录。")}</small></label><div class="form-footer"><button class="button primary" type="submit">${icon("search")}${t("预览本地技能")}</button></div></form></section>`;
-  return `${heading(t("发现"), "")}<div class="tabs discover-tabs" role="tablist" aria-label="${t("导入方式")}">${tabs}</div><div id="discover-tab-panel" class="discover-content ${preview ? "has-preview" : ""}" role="tabpanel" aria-labelledby="discover-tab-${discoverTab}" tabindex="0">${discoverTab === "hub" ? `<section class="panel hub-panel" data-preserve-scroll="discover-hub:${e(hubResultQuery)}"><form id="hub-search" class="inline-form"><label class="search-field">${icon("search")}<input name="query" data-page-search="discover" placeholder="${t("搜索 skills.sh，留空浏览默认榜单")}" value="${e(searchQuery)}" aria-label="${t("搜索 skills.sh")}"></label><button class="button primary" type="submit">${t("搜索")}</button></form><div id="search-results" data-preserve-scroll="discover-results:${e(hubResultQuery)}" tabindex="0" role="region" aria-label="${t("搜索结果")}">${hubResults()}</div></section>` : discoverTab === "local" ? local : `<section class="panel import-panel" data-preserve-scroll="discover-git"><form id="source-preview"><div class="form-grid"><label class="field span-2"><span>${t("仓库地址 ")}<i>${t("必填")}</i></span><input name="source" data-page-search="discover" required placeholder="${t("owner/repo 或 https://github.com/owner/repo")}" value="${e(sourceDraft)}"></label><label class="field"><span>${t("分支、标签或 Commit ")}<i>${t("可选")}</i></span><input name="ref" placeholder="${t("默认分支")}" value="${e(refDraft)}"></label><label class="field"><span>${t("技能子目录 ")}<i>${t("可选")}</i></span><input name="subpath" placeholder="${t("自动扫描仓库")}" value="${e(subpathDraft)}"></label></div><div class="form-footer"><button class="button primary" type="submit">${icon("search")}${t("预览仓库")}</button></div></form></section>`}${preview ? previewPanel() : ""}</div>`;
+  return `${heading(t("发现"), "")}<div class="tabs discover-tabs" role="tablist" aria-label="${t("导入方式")}">${tabs}</div><div id="discover-tab-panel" class="discover-content ${preview ? "has-preview" : ""}" role="tabpanel" aria-labelledby="discover-tab-${discoverTab}" tabindex="0">${discoverTab === "hub" ? `<section class="panel hub-panel" data-preserve-scroll="discover-hub:${e(hubResultQuery)}"><form id="hub-search" class="inline-form"><label class="search-field">${icon("search")}<input name="query" data-page-search="discover" placeholder="${t("搜索 skills.sh，留空浏览默认榜单")}" value="${e(searchQuery)}" aria-label="${t("搜索 skills.sh")}">${searchShortcut()}</label><button class="button primary" type="submit">${t("搜索")}</button></form><div id="search-results" data-preserve-scroll="discover-results:${e(hubResultQuery)}" tabindex="0" role="region" aria-label="${t("搜索结果")}">${hubResults()}</div></section>` : discoverTab === "local" ? local : `<section class="panel import-panel" data-preserve-scroll="discover-git"><form id="source-preview"><div class="form-grid"><label class="field span-2"><span>${t("仓库地址 ")}<i>${t("必填")}</i></span><input name="source" data-page-search="discover" required placeholder="${t("owner/repo 或 https://github.com/owner/repo")}" value="${e(sourceDraft)}"></label><label class="field"><span>${t("分支、标签或 Commit ")}<i>${t("可选")}</i></span><input name="ref" placeholder="${t("默认分支")}" value="${e(refDraft)}"></label><label class="field"><span>${t("技能子目录 ")}<i>${t("可选")}</i></span><input name="subpath" placeholder="${t("自动扫描仓库")}" value="${e(subpathDraft)}"></label></div><div class="form-footer"><button class="button primary" type="submit">${icon("search")}${t("预览仓库")}</button></div></form></section>`}${preview ? previewPanel() : ""}</div>`;
 }
 function previewPanel() {
   const skipped = arr(preview!.skipped);
@@ -889,9 +890,9 @@ const snapshotReasons: Record<string, string> = {
 const snapshotReason = (reason: string) => t(snapshotReasons[reason] || reason || "手动快照");
 function conflictMessage(message: string) { return tMessage(message); }
 function backupsPage() {
-  const snapshots = arr(data?.snapshots);
-  const list = snapshots.filter((snapshot) => `${date(snapshot.createdAt)} ${snapshotReason(snapshot.reason)} ${snapshot.reason} ${snapshot.id}`.toLowerCase().includes(pageQueries.backups.toLowerCase()));
-  return `${heading(t("Backup and migration"), "", button(t("创建快照"), "create-snapshot", "primary", "", "plus"))}${cloudSyncSection(data?.cloudSync)}<div class="backup-grid"><section class="panel backup-card"><div class="backup-card-heading"><span class="card-icon">${icon("upload")}</span><h2>${t("导出工作空间")}</h2></div><p>${t("技能文件、来源与预设保存为 ZIP。本机项目与全局配置不随包导出。")}</p>${button(t("导出 ZIP"), "export-backup", "", "", "upload")}</section><section class="panel backup-card"><div class="backup-card-heading"><span class="card-icon">${icon("download")}</span><h2>${t("从压缩包恢复")}</h2></div><p>${t("恢复技能与预设后，重新配置项目与全局技能并手动应用。")}</p>${button(t("导入 ZIP"), "import-backup", "", "", "download")}</section>${skillsManagerCard()}</div><section class="panel snapshots-panel"><div class="panel-toolbar"><div><h2>${t("本地快照")}</h2><p>${t("快照不设数量或保留时间上限，暂不自动清理。")}</p><p>${t("恢复不会直接修改已应用的技能文件。")}</p></div>${pageSearch("backups", t("搜索时间或快照原因"))}<span class="badge">${list.length}${t(" 个快照")}</span></div>${!snapshots.length ? empty(t("还没有快照"), t("创建一份快照，为当前技能留下可恢复的版本。"), button(t("创建快照"), "create-snapshot", "", "", "archive"), "archive") : !list.length ? `<div class="small-empty">${t("没有匹配的快照")}</div>` : `<div class="snapshot-table"><div class="table-head"><span>${t("创建时间 / 原因")}</span><span>${t("内容")}</span><span></span></div>${list.map((snapshot) => `<div class="snapshot-row"><div><strong>${e(date(snapshot.createdAt))}</strong><small>${e(snapshotReason(snapshot.reason))}</small></div><span>${snapshot.skillCount}${t(" 个技能 ")}<span class="muted">·</span> ${snapshot.presetCount}${t(" 个预设")}</span>${button(t("恢复"), "restore-snapshot", "small", `data-id="${e(snapshot.id)}"`, "restore")}</div>`).join("")}</div>`}</section><div class="storage-note">${icon("archive")}<div><strong>${t("本地数据目录")}</strong><code>${e(data?.dataDir || "—")}</code></div></div>`;
+  const list = arr(data?.snapshots);
+  const settings = settingsDraft || data!.state.settings;
+  return `${heading(t("Backup and migration"), "", button(t("创建快照"), "create-snapshot", "primary", "", "plus"))}${cloudSyncSection(data?.cloudSync)}<div class="backup-grid"><section class="panel backup-card"><div class="backup-card-heading"><span class="card-icon">${icon("upload")}</span><h2>${t("导出工作空间")}</h2></div><p>${t("技能文件、来源与预设保存为 ZIP。本机项目与全局配置不随包导出。")}</p>${button(t("导出 ZIP"), "export-backup", "", "", "upload")}</section><section class="panel backup-card"><div class="backup-card-heading"><span class="card-icon">${icon("download")}</span><h2>${t("从压缩包恢复")}</h2></div><p>${t("恢复技能与预设后，重新配置项目与全局技能并手动应用。")}</p>${button(t("导入 ZIP"), "import-backup", "", "", "download")}</section>${skillsManagerCard()}</div><section class="panel snapshots-panel"><div class="panel-toolbar"><div><h2>${t("本地快照")}</h2><p>${t("自动保存操作前的恢复点，超出保留期限或数量的快照会自动删除。")}</p><p>${t("恢复不会直接修改已应用的技能文件。")}</p></div><span class="badge">${list.length}${t(" 个快照")}</span></div><div class="snapshot-retention"><label><span>${t("保留天数")}</span><input type="number" name="snapshotRetentionDays" min="1" max="3650" step="1" required value="${settings.snapshotRetentionDays || 7}"><span>${t("天")}</span></label><label><span>${t("最多保留")}</span><input type="number" name="snapshotMaxCount" min="1" max="10000" step="1" required value="${settings.snapshotMaxCount || 100}"><span>${t("条快照")}</span></label><small>${t("调整后立即清理，恢复时会先保存当前状态。")}</small></div>${!list.length ? empty(t("还没有快照"), t("创建一份快照，为当前技能留下可恢复的版本。"), button(t("创建快照"), "create-snapshot", "", "", "archive"), "archive") : `<div class="snapshot-table"><div class="table-head"><span>${t("创建时间 / 原因")}</span><span>${t("内容")}</span><span></span></div>${list.map((snapshot) => `<div class="snapshot-row"><div><strong>${e(date(snapshot.createdAt))}</strong><small>${e(snapshotReason(snapshot.reason))}</small></div><span>${snapshot.skillCount}${t(" 个技能 ")}<span class="muted">·</span> ${snapshot.presetCount}${t(" 个预设")}</span>${button(t("恢复"), "restore-snapshot", "small", `data-id="${e(snapshot.id)}"`, "restore")}</div>`).join("")}</div>`}</section><div class="storage-note">${icon("archive")}<div><strong>${t("本地数据目录")}</strong><code>${e(data?.dataDir || "—")}</code></div></div>`;
 }
 function skillsManagerCard() {
   return `<section class="panel backup-card skills-manager-card"><div class="skills-manager-card-heading"><div class="backup-card-heading"><span class="card-icon">${icon("download")}</span><h2>${t("从 skills-manager 导入")}</h2></div>${button(t("导入数据库"), "import-skills-manager", "", "", "download")}</div><p>${t("选择 skills-manager 的 .db 数据库，预览后合并技能、预设与来源。保留 racomi 现有数据，导入前自动创建快照。")}</p>${skillsManagerImportResult ? `<div class="skills-manager-result" role="status"><strong>${icon("check")}${t("最近一次导入已完成")}</strong>${skillsManagerResultView(skillsManagerImportResult)}</div>` : ""}</section>`;
@@ -952,7 +953,7 @@ function presetEditor(id = "") {
   presetFilters = defaultSkillFilters();
   presetSkillDetailsOpen.clear();
   presetSkillSelection = new Set(arr(p?.skillIds).filter((id) => skills().some((skill) => skill.id === id)));
-  modal(p ? t("编辑预设") : t("新建预设"), t("将常用技能组织成一个可复用的预设。"), `<input type="hidden" name="entityId" value="${e(p?.id)}"><label class="field"><span>${t("名称")}</span><input name="name" value="${e(p?.name)}" required placeholder="${t("例如：日常开发")}" maxlength="80"></label><label class="field"><span>${t("描述 ")}<i>${t("可选")}</i></span><textarea name="description" rows="2" placeholder="${t("这个预设适合什么场景？")}">${e(p?.description)}</textarea></label>${entityIconPicker("preset", p?.icon)}<div class="label-line preset-selection-heading"><h3>${t("选择技能")}</h3><div class="preset-selection-tools"><span id="preset-selection-count" aria-live="polite"></span>${iconButton(t("全选当前筛选结果"), "select-filtered-preset-skills", "check-square", 'aria-controls="preset-skill-list" aria-pressed="false"')}</div></div><div class="preset-skill-filters"><label class="search-field">${icon("search")}<input name="preset-search" aria-label="${t("搜索已安装技能")}" placeholder="${t("搜索名称、描述或来源")}"></label>${sourceFilter("preset-source", presetFilters.source)}</div><div id="preset-skill-list" class="selection-list modal-selection"></div>`, `<button class="button primary" type="submit">${t("保存预设")}</button>`, "preset-editor");
+  modal(p ? t("编辑预设") : t("新建预设"), t("将常用技能组织成一个可复用的预设。"), `<input type="hidden" name="entityId" value="${e(p?.id)}"><label class="field"><span>${t("名称")}</span><input name="name" value="${e(p?.name)}" required placeholder="${t("例如：日常开发")}" maxlength="80"></label><label class="field"><span>${t("描述 ")}<i>${t("可选")}</i></span><textarea name="description" rows="2" placeholder="${t("这个预设适合什么场景？")}">${e(p?.description)}</textarea></label>${entityIconPicker("preset", p?.icon)}<div class="label-line preset-selection-heading"><h3>${t("选择技能")}</h3><div class="preset-selection-tools"><span id="preset-selection-count" aria-live="polite"></span>${iconButton(t("全选当前筛选结果"), "select-filtered-preset-skills", "check-square", 'aria-controls="preset-skill-list" aria-pressed="false"')}</div></div><div class="preset-skill-filters"><label class="search-field">${icon("search")}<input name="preset-search" aria-label="${t("搜索已安装技能")}" placeholder="${t("搜索名称、描述或来源")}">${searchShortcut()}</label>${sourceFilter("preset-source", presetFilters.source)}</div><div id="preset-skill-list" class="selection-list modal-selection"></div>`, `<button class="button primary" type="submit">${t("保存预设")}</button>`, "preset-editor");
   presetEditorBaselines.set(modalRoot.querySelector<HTMLFormElement>("#preset-editor")!, p ? structuredClone(p) : null);
   renderPresetSkills();
 }
@@ -1126,7 +1127,7 @@ app.addEventListener("input", (ev) => {
     render();
     if (detailTab === "document" && selectedSkill) void loadSkillDocument(selectedSkill);
   }
-  if (input.dataset.pageSearch && ["sources", "presets", "projects", "global", "backups"].includes(input.dataset.pageSearch)) {
+  if (input.dataset.pageSearch && ["sources", "presets", "projects", "global"].includes(input.dataset.pageSearch)) {
     const page = input.dataset.pageSearch as keyof typeof pageQueries;
     pageQueries[page] = input.value;
     const start = input.selectionStart, end = input.selectionEnd;
@@ -1158,6 +1159,17 @@ app.addEventListener("change", async (ev) => {
     render();
     [...app.querySelectorAll<HTMLInputElement>('[name="bulk-skill"]')].find((item) => item.value === input.value)?.focus({ preventScroll: true });
   }
+  if (input.name === "bulk-skills-all") {
+    if (hasPendingMutation()) { render(); return; }
+    bulkSkillSelection = changeSelection(bulkSkillSelection, filteredSkills().map((skill) => skill.id), "toggle-all");
+    render();
+    app.querySelector<HTMLInputElement>('[name="bulk-skills-all"]')?.focus({ preventScroll: true });
+  }
+  if (input.name === "skills-status") {
+    skillsFilter = input.value as SkillsFilter;
+    render();
+    if (detailTab === "document" && selectedSkill) void loadSkillDocument(selectedSkill);
+  }
   if (input.name === "skills-source") {
     skillsSourceFilter = input.value; render();
     if (detailTab === "document" && selectedSkill) void loadSkillDocument(selectedSkill);
@@ -1181,8 +1193,18 @@ app.addEventListener("change", async (ev) => {
     settingsAutosave.save({ [key]: settings[key] });
   }
   if (input.name === "interface-font") {
-    savePreference({ interfaceFont: input.value as AppSettings["interfaceFont"] });
+    savePreference({ interfaceFont: input.value, interfaceFontStyle: defaultFontStyle(input.value) });
     applyInterfaceSettings(settingsDraft || data!.state.settings);
+    render();
+  }
+  if (input.name === "interface-font-style") {
+    savePreference({ interfaceFontStyle: input.value });
+    applyInterfaceSettings(settingsDraft || data!.state.settings);
+  }
+  if (["snapshotRetentionDays", "snapshotMaxCount"].includes(input.name)) {
+    if (!input.reportValidity()) return;
+    if (settingsControlsBusy()) { render(); return; }
+    savePreference({ [input.name]: input.valueAsNumber });
   }
   if (["lightweight", "open-at-login"].includes(input.name)) {
     const on = input.checked;
@@ -1441,7 +1463,6 @@ document.addEventListener("click", async (ev) => {
     if (next) { accept(next); toast(t("Cloud backup restored and published as a new sync version. Review pending applications.")); }
     return;
   }
-  if (action === "focus-search") { focusSearch(); return; }
   if (action === "retry-selection") { if (!applicationBusy()) selectionAutosave.retry(applicationKey(target.dataset.scope as ApplicationScope, id)); return; }
   if (action === "select-skill") { selectedSkill = id; detailTab = "overview"; render(); return; }
   if (action === "select-source") { selectedSource = id; render(); return; }
@@ -1478,22 +1499,13 @@ document.addEventListener("click", async (ev) => {
     projectSkillFilters.set(id, { ...filters, selectedOnly: !filters.selectedOnly });
     render(); return;
   }
-  if (action === "select-all-skills") {
-    if (hasPendingMutation()) return;
-    bulkSkillSelection = changeSelection(bulkSkillSelection, filteredSkills().map((skill) => skill.id), "toggle-all");
-    render(); return;
-  }
   if (action === "open-backups" || action === "close-backups") {
     settingsBackups = action === "open-backups";
     render();
     if (!target.isConnected) [...app.querySelectorAll<HTMLButtonElement>('.settings-tabs [aria-selected="true"], .settings-nav-sub [aria-pressed="true"]')].find((button) => button.getClientRects().length)?.focus({ preventScroll: true });
     return;
   }
-  if (action === "filter-skills") {
-    skillsFilter = target.dataset.filter as SkillsFilter; render();
-    if (detailTab === "document" && selectedSkill) void loadSkillDocument(selectedSkill);
-    return;
-  }
+  if (action === "clear-selected-skills") { bulkSkillSelection.clear(); render(); return; }
   if (action === "load-more-hub") { await searchHub("", true); return; }
   if (action === "discover-tab") {
     if (discoveryBusy() || !["hub", "git", "local"].includes(target.dataset.tab || "")) return;
@@ -1748,9 +1760,12 @@ async function operateSelectedSkills(operation: "update" | "remove") {
   }
 }
 function focusSearch() {
-  const input = modalRoot.children.length ? modalRoot.querySelector<HTMLInputElement>('input:not([type="hidden"]):not([type="checkbox"])') : document.querySelector<HTMLInputElement>("input[data-page-search]");
-  input?.focus();
-  input?.select();
+  const root = modalRoot.children.length ? modalRoot : app;
+  const input = [...root.querySelectorAll<HTMLInputElement>(modalRoot.children.length ? 'input[type="search"], input[name="preset-search"]' : '.search-field input[data-page-search]')].find((item) => !item.disabled && item.getClientRects().length > 0);
+  if (!input) return false;
+  input.focus();
+  input.select();
+  return true;
 }
 document.addEventListener("racomi:nav-layout-change", () => { syncNavigationLayout(); savePreference({ navLayout: getNavLayoutPreference() }); });
 document.addEventListener("racomi:locale-change", () => { savePreference({ locale: getLocalePreference() }); render(); });
@@ -1769,7 +1784,7 @@ document.addEventListener("keydown", (ev) => {
   const sidebarShortcut = mac ? ev.ctrlKey && ev.metaKey && !ev.shiftKey : ev.ctrlKey && ev.shiftKey && !ev.metaKey;
   if (sidebarShortcut && !ev.altKey && !ev.repeat && ev.code === "KeyS" && !modalRoot.children.length) { ev.preventDefault(); changeNavigationLayout(toggleNavLayout); return; }
   if (ev.key === "Enter" && ev.target instanceof HTMLInputElement && ev.target.name === "preset-search" && ev.target.form?.id === "preset-editor") { ev.preventDefault(); return; }
-  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "k") { ev.preventDefault(); focusSearch(); return; }
+  if ((mac ? ev.metaKey : ev.ctrlKey) && !ev.altKey && !ev.shiftKey && ev.key.toLowerCase() === "k" && focusSearch()) { ev.preventDefault(); return; }
   if (ev.key === "Escape" && modalRoot.children.length) { ev.preventDefault(); if (!activeTasks.has(skillsManagerImportTask)) closeModal(); return; }
   if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(ev.key) && document.activeElement?.getAttribute("role") === "tab") {
     const tabs = [...document.activeElement.parentElement!.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
@@ -1791,6 +1806,7 @@ installSelects();
 installSidebarResize();
 installWorkspaceResize();
 void load();
+void loadInterfaceFonts().then(() => { if (currentPage === "settings" && !settingsBackups) render(); }).catch(() => { /* Keep the saved font and the standard font choices available. */ });
 window.setInterval(() => { void pollCloudSync(); }, 5000);
 
 window.addEventListener("keydown", (event) => {

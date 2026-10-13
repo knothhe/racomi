@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -15,11 +16,17 @@ const DeploymentSymlink = "symlink"
 var projectDirectoryNames = map[string]string{"agents": ".agents", "claude": ".claude", "codex": ".codex", "cursor": ".cursor"}
 
 func defaultSettings() Settings {
-	return Settings{DeploymentMode: DeploymentCopy, DefaultProjectDirectories: []string{"agents"}, DefaultGlobalDirectories: []string{"codex-user"}, CustomProjectDirectories: []ProjectDirectory{}}
+	return Settings{DeploymentMode: DeploymentCopy, DefaultProjectDirectories: []string{"agents"}, DefaultGlobalDirectories: []string{"codex-user"}, CustomProjectDirectories: []ProjectDirectory{}, SnapshotRetentionDays: 7, SnapshotMaxCount: 100}
 }
 
 func normalizeSettings(settings Settings) Settings {
 	defaults := defaultSettings()
+	if settings.SnapshotRetentionDays == 0 {
+		settings.SnapshotRetentionDays = defaults.SnapshotRetentionDays
+	}
+	if settings.SnapshotMaxCount == 0 {
+		settings.SnapshotMaxCount = defaults.SnapshotMaxCount
+	}
 	if settings.DeploymentMode == "" {
 		settings.DeploymentMode = defaults.DeploymentMode
 	}
@@ -83,8 +90,11 @@ func validateSettings(settings Settings, targets []Target) error {
 	if settings.TextSize != 0 && !slices.Contains([]int{100, 110, 125, 150}, settings.TextSize) {
 		return errors.New("text size must be 100, 110, 125, or 150")
 	}
-	if settings.InterfaceFont != "" && !slices.Contains([]string{"system", "sans", "serif", "mono"}, settings.InterfaceFont) {
+	if !validFontPreference(settings.InterfaceFont) || !validFontPreference(settings.InterfaceFontStyle) {
 		return errors.New("invalid interface font")
+	}
+	if settings.SnapshotRetentionDays < 1 || settings.SnapshotRetentionDays > 3650 || settings.SnapshotMaxCount < 1 || settings.SnapshotMaxCount > 10000 {
+		return errors.New("snapshot retention must be 1 to 3650 days and 1 to 10000 snapshots")
 	}
 	if settings.Theme != "" && !slices.Contains([]string{"system", "light", "dark"}, settings.Theme) {
 		return errors.New("theme must be system, light, or dark")
@@ -141,6 +151,19 @@ func (l *Store) SaveSettings(settings Settings) error {
 	if settings.InterfaceFont == "" {
 		settings.InterfaceFont = state.Settings.InterfaceFont
 	}
+	if settings.InterfaceFontStyle == "" {
+		if settings.InterfaceFont != state.Settings.InterfaceFont {
+			settings.InterfaceFontStyle = "system"
+		} else {
+			settings.InterfaceFontStyle = state.Settings.InterfaceFontStyle
+		}
+	}
+	if settings.SnapshotRetentionDays == 0 {
+		settings.SnapshotRetentionDays = state.Settings.SnapshotRetentionDays
+	}
+	if settings.SnapshotMaxCount == 0 {
+		settings.SnapshotMaxCount = state.Settings.SnapshotMaxCount
+	}
 	if settings.Theme == "" {
 		settings.Theme = state.Settings.Theme
 	}
@@ -180,7 +203,15 @@ func (l *Store) SaveSettings(settings Settings) error {
 		return err
 	}
 	state.Settings = normalizeSettings(settings)
-	return l.writeState(state)
+	if err = l.writeState(state); err != nil {
+		return err
+	}
+	_, err = l.pruneSnapshots(state, time.Now(), true)
+	return err
+}
+
+func validFontPreference(value string) bool {
+	return utf8.ValidString(value) && utf8.RuneCountInString(value) <= 128 && !strings.ContainsAny(value, "\x00\r\n")
 }
 
 func deploymentMode(deployment Deployment) string {

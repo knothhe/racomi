@@ -24,7 +24,10 @@ export interface Target {
 export interface ProjectDirectoryTemplate { id: string; name: string; path: string }
 export interface AppSettings {
   textSize?: 100 | 110 | 125 | 150;
-  interfaceFont?: "system" | "sans" | "serif" | "mono";
+  interfaceFont?: string;
+  interfaceFontStyle?: string;
+  snapshotRetentionDays?: number;
+  snapshotMaxCount?: number;
   theme?: "light" | "dark" | "system";
   locale?: "zh-CN" | "zh-TW" | "en" | "system";
   navLayout?: "auto" | "side" | "top";
@@ -37,6 +40,7 @@ export interface GlobalApplication {
   key: string; agentId: string; agentName: string; name: string; path: string; description: string; target: Target | null;
 }
 export interface Snapshot { id: string; createdAt: string; reason: string; skillCount: number; presetCount: number }
+export interface InterfaceFontFamily { family: string; styles: { name: string; postscriptName: string }[] }
 export interface CloudSyncConfig {
   endpoint: string; region: string; bucket: string; prefix: string;
   accessKeyId: string; secretAccessKey: string; sessionToken: string; passphrase: string;
@@ -92,6 +96,7 @@ export async function invoke<T>(method: string, ...args: unknown[]): Promise<T> 
   return Call.ByName(`racomi/internal/desktop.Service.${method}`, ...args) as Promise<T>;
 }
 export const api = {
+  listInterfaceFonts: () => invoke<InterfaceFontFamily[]>("ListInterfaceFonts"),
   state: () => invoke<AppState>("GetState"),
   cloudSyncStatus: () => invoke<CloudSyncStatus>("GetCloudSyncStatus"),
   saveCloudSyncConfig: (config: CloudSyncConfig) => invoke<AppState>("SaveCloudSyncConfig", config),

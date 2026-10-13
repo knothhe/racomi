@@ -374,6 +374,8 @@ func (s *session) commit(ctx context.Context, state skills.SharedState, parent, 
 // __token from the result that displayed those precise versions.
 // The caller must serialize application mutations while Sync runs.
 func Sync(ctx context.Context, store *skills.Store, config Config, resolutions map[string]string) (Result, error) {
+	releaseContent := store.SuspendContentCleanup()
+	defer releaseContent()
 	result := Result{Conflicts: []skills.SyncConflict{}}
 	s, err := newSession(config)
 	if err != nil {
@@ -589,6 +591,8 @@ func ListBackups(ctx context.Context, config Config) ([]BackupInfo, error) {
 // It never rewinds/deletes history, and a concurrent remote update cancels the
 // restore rather than being overwritten. The caller serializes local mutations.
 func RestoreBackup(ctx context.Context, store *skills.Store, config Config, id string) (Result, error) {
+	releaseContent := store.SuspendContentCleanup()
+	defer releaseContent()
 	result := Result{Conflicts: []skills.SyncConflict{}}
 	s, err := newSession(config)
 	if err != nil {

@@ -30,33 +30,37 @@ func OpenMainWindow(s *Service, app *application.App) {
 			})
 			window = w
 			w.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
-				if window != w {
-					return
-				} // The release timer is closing this window for good.
-				e.Cancel()
-				if !s.desktop.lightweight.Load() {
-					app.Quit()
-					return
-				}
-				w.Hide()
-				generation++
-				closedGeneration := generation
-				if release != nil {
-					release.Stop()
-				}
-				release = time.AfterFunc(time.Minute, func() {
-					application.InvokeAsync(func() {
-						if generation != closedGeneration || window != w || w.IsVisible() {
-							return
-						}
-						if !s.desktop.lightweight.Load() {
-							app.Quit()
-							return
-						}
-						width, height = w.Size()
-						window = nil
-						releaseWebView(w)
-						w.Close()
+				// Wails invokes hooks on an event goroutine. Wait for the main
+				// thread so cancellation and lifecycle changes finish together.
+				application.InvokeSync(func() {
+					if window != w {
+						return
+					} // The release timer is closing this window for good.
+					e.Cancel()
+					if !s.desktop.lightweight.Load() {
+						app.Quit()
+						return
+					}
+					w.Hide()
+					generation++
+					closedGeneration := generation
+					if release != nil {
+						release.Stop()
+					}
+					release = time.AfterFunc(time.Minute, func() {
+						application.InvokeAsync(func() {
+							if generation != closedGeneration || window != w || w.IsVisible() {
+								return
+							}
+							if !s.desktop.lightweight.Load() {
+								app.Quit()
+								return
+							}
+							width, height = w.Size()
+							window = nil
+							releaseWebView(w)
+							w.Close()
+						})
 					})
 				})
 			})
@@ -65,7 +69,12 @@ func OpenMainWindow(s *Service, app *application.App) {
 		window.Focus()
 	}
 	s.openWindow = func() { application.InvokeAsync(open) }
-	app.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) { s.OpenWindow() })
+	// Wails' default reopen listener calls Show from a separate goroutine.
+	// Own this event so it cannot race with our main-thread window lifecycle.
+	app.Event.RegisterApplicationEventHook(events.Mac.ApplicationShouldHandleReopen, func(e *application.ApplicationEvent) {
+		e.Cancel()
+		application.InvokeSync(open)
+	})
 	open()
 }
 

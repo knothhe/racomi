@@ -918,10 +918,11 @@ html[data-nav-layout="side"] .settings-tabs, html[data-nav-layout="side"] .guide
 }
 
 /* Skill bulk selection stays separate from opening the skill details. */
-.skills-selection-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 6px 8px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--card); }
-.skills-selection-summary { display: flex; align-items: center; gap: 6px; font-size: 11px; white-space: nowrap; }
-.skills-selection-summary .icon-button[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
-.skills-bulk-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.skills-list-toolbar { gap: 8px; padding-left: 12px; }
+.skills-select-all { display: flex; align-items: center; flex: none; cursor: pointer; }
+.skills-bulk-actions { display: flex; align-items: center; flex: none; gap: 3px; white-space: nowrap; font-size: 11px; color: var(--muted); }
+.skills-bulk-actions > span { margin-right: 3px; }
+.skills-bulk-actions .icon-button { width: 26px; height: 26px; }
 .skill-list-item { display: flex; align-items: stretch; border-bottom: 1px solid var(--line-2); background: var(--card); }
 .skill-list-item:hover { background: var(--card-2); }
 .skill-list-item.checked { background: color-mix(in srgb, var(--accent) 5%, var(--card)); }
@@ -1002,7 +1003,7 @@ html[data-nav-layout="side"] .header-crumb { display: flex; align-items: baselin
 .crumb-group { color: var(--muted); }
 .crumb-separator { color: var(--faint); font-style: normal; }
 .crumb-current { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-weight: 600; }
-html[data-nav-layout="side"] .discover-tabs, html[data-nav-layout="side"] .page-content[data-page="skills"] .skills-filters { display: none; }
+html[data-nav-layout="side"] .discover-tabs { display: none; }
 html[data-nav-layout="side"] #toast-root:not(.feedback-lift) { left: calc(var(--side-w) + 16px); }
 html[data-nav-layout="side"] #toast-root.feedback-lift { left: 50%; }
 @media (max-width: 859px) { :root { --side-w: 184px; } }
@@ -1207,3 +1208,28 @@ input.settings-toggle:checked::after { transform: translateX(12px); }
 
 .native-mac .app-header { padding-left: calc(96px / var(--ui-scale, 1)); }
 .native-mac .side-top { padding-left: calc(84px / var(--ui-scale, 1)); }
+
+.search-key { flex: none; padding: 1px 4px; border: 1px solid var(--line-2); border-radius: 4px; color: var(--muted); font: 10px/1.5 var(--font); white-space: nowrap; }
+.skills-controls { justify-content: flex-start; }
+.skills-controls .source-filter-control { margin-left: 0; }
+.skills-controls > .sort-control:last-child { margin-left: auto; }
+.skills-list-toolbar .search-field { min-width: 70px; }
+.snapshot-retention { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; padding: 12px var(--surface-inset); border-bottom: 1px solid var(--line-2); font-size: 12px; }
+.snapshot-retention label { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.snapshot-retention input { width: 74px; height: var(--control-height); padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--card); color: var(--fg); font: inherit; }
+.snapshot-retention small { width: 100%; color: var(--muted); font-size: 11px; }
+.settings-font-controls { min-width: 0; max-width: 100%; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.settings-font-selects { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 100%; }
+.settings-font-selects .select-trigger { min-width: 100px; width: 180px; max-width: 100%; }
+.settings-font-selects .select-trigger[data-select-trigger="interface-font-style"] { width: 130px; }
+.settings-font-preview { font: 14px/1.5 var(--font); color: var(--fg-2); }
+.select-search { position: sticky; top: 0; z-index: 1; display: block; width: 100%; height: 32px; margin-bottom: 4px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--pop-bg); color: var(--fg); font: 12px var(--font); outline: none; }
+.select-search:focus { border-color: var(--accent); }
+.select-option[hidden] { display: none; }
+@media (max-width: 560px) {
+  .settings-font-row { align-items: flex-start; }
+  .settings-font-controls { width: 65%; }
+  .settings-font-selects { flex-direction: column; width: 100%; }
+  .settings-font-selects .select-trigger, .settings-font-selects .select-trigger[data-select-trigger="interface-font-style"] { width: 100%; }
+  .skills-list-toolbar .search-key { display: none; }
+}

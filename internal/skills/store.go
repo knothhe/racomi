@@ -25,7 +25,12 @@ const maxJSONBytes = 32 << 20
 // index. Handles opened for the same root share their mutation lock.
 type Store struct {
 	root string
-	mu   *sync.Mutex
+	mu   *storeLock
+}
+
+type storeLock struct {
+	sync.Mutex
+	contentHolds int
 }
 
 var locks sync.Map
@@ -52,8 +57,8 @@ func Open(root string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	lock, _ := locks.LoadOrStore(absolute, &sync.Mutex{})
-	store := &Store{root: absolute, mu: lock.(*sync.Mutex)}
+	lock, _ := locks.LoadOrStore(absolute, &storeLock{})
+	store := &Store{root: absolute, mu: lock.(*storeLock)}
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	for _, dir := range []string{"objects", "snapshots"} {
@@ -79,6 +84,13 @@ func Open(root string) (*Store, error) {
 		err = store.writeState(emptyState())
 	}
 	if err != nil {
+		return nil, err
+	}
+	state, err := store.readState()
+	if err != nil {
+		return nil, err
+	}
+	if _, err = store.pruneSnapshots(state, time.Now(), true); err != nil {
 		return nil, err
 	}
 	return store, nil
@@ -676,6 +688,11 @@ func (l *Store) snapshot(s State, reason string) (SnapshotInfo, error) {
 	if err = atomicJSON(filepath.Join(l.root, "snapshots", info.ID+".json"), append(data, '\n')); err != nil {
 		return SnapshotInfo{}, err
 	}
+	// Importers may already have staged new content objects. Only remove
+	// snapshot manifests here; reclaim objects after the live index is saved.
+	if _, err = l.pruneSnapshots(s, time.Now(), false); err != nil {
+		return SnapshotInfo{}, err
+	}
 	return info, nil
 }
 func (l *Store) Snapshot(reason string) (SnapshotInfo, error) {
@@ -690,26 +707,11 @@ func (l *Store) Snapshot(reason string) (SnapshotInfo, error) {
 func (l *Store) Snapshots() ([]SnapshotInfo, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	entries, err := os.ReadDir(filepath.Join(l.root, "snapshots"))
+	state, err := l.readState()
 	if err != nil {
 		return nil, err
 	}
-	result := []SnapshotInfo{}
-	for _, entry := range entries {
-		if !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		var file snapshotFile
-		if err = readJSON(filepath.Join(l.root, "snapshots", entry.Name()), &file); err != nil {
-			return nil, err
-		}
-		if file.Info.ID+".json" != entry.Name() || !safeName.MatchString(file.Info.ID) {
-			return nil, errors.New("invalid snapshot identity")
-		}
-		result = append(result, file.Info)
-	}
-	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt > result[j].CreatedAt })
-	return result, nil
+	return l.pruneSnapshots(state, time.Now(), true)
 }
 func (l *Store) RestoreSnapshot(snapshotID string) error {
 	l.mu.Lock()

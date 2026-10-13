@@ -216,7 +216,8 @@ func (s *Service) SaveSettingsPatch(patch map[string]json.RawMessage, onlyMissin
 			return err
 		}
 		allowed := map[string]bool{"deploymentMode": true, "defaultProjectDirectories": true, "defaultGlobalDirectories": true,
-			"customProjectDirectories": true, "theme": true, "locale": true, "navLayout": true, "textSize": true, "interfaceFont": true}
+			"customProjectDirectories": true, "theme": true, "locale": true, "navLayout": true, "textSize": true, "interfaceFont": true,
+			"interfaceFontStyle": true, "snapshotRetentionDays": true, "snapshotMaxCount": true}
 		filtered := make(map[string]json.RawMessage, len(patch))
 		preferences := map[string]string{"theme": state.Settings.Theme, "locale": state.Settings.Locale, "navLayout": state.Settings.NavLayout}
 		for field, value := range patch {
@@ -235,6 +236,9 @@ func (s *Service) SaveSettingsPatch(patch map[string]json.RawMessage, onlyMissin
 		settings := state.Settings
 		if err = json.Unmarshal(data, &settings); err != nil {
 			return errors.New("invalid settings patch")
+		}
+		if settings.SnapshotRetentionDays < 1 || settings.SnapshotMaxCount < 1 {
+			return errors.New("snapshot retention must be 1 to 3650 days and 1 to 10000 snapshots")
 		}
 		return s.store.SaveSettings(settings)
 	})
