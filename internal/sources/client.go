@@ -160,19 +160,13 @@ func searchResults(items []searchSkill) ([]SearchResult, error) {
 			return nil, errors.New("skills.sh returned an invalid repository source")
 		}
 		if len(parts) == 2 {
-			// The public index also contains domain-hosted skills. Preserve
-			// these valid results; the Git importer reports their limitation
-			// explicitly instead of making the whole search fail.
-			if !strings.Contains(item.Source, ".") {
+			if !validHostedDomain(item.Source) {
 				return nil, errors.New("skills.sh returned an invalid hosted source")
 			}
 		} else if _, err := parseSource(item.Source, "", ""); err != nil {
 			return nil, errors.New("skills.sh returned an invalid repository source")
 		}
-		result := SearchResult{Name: item.Name, Slug: item.ID, Source: item.Source, Installs: item.Installs, URL: "https://skills.sh/" + item.ID, Supported: len(parts) == 3}
-		if !result.Supported {
-			result.UnsupportedReason = "首版仅支持 Git 仓库来源，暂不支持该托管来源。"
-		}
+		result := SearchResult{Name: item.Name, Slug: item.ID, Source: item.Source, Installs: item.Installs, URL: "https://skills.sh/" + item.ID, Supported: true}
 		results = append(results, result)
 	}
 	return results, nil
@@ -197,6 +191,9 @@ func (c *Client) previewLocked(ctx context.Context, spec sourceSpec, refresh boo
 }
 
 func (c *Client) previewOptionsLocked(ctx context.Context, spec sourceSpec, refresh, allowEmpty bool, priorityPaths ...string) (Preview, error) {
+	if spec.hosted {
+		return c.previewHostedLocked(ctx, spec, allowEmpty)
+	}
 	repo, err := c.repository(ctx, spec.source, refresh)
 	if err != nil {
 		return Preview{}, err
@@ -378,6 +375,11 @@ func (c *Client) CheckUpdates(ctx context.Context, skills []skillstore.Skill) ([
 		err  error
 	}
 	repos := make(map[string]repoResult)
+	type hostedResult struct {
+		preview Preview
+		err     error
+	}
+	hosted := make(map[string]hostedResult)
 	result := make([]Update, 0, len(skills))
 	for _, skill := range skills {
 		update := Update{SkillID: skill.ID}
@@ -389,6 +391,34 @@ func (c *Client) CheckUpdates(ctx context.Context, skills []skillstore.Skill) ([
 		spec, err := parseSource(skill.Source, skill.Ref, skill.Subpath)
 		if err != nil {
 			update.Error = err.Error()
+			result = append(result, update)
+			continue
+		}
+		if spec.hosted {
+			key := spec.source + "\x00" + spec.subpath
+			r, ok := hosted[key]
+			if !ok {
+				r.preview, r.err = c.previewHostedLocked(ctx, spec, true)
+				hosted[key] = r
+				if r.err == nil {
+					defer c.releaseLocked(r.preview.ID)
+				}
+			}
+			if r.err != nil {
+				update.Error = r.err.Error()
+			} else {
+				update.Revision, update.Removed = r.preview.Revision, true
+				for _, item := range r.preview.Candidates {
+					if item.Subpath == skill.Subpath {
+						update.Removed = false
+						update.Available = item.ContentHash != skill.ContentHash
+						if update.Available {
+							update.Summary = "Skill files changed."
+						}
+						break
+					}
+				}
+			}
 			result = append(result, update)
 			continue
 		}

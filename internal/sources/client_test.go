@@ -252,11 +252,11 @@ func TestSearchPublicAPIContract(t *testing.T) {
 	if len(results) != 3 || results[0].Name != "beta" || results[1].URL != "https://skills.sh/owner/repo/alpha" {
 		t.Fatalf("bad search: %#v", results)
 	}
-	if !results[0].Supported || !results[1].Supported || results[2].Supported || results[2].UnsupportedReason == "" {
+	if !results[0].Supported || !results[1].Supported || !results[2].Supported || results[2].UnsupportedReason != "" {
 		t.Fatalf("Git/hosted support status was not preserved: %#v", results)
 	}
-	if _, err := client.Preview(context.Background(), results[2].URL, "", ""); err == nil || !strings.Contains(err.Error(), "hosted source") {
-		t.Fatalf("hosted source limitation was not explained: %v", err)
+	if spec, err := parseSource(results[2].URL, "", ""); err != nil || !spec.hosted || spec.source != "https://skills.example.com" || spec.subpath != "hosted" {
+		t.Fatalf("hosted search result cannot be previewed: %+v %v", spec, err)
 	}
 }
 
@@ -309,6 +309,7 @@ func TestSourceParsingAndUnsafePaths(t *testing.T) {
 		{"owner/repo", "https://github.com/owner/repo.git", "", ""},
 		{"https://github.com/owner/repo/tree/feature/branch/skills/alpha", "https://github.com/owner/repo.git", "", "feature/branch/skills/alpha"},
 		{"https://skills.sh/owner/repo/alpha", "https://github.com/owner/repo.git", "alpha", ""},
+		{"https://skills.sh/site/repo/alpha", "https://github.com/site/repo.git", "alpha", ""},
 		{"git@github.com:owner/repo.git", "git@github.com:owner/repo.git", "", ""},
 	}
 	for _, row := range valid {

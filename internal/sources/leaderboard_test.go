@@ -35,7 +35,7 @@ func TestListSkillsPublicLeaderboardContract(t *testing.T) {
 	if page.Skills[0].Slug != "owner/repo/alpha" || page.Skills[1].Slug != "other/repo/beta" || page.Skills[0].URL != "https://skills.sh/owner/repo/alpha" {
 		t.Fatalf("leaderboard IDs or server order were lost: %#v", page.Skills)
 	}
-	if !page.Skills[0].Supported || page.Skills[2].Supported || page.Skills[2].UnsupportedReason == "" {
+	if !page.Skills[0].Supported || !page.Skills[2].Supported || page.Skills[2].UnsupportedReason != "" {
 		t.Fatalf("hosted source support status was lost: %#v", page.Skills)
 	}
 }

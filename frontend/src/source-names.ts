@@ -1,4 +1,30 @@
-import type { Source } from "./api";
+import type { SearchResult, Skill, Source } from "./api";
+
+// Hosted sources use an origin or a well-known catalog, including catalogs
+// below a service-specific prefix. Git URLs continue to use their repo path.
+export function hostedSourceDomain(source: string): string {
+  try {
+    const url = new URL(source);
+    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) return "";
+    return url.pathname === "/" || /\/\.well-known\/(?:agent-)?skills(?:\/index\.json)?\/?$/.test(url.pathname)
+      ? url.hostname
+      : "";
+  } catch {
+    return "";
+  }
+}
+
+export function hubResultInstalled(result: SearchResult, skills: Pick<Skill, "name" | "source" | "subpath">[]): boolean {
+  const slug = result.slug.split("/").filter(Boolean).at(-1) || result.name;
+  return skills.some((skill) => {
+    const sameSkill = skill.subpath.split("/").filter(Boolean).at(-1) === slug || skill.name === slug || skill.name === result.name;
+    if (!sameSkill) return false;
+    const hosted = hostedSourceDomain(skill.source);
+    return hosted
+      ? hosted === result.source.toLowerCase() || hosted === hostedSourceDomain(result.source)
+      : skill.source === result.source || repositoryName(skill.source) === repositoryName(result.source) && !!repositoryName(result.source);
+  });
+}
 
 // Saved sources can contain a normalized URL, an SSH address, or the original
 // owner/repo shorthand. Local paths have no remote namespace to display.
@@ -27,12 +53,13 @@ export function repositoryName(repository: string): string {
 }
 
 export function sourceDisplayName(source: Pick<Source, "name" | "repository">): string {
-  const repository = repositoryName(source.repository);
+  const hosted = hostedSourceDomain(source.repository);
+  const repository = hosted || repositoryName(source.repository);
   const name = source.name.trim();
   if (!repository) return name || source.repository;
   const basename = repository.split("/").at(-1);
   // Keep custom names visible, while replacing the old repo-only default name.
-  return !name || name === basename || name === repository || name === source.repository.trim()
+  return !name || name === basename || name === repository || name === source.repository.trim() || !!hosted && ["skills", "agent-skills", "index.json"].includes(name)
     ? repository
     : `${repository} · ${name}`;
 }

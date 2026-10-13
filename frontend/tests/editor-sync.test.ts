@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
+import { hostedSourceDomain } from "../src/source-names.ts";
 
 const main = ts.createSourceFile("main.ts", readFileSync(new URL("../src/main.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
 const production = main.statements.filter((statement) => {
@@ -26,8 +27,8 @@ function harness() {
     const presetSkillDetailsOpen = new Set();
     let presetFilters = {}, presetSkillSelection = new Set(), currentForm;
     const defaultSkillFilters = () => ({}), entityIconPicker = () => "", sourceFilter = () => "", iconButton = () => "", icon = () => "";
-    function modal(_title, _description, _body, _footer, id) {
-      currentForm = { id, values: {}, getAttribute: () => id, classList: { contains: () => false }, querySelector: () => null };
+    function modal(_title, _description, body, _footer, id) {
+      currentForm = { id, body, values: {}, getAttribute: () => id, classList: { contains: () => false }, querySelector: () => null };
     }
     const modalRoot = { querySelector: () => currentForm };
     const renderPresetSkills = () => {};
@@ -38,7 +39,7 @@ function harness() {
     ({ presetEditor, sourceEditor, form: () => currentForm });
   `;
   const runtime = vm.runInNewContext(ts.transpileModule(setup, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, {
-    records, structuredClone,
+    records, structuredClone, hostedSourceDomain,
     document: { addEventListener: (_type: string, listener: typeof submit) => { submit = listener; } },
     api: {
       savePreset: async (value: any, expected: any) => { writes.push({ kind: "preset", value, expected }); },
@@ -72,6 +73,18 @@ test("source submission keeps its baseline when the source was deleted remotely"
   await h.submit();
   assert.deepEqual(h.writes[0].expected, original);
   assert.equal(h.writes[0].value.id, "source-a");
+});
+
+test("hosted source editing keeps source fields and omits the Git ref control", () => {
+  const h = harness();
+  h.records.sources[0].repository = "https://open.feishu.cn";
+  h.records.sources[0].ref = "";
+  h.runtime.sourceEditor("source-a");
+  const body = h.runtime.form().body;
+  assert.match(body, /来源地址/);
+  assert.match(body, /name="repository" value="https:\/\/open.feishu.cn" required readonly/);
+  assert.match(body, /type="hidden" name="ref" value=""/);
+  assert.doesNotMatch(body, /分支、标签或 Commit|默认分支|整个仓库/);
 });
 
 test("new records send a null baseline and separate modal instances cannot replace an old form baseline", async () => {

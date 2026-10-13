@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -26,6 +28,10 @@ func NormalizeSource(source skillstore.Source) (skillstore.Source, error) {
 	source.Name = strings.TrimSpace(source.Name)
 	if source.Name == "" {
 		source.Name = strings.TrimSuffix(filepath.Base(spec.source), ".git")
+		if spec.hosted {
+			u, _ := url.Parse(spec.source)
+			source.Name = u.Hostname()
+		}
 	}
 	return source, nil
 }
@@ -53,7 +59,16 @@ func (c *Client) CatalogForPreview(previewID string, source skillstore.Source) (
 	if !ok {
 		return source, errors.New("preview is no longer available; refresh the source again")
 	}
-	items, skipped, warnings, err := scanSkills(record.root, source.Subpath, record.preview.Revision, record.issues, true)
+	var items []CandidateInfo
+	var skipped []SkippedSkill
+	var warnings []string
+	var err error
+	if record.preview.Hosted {
+		items, err = hostedCandidates(record.root, source.Subpath, record.preview.Revision)
+		skipped, warnings = []SkippedSkill{}, []string{}
+	} else {
+		items, skipped, warnings, err = scanSkills(record.root, source.Subpath, record.preview.Revision, record.issues, true)
+	}
 	if err != nil {
 		return source, err
 	}
@@ -181,12 +196,18 @@ func (c *Client) PrepareSourceSync(ctx context.Context, source skillstore.Source
 			}
 		}
 	}
-	spec, err := parseSource(source.Repository, source.Revision, source.Subpath)
+	spec, err := parseSource(source.Repository, source.Ref, source.Subpath)
 	if err != nil {
 		return nil, "", err
 	}
 	c.mu.Lock()
-	preview, err := c.previewOptionsLocked(ctx, spec, false, true, priorityPaths...)
+	var preview Preview
+	if spec.hosted {
+		preview, err = c.prepareHostedSyncLocked(ctx, source)
+	} else {
+		spec.ref = source.Revision
+		preview, err = c.previewOptionsLocked(ctx, spec, false, true, priorityPaths...)
+	}
 	c.mu.Unlock()
 	if err != nil {
 		return nil, "", err
@@ -214,6 +235,11 @@ func (c *Client) PreviewAdvances(ctx context.Context, previewID, oldRevision str
 	if !ok {
 		return false
 	}
+	if record.preview.Hosted {
+		spec := sourceSpec{source: record.preview.Source, subpath: record.preview.Subpath}
+		latest, err := os.ReadFile(filepath.Join(c.hostedSnapshotBase(spec), "latest"))
+		return err == nil && string(latest) == record.preview.Revision
+	}
 	repo, err := c.repository(ctx, record.preview.Source, false)
 	if err != nil {
 		return false
@@ -228,6 +254,12 @@ func (c *Client) UpdateSummary(ctx context.Context, source skillstore.Source, sk
 	}
 	spec, err := parseSource(source.Repository, source.Ref, skill.Subpath)
 	if err != nil {
+		return ""
+	}
+	if spec.hosted {
+		if skill.Revision != source.Revision {
+			return "Skill files changed."
+		}
 		return ""
 	}
 	c.mu.Lock()

@@ -69,6 +69,7 @@ export interface AppState {
 }
 export interface Preview {
   local?: boolean;
+  hosted?: boolean;
   id: string; source: string; ref: string; revision: string;
   candidates: { name: string; description: string; subpath: string; revision: string }[];
   warnings?: string[];

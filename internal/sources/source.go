@@ -3,6 +3,7 @@ package sources
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path"
@@ -14,6 +15,7 @@ import (
 var repoPart = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 var safeSkillName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 var scpSource = regexp.MustCompile(`^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[A-Za-z0-9_./-]+$`)
+var domainLabel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*$`)
 
 type sourceSpec struct {
 	source   string
@@ -21,6 +23,7 @@ type sourceSpec struct {
 	subpath  string
 	skill    string
 	treeTail string
+	hosted   bool
 }
 
 func parseSource(input, ref, subpath string) (sourceSpec, error) {
@@ -88,8 +91,16 @@ func parseSource(input, ref, subpath string) (sourceSpec, error) {
 		}
 		parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 		if u.Hostname() == "skills.sh" || u.Hostname() == "www.skills.sh" {
-			if len(parts) == 2 && strings.Contains(parts[0], ".") {
-				return s, errors.New("this skills.sh entry uses a hosted source; racomi currently imports Git-backed skills (owner/repository/skill)")
+			if len(parts) == 3 && parts[0] == "site" && validHostedDomain(parts[1]) {
+				parts = parts[1:]
+			}
+			if u.Scheme == "https" && u.Port() == "" && len(parts) == 2 && validHostedDomain(parts[0]) && safeSkillName.MatchString(parts[1]) {
+				if s.ref != "" {
+					return s, errors.New("hosted sources do not support Git refs")
+				}
+				s.source, s.skill, s.hosted = "https://"+strings.ToLower(parts[0]), parts[1], true
+				s.subpath = parts[1]
+				return s, nil
 			}
 			if u.Scheme != "https" || len(parts) != 3 || !repoPart.MatchString(parts[0]) || !repoPart.MatchString(parts[1]) || !safeSkillName.MatchString(parts[2]) {
 				return s, errors.New("skills.sh links must identify owner/repository/skill")
@@ -100,6 +111,25 @@ func parseSource(input, ref, subpath string) (sourceSpec, error) {
 		}
 		if strings.HasPrefix(u.Hostname(), "-") || strings.ContainsAny(u.Hostname(), " \t\\") {
 			return s, errors.New("invalid repository hostname")
+		}
+		hostedPath := strings.TrimRight(u.Path, "/")
+		if strings.HasSuffix(hostedPath, "/.well-known/skills/index.json") || strings.HasSuffix(hostedPath, "/.well-known/agent-skills/index.json") {
+			hostedPath = strings.TrimSuffix(hostedPath, "/index.json")
+		}
+		if u.Scheme == "https" && u.Hostname() != "github.com" && u.Hostname() != "gitlab.com" && (hostedPath == "" || strings.HasSuffix(hostedPath, "/.well-known/skills") || strings.HasSuffix(hostedPath, "/.well-known/agent-skills")) {
+			if !validHostedDomain(u.Hostname()) && net.ParseIP(u.Hostname()) == nil && u.Hostname() != "localhost" {
+				return s, errors.New("invalid hosted source hostname")
+			}
+			if s.ref != "" {
+				return s, errors.New("hosted sources do not support Git refs")
+			}
+			if strings.Contains(u.Path, "..") || strings.ContainsAny(u.Path, "\\\x00\r\n") || u.RawPath != "" {
+				return s, errors.New("invalid hosted source URL")
+			}
+			u.Host = strings.ToLower(u.Host)
+			u.Path = hostedPath
+			s.source, s.hosted = u.String(), true
+			return s, nil
 		}
 		if u.Hostname() == "github.com" && u.Scheme == "https" {
 			if len(parts) < 2 || !repoPart.MatchString(parts[0]) || !repoPart.MatchString(parts[1]) {
@@ -129,6 +159,18 @@ func parseSource(input, ref, subpath string) (sourceSpec, error) {
 	}
 	s.source = "https://github.com/" + parts[0] + "/" + strings.TrimSuffix(parts[1], ".git") + ".git"
 	return s, nil
+}
+
+func validHostedDomain(domain string) bool {
+	if len(domain) > 253 || !strings.Contains(domain, ".") {
+		return false
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if len(label) == 0 || len(label) > 63 || strings.HasSuffix(label, "-") || !domainLabel.MatchString(label) {
+			return false
+		}
+	}
+	return true
 }
 
 func validRef(ref string) bool {

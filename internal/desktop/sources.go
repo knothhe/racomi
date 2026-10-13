@@ -256,6 +256,9 @@ func (s *Service) installFromPreview(previewID string, paths []string) error {
 		return err
 	}
 	source := skillstore.Source{Repository: preview.Source, Ref: preview.Ref, Subpath: ".", Mode: "selected"}
+	if preview.Hosted {
+		source.Subpath = preview.Subpath
+	}
 	for _, existing := range state.Sources {
 		normalized, normalizeErr := sources.NormalizeSource(existing)
 		if normalizeErr != nil || normalized.Repository != preview.Source || (existing.Ref != preview.Ref && existing.Ref != "") {
@@ -266,6 +269,9 @@ func (s *Service) installFromPreview(previewID string, paths []string) error {
 			containsAll = containsAll && sourceContains(existing.Subpath, candidate.Skill.Subpath)
 		}
 		if containsAll {
+			if preview.Hosted && existing.Subpath != preview.Subpath {
+				return errors.New("该托管技能已属于较大范围的来源，请刷新该来源并从来源同步")
+			}
 			source = existing
 			break
 		}

@@ -2,7 +2,9 @@ package sources
 
 import (
 	"context"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -76,4 +78,78 @@ func TestLiveSkillsHubPreview(t *testing.T) {
 		t.Fatalf("cannot prepare the public candidate: %v", err)
 	}
 	t.Logf("Hub %s -> %s (%s), candidate %s at %s", selected.Slug, preview.Source, preview.Revision, candidates[0].Skill.Name, candidates[0].Skill.Subpath)
+}
+
+// This opt-in test downloads public hosted skill data into a temporary cache.
+// It exercises both the legacy directory manifest and the current archive form.
+func TestLiveHostedSkillsHubPreview(t *testing.T) {
+	if os.Getenv("RACOMI_TEST_LIVE_SOURCES") != "1" {
+		t.Skip("set RACOMI_TEST_LIVE_SOURCES=1 to validate public hosted skills")
+	}
+	cache, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := New(cache)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	results, err := client.Search(ctx, "lark-doc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selected *SearchResult
+	for i := range results {
+		if results[i].Slug == "open.feishu.cn/lark-doc" {
+			selected = &results[i]
+			break
+		}
+	}
+	if selected == nil || !selected.Supported || selected.Source != "open.feishu.cn" {
+		t.Fatalf("public hosted result is missing or unsupported: %#v", selected)
+	}
+	for _, test := range []struct {
+		name, input, subpath string
+	}{
+		{name: "Hub legacy manifest", input: selected.URL},
+		{name: "v0.2 digest-verified archive", input: "https://open.feishu.cn/lark-cli/skills/regular/.well-known/agent-skills", subpath: "lark-doc"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			preview, err := client.Preview(ctx, test.input, "", test.subpath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { client.Release(preview.ID) })
+			if !preview.Hosted || preview.Local || preview.Ref != "" || preview.Subpath != "lark-doc" || len(preview.Candidates) != 1 || preview.Candidates[0].Name != "lark-doc" {
+				t.Fatalf("hosted preview did not select only lark-doc: %+v", preview)
+			}
+			candidates, err := client.Candidates(preview.ID, []string{"lark-doc"})
+			if err != nil || len(candidates) != 1 {
+				t.Fatalf("cannot prepare public hosted candidate: %+v %v", candidates, err)
+			}
+			files := map[string]bool{}
+			err = filepath.WalkDir(candidates[0].Path, func(path string, entry fs.DirEntry, walkErr error) error {
+				if walkErr != nil {
+					return walkErr
+				}
+				if entry.Type().IsRegular() {
+					rel, err := filepath.Rel(candidates[0].Path, path)
+					if err != nil {
+						return err
+					}
+					files[filepath.ToSlash(rel)] = true
+				}
+				return nil
+			})
+			if err != nil || len(files) != 44 || !files["SKILL.md"] || !files["references/lark-doc-fetch.md"] || !files["references/genres/research-report.md"] {
+				t.Fatalf("public hosted skill lost supporting files: count=%d files=%v error=%v", len(files), files, err)
+			}
+			if err := client.Release(preview.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(candidates[0].Path); !os.IsNotExist(err) {
+				t.Fatalf("released hosted preview still exists: %v", err)
+			}
+			t.Logf("Hosted %s -> %s (%s), lark-doc with %d files", selected.Slug, preview.Source, preview.Revision, len(files))
+		})
+	}
 }

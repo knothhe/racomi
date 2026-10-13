@@ -38,6 +38,7 @@ type SkippedSkill struct {
 type Preview struct {
 	ID         string          `json:"id"`
 	Local      bool            `json:"local,omitempty"`
+	Hosted     bool            `json:"hosted,omitempty"`
 	Source     string          `json:"source"`
 	Ref        string          `json:"ref"`
 	Revision   string          `json:"revision"`
