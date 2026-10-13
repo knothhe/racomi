@@ -505,6 +505,8 @@ export const en = {
   "Existing project directory choices are preserved.": "Existing project directory choices are preserved.",
   "Data and backup": "Data and backup",
   "Create snapshots, export backups, or import from skills-manager.": "Create snapshots, export backups, or import from skills-manager.",
+  "迁移": "Migration",
+  "工作空间 ZIP": "Workspace ZIP",
   "Backup and migration": "Backup and migration",
   "Manage local snapshots and workspace ZIP backups.": "Manage local snapshots and workspace ZIP backups.",
   "Open backups": "Open backups",

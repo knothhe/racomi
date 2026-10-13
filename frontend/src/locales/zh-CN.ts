@@ -506,6 +506,8 @@ export const zhCN = {
   "Existing project directory choices are preserved.": "已有项目的目录选择会保留。",
   "Data and backup": "数据与备份",
   "Create snapshots, export backups, or import from skills-manager.": "创建快照、导出备份，或从 skills-manager 导入。",
+  "迁移": "迁移",
+  "工作空间 ZIP": "工作空间 ZIP",
   "Backup and migration": "备份与迁移",
   "Manage local snapshots and workspace ZIP backups.": "管理本地快照和工作空间 ZIP 备份。",
   "Open backups": "打开备份",

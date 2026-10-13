@@ -506,6 +506,8 @@ export const zhTW = {
   "Existing project directory choices are preserved.": "已有專案的目錄選擇會保留。",
   "Data and backup": "資料與備份",
   "Create snapshots, export backups, or import from skills-manager.": "建立快照、匯出備份，或從 skills-manager 匯入。",
+  "迁移": "遷移",
+  "工作空间 ZIP": "工作空間 ZIP",
   "Backup and migration": "備份與遷移",
   "Manage local snapshots and workspace ZIP backups.": "管理本地快照和工作空間 ZIP 備份。",
   "Open backups": "開啟備份",

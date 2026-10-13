@@ -14,10 +14,10 @@ export type GuideTab = typeof guideTabs[number]["id"];
 // The guide is local content and remains available without the desktop service.
 export function guidePage(activeTab: GuideTab = "start") {
   const stages = [
-    ["discover", "compass", "发现", "搜索 skills.sh，或预览 Git 仓库与本地目录，挑选技能导入。"],
-    ["sources", "refresh", "来源", "追踪仓库与版本，刷新清单，再同步需要的技能。"],
-    ["skills", "skills", "技能", "集中保存已安装技能，查看说明、来源和更新。"],
-    ["presets", "layers", "预设", "把常用技能存成预设，在多个地方重复使用；也可直接选技能。"],
+    ["discover", "compass", "发现"],
+    ["sources", "refresh", "来源"],
+    ["skills", "skills", "技能"],
+    ["presets", "layers", "预设"],
   ];
   const steps = [
     ["导入你的第一个技能", "在“发现”搜索、填写 Git 仓库或选择本地目录，预览后勾选技能并导入。导入只在本地保存技能。", "discover", "发现技能"],
@@ -34,23 +34,22 @@ export function guidePage(activeTab: GuideTab = "start") {
     ["遇到冲突或上游删除会怎样？", "同名未托管内容或本地修改会阻止普通应用；可查看受影响路径并确认强制覆盖，覆盖或删除的内容无法恢复。重复技能名称等冲突仍需先处理。上游删除只标记状态并保留本地技能，可继续使用。备份与恢复在设置中管理。"],
   ];
   const title = guideTabs.find((tab) => tab.id === activeTab)?.label || guideTabs[0].label;
-  const description = activeTab === "sync" ? "Keep working locally, then exchange encrypted changes with your other devices." : activeTab === "faq" ? "了解技能管理、应用目录和冲突处理的常见问题。" : "了解技能从哪里来、如何组织，以及什么时候会写入应用目录。";
   return `<article class="guide-page">
-    <header class="page-heading"><div><h2 class="page-section-title">${text(title)}</h2><p class="page-description">${text(description)}</p></div>${activeTab === "start" ? link("discover", "开始发现技能") : ""}</header>
+    <header class="page-heading"><div><h2 class="page-section-title">${text(title)}</h2></div>${activeTab === "start" ? link("discover", "开始发现技能") : ""}</header>
     ${activeTab === "start" ? `
     <section class="panel guide-overview" aria-labelledby="guide-workflow-title">
-      <div class="guide-section-heading"><span class="card-icon">${icon("skills")}</span><div><h3 id="guide-workflow-title">${text("racomi 如何工作")}</h3><p>${text("先把技能保存在本地，再按需应用到 Agent 使用的目录。")}</p></div></div>
-      <ol class="guide-flow">${stages.map(([page, symbol, label, description], i) => `<li><button type="button" data-page="${page}" class="guide-stage"><span class="guide-stage-top"><span class="guide-stage-number">${i + 1}</span>${icon(symbol)}</span><strong>${text(label)}</strong><span>${text(description)}</span></button></li>`).join("")}</ol>
+      <div class="guide-section-heading"><span class="card-icon">${icon("skills")}</span><div><h3 id="guide-workflow-title">${text("racomi 如何工作")}</h3></div></div>
+      <ol class="guide-flow">${stages.map(([page, symbol, label], i) => `<li><button type="button" data-page="${page}" class="guide-stage"><span class="guide-stage-top"><span class="guide-stage-number">${i + 1}</span>${icon(symbol)}</span><strong>${text(label)}</strong></button></li>`).join("")}</ol>
       <div class="guide-destinations"><span>${text("选择应用范围")}</span><div><button type="button" data-page="global">${icon("monitor")}<strong>${text("全局")}</strong><span>${text("供 Agent 在多个项目中使用")}</span>${icon("arrow")}</button><button type="button" data-page="projects">${icon("folder")}<strong>${text("项目")}</strong><span>${text("为指定项目配置技能目录")}</span>${icon("arrow")}</button></div></div>
       <p class="guide-note">${icon("info")}<span>${text("选择会自动保存；预览检查变化；点击应用才会修改目录。")}</span></p>
     </section>
     <section class="guide-start" aria-labelledby="guide-start-title"><h3 id="guide-start-title">${text("第一次使用")}</h3><ol class="guide-steps">${steps.map(([title, description, page, label], i) => `<li><span class="guide-step-number">${i + 1}</span><div><h4>${text(title)}</h4><p>${text(description)}</p></div>${link(page, label)}</li>`).join("")}</ol></section>
-    ` : activeTab === "sync" ? cloudSyncGuide() : `<section class="guide-questions" aria-labelledby="guide-questions-title"><h3 id="guide-questions-title">${text("常见问题")}</h3><div class="panel">${questions.map(([question, answer]) => `<details><summary>${text(question)}</summary><p>${text(answer)}</p></details>`).join("")}</div></section>`}
+    ` : activeTab === "sync" ? cloudSyncGuide() : `<section class="guide-questions" aria-labelledby="guide-questions-title"><h3 id="guide-questions-title" class="sr-only">${text("常见问题")}</h3><div class="panel">${questions.map(([question, answer]) => `<details><summary>${text(question)}</summary><p>${text(answer)}</p></details>`).join("")}</div></section>`}
   </article>`;
 }
 
 function cloudSyncGuide() {
-  return `<section class="guide-cloud" aria-labelledby="guide-cloud-title"><div class="guide-section-heading"><span class="card-icon">${icon("refresh")}</span><div><h3 id="guide-cloud-title">${text("S3 / R2 sync and backup")}</h3><p>${text("Keep working locally, then exchange encrypted changes with your other devices.")}</p></div><button type="button" class="button small quiet" data-action="open-cloud-settings">${text("Open sync settings")}${icon("arrow")}</button></div>
+  return `<section class="guide-cloud" aria-labelledby="guide-cloud-title"><div class="guide-section-heading"><span class="card-icon">${icon("refresh")}</span><div><h3 id="guide-cloud-title">${text("S3 / R2 sync and backup")}</h3></div><button type="button" class="button small quiet" data-action="open-cloud-settings">${text("Open sync settings")}${icon("arrow")}</button></div>
     <div class="panel guide-cloud-content">
       <p>${text("Two-way sync includes sources, skill files, presets, theme, language, navigation layout, and shared deployment defaults. Project roots, custom absolute paths, deployment records, caches, and storage credentials stay on each device. Sync never applies skills to Agent directories automatically.")}</p>
       <details open><summary>Cloudflare R2</summary><ol>
