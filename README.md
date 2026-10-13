@@ -6,7 +6,8 @@
 - 组合多个预设，按需补充直接选择的技能，支持多目录、复制与软链接部署。
 - 提供本地快照、ZIP 备份恢复和 skills-manager 数据导入。
 - 可选 S3 / Cloudflare R2 加密双向同步，跨设备共享来源、技能、预设及设置，并支持云端历史恢复。
-- 支持侧边栏／顶部导航切换、明暗主题、简体中文、繁體中文和 English。
+- 支持侧边栏／顶部导航切换、明暗主题、文字缩放、界面字体，以及简体中文、繁體中文和 English。
+- macOS 可开启轻量模式与开机自启。
 
 ## macOS 安装
 
@@ -57,7 +58,11 @@ make uninstall   # 卸载应用和启动命令，保留数据与部署
 
 默认 `.agents/skills` 项目目录与 `~/.agents/skills` 用户目录由 Codex 和 Cursor 共享；Claude Code 使用 `.claude/skills`，Cursor 也有 `.cursor/skills` 专用目录。`.codex/skills` 保留为兼容选项，新配置建议使用共享目录。Cursor 还兼容读取默认的 Claude Code 与 Codex 目录，因此选择不同目录不代表技能隔离。目录依据 [Codex](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)、[Claude Code](https://code.claude.com/docs/en/skills) 和 [Cursor](https://cursor.com/docs/skills#skill-directories) 官方说明。
 
-导航布局默认跟随窗口宽度：达到 1024px 时使用侧边栏，较窄时使用顶部导航；可在“设置 → 外观 → 导航布局”选择自动、侧边栏或顶部导航。顶部按钮可显示或收起侧边栏，快捷键为 macOS 的 Control + Command + S，其他平台的 Ctrl + Shift + S。拖拽侧边栏边缘或聚焦边缘后用键盘调整宽度，并可重置；主题、语言和导航布局可参与云同步，宽度保留在本机。布局与交互参考 [magpie main 的 74b30cb 版本](https://github.com/yetone/magpie/commit/74b30cb)。
+导航布局默认跟随窗口宽度：达到 1024px 时使用侧边栏，较窄时使用顶部导航；可在“设置 → 外观 → 导航布局”选择自动、侧边栏或顶部导航。顶部按钮可显示或收起侧边栏，快捷键为 macOS 的 Control + Command + S，其他平台的 Ctrl + Shift + S。拖拽侧边栏边缘或聚焦边缘后用键盘调整宽度，并可重置；主题、语言和导航布局可参与云同步，宽度保留在本机。“设置 → 外观”还可调整文字大小（100%、110%、125%、150%）和界面字体，macOS 支持 Command + 加号／减号及 Command + 0。字体与文字大小参与云同步。
+
+“设置 → 应用”的轻量模式会在关闭窗口一分钟后释放页面，点击 Dock 图标重新加载；未开启时关闭窗口会退出应用。开机自启在用户登录后启动应用，需要先安装 `.app`。这两项保留在本机，退出应用不会被自动重启。
+
+布局与交互参考 [magpie main 的 74b30cb 版本](https://github.com/yetone/magpie/commit/74b30cb)。
 
 刷新只更新来源清单，同步只更新本地技能；点击应用才修改目标目录。本地技能或预设更新后需重新应用。遇到同名未托管内容或本地修改时，普通应用会停止；预览会列出受影响的完整路径，可确认强制覆盖。强制覆盖会替换同名内容，也会删除已取消选择的本地修改，无法恢复，请先自行备份。重复技能名称、损坏内容或无效目录仍会阻止应用。
 

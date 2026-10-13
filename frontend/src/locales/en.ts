@@ -1,5 +1,17 @@
 // Authored source strings are keys, matching Magpie's small dictionary API.
 export const en = {
+  "文字大小": "Text size",
+  "界面字体": "Interface font",
+  "系统字体": "System font",
+  "无衬线": "Sans serif",
+  "衬线": "Serif",
+  "等宽": "Monospace",
+  "应用": "Application",
+  "轻量模式": "Lightweight mode",
+  "开机自启": "Open at login",
+  "关闭窗口一分钟后释放页面，点击 Dock 图标重新打开。": "Release the page one minute after closing; click the Dock icon to reopen.",
+  "This setting is available only on macOS": "This setting is available only on macOS",
+  "Install racomi in Applications before enabling open at login": "Install racomi in Applications before enabling open at login",
   " 个": " items",
   " 个预设": " presets",
   " 个预设 · ": " presets · ",

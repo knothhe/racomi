@@ -216,7 +216,7 @@ func (s *Service) SaveSettingsPatch(patch map[string]json.RawMessage, onlyMissin
 			return err
 		}
 		allowed := map[string]bool{"deploymentMode": true, "defaultProjectDirectories": true, "defaultGlobalDirectories": true,
-			"customProjectDirectories": true, "theme": true, "locale": true, "navLayout": true}
+			"customProjectDirectories": true, "theme": true, "locale": true, "navLayout": true, "textSize": true, "interfaceFont": true}
 		filtered := make(map[string]json.RawMessage, len(patch))
 		preferences := map[string]string{"theme": state.Settings.Theme, "locale": state.Settings.Locale, "navLayout": state.Settings.NavLayout}
 		for field, value := range patch {

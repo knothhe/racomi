@@ -322,3 +322,19 @@ test("a queued settings write sends only its explicit patch after cloud changed 
   assert.deepEqual(patches, [{ deploymentMode: "symlink" }]);
   assert.deepEqual(server, { ...initialSettings(), deploymentMode: "symlink", theme: "light", locale: "en", navLayout: "auto" });
 });
+
+test("queued font and text size edits keep both preferences in later saves", async () => {
+  const h = harness();
+  h.autosave.save({ textSize: 125 });
+  h.autosave.save({ interfaceFont: "serif" });
+  assert.deepEqual(h.patches[0], { textSize: 125 });
+  h.requests[0].resolve({ id: 1, settings: copy(h.writes[0]) });
+  await nextTurn();
+  assert.equal(h.writes[1].textSize, 125);
+  assert.equal(h.writes[1].interfaceFont, "serif");
+  assert.deepEqual(h.patches[1], { interfaceFont: "serif" });
+  h.requests[1].resolve({ id: 2, settings: copy(h.writes[1]) });
+  await h.autosave.idle();
+  assert.equal(h.settlements[0].result?.settings.textSize, 125);
+  assert.equal(h.settlements[0].result?.settings.interfaceFont, "serif");
+});

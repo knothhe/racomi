@@ -20,6 +20,10 @@ and resizing were referenced from main at commit
 74b30cb7f86763d9e7cc4574477379b939487fd4:
 https://github.com/yetone/magpie/tree/74b30cb7f86763d9e7cc4574477379b939487fd4/internal/gui/assets
 
+The discovery card grid, text size choices, macOS login item, and lightweight
+window lifecycle also reference Magpie. The WebKit page zoom and release workarounds are
+adapted in internal/desktop/webview_darwin.go.
+
 ------------------------------------------------------------------------
 Magpie
 https://github.com/yetone/magpie

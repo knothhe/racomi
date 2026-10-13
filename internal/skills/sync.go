@@ -74,9 +74,15 @@ func EmptyShared() SharedState { return ExportShared(emptyState()) }
 func canonicalShared(shared SharedState) SharedState {
 	s := cloneState(State{Settings: shared.Settings, Skills: shared.Skills, Sources: shared.Sources, Presets: shared.Presets})
 	// A fresh device's implicit UI preferences are the common default, not
-	// three independent edits against an empty checkpoint. Keep these defaults
+	// independent edits against an empty checkpoint. Keep these defaults
 	// in the shared representation so old local states can still migrate their
 	// saved WebView preferences before enabling synchronization.
+	if s.Settings.TextSize == 0 {
+		s.Settings.TextSize = 100
+	}
+	if s.Settings.InterfaceFont == "" {
+		s.Settings.InterfaceFont = "system"
+	}
 	if s.Settings.Theme == "" {
 		s.Settings.Theme = "system"
 	}

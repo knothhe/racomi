@@ -57,24 +57,13 @@ func main() {
 			Handler: application.AssetFileServerFS(assets),
 		},
 		Mac: application.MacOptions{
-			ApplicationShouldTerminateAfterLastWindowClosed: true,
+			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
-		SingleInstance: &application.SingleInstanceOptions{UniqueID: "local.racomi.desktop"},
+		SingleInstance: &application.SingleInstanceOptions{UniqueID: "local.racomi.desktop", OnSecondInstanceLaunch: func(application.SecondInstanceData) { service.OpenWindow() }},
 	})
 	desktop.Attach(service, app)
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:            "racomi",
-		Width:            1200,
-		Height:           800,
-		MinWidth:         900,
-		MinHeight:        620,
-		BackgroundColour: application.NewRGB(244, 244, 246),
-		Mac: application.MacWindow{
-			TitleBar: application.MacTitleBarHiddenInset,
-		},
-		URL: "/",
-	})
+	desktop.OpenMainWindow(service, app)
 
 	if err := app.Run(); err != nil {
 		log.Fatal(err)

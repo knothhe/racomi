@@ -17,6 +17,8 @@ export interface SettingsAutosave {
 
 function cloneSettings(settings: AppSettings): AppSettings {
   return {
+    ...(settings.textSize ? { textSize: settings.textSize } : {}),
+    ...(settings.interfaceFont ? { interfaceFont: settings.interfaceFont } : {}),
     ...(settings.theme ? { theme: settings.theme } : {}),
     ...(settings.locale ? { locale: settings.locale } : {}),
     ...(settings.navLayout ? { navLayout: settings.navLayout } : {}),
@@ -29,6 +31,8 @@ function cloneSettings(settings: AppSettings): AppSettings {
 
 function clonePatch(patch: Partial<AppSettings>): Partial<AppSettings> {
   const snapshot: Partial<AppSettings> = {};
+  if (patch.textSize !== undefined) snapshot.textSize = patch.textSize;
+  if (patch.interfaceFont !== undefined) snapshot.interfaceFont = patch.interfaceFont;
   if (patch.theme !== undefined) snapshot.theme = patch.theme;
   if (patch.locale !== undefined) snapshot.locale = patch.locale;
   if (patch.navLayout !== undefined) snapshot.navLayout = patch.navLayout;

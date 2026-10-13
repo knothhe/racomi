@@ -20,6 +20,7 @@ import (
 )
 
 type AppState struct {
+	DesktopPreferences DesktopPreferences        `json:"desktopPreferences"`
 	DataDir            string                    `json:"dataDir"`
 	HomeDir            string                    `json:"homeDir"`
 	State              skillstore.State          `json:"state"`
@@ -31,6 +32,8 @@ type AppState struct {
 }
 
 type Service struct {
+	desktop       *desktopRuntime
+	openWindow    func()
 	store         *skillstore.Store
 	sources       *sources.Client
 	mu            sync.Mutex
@@ -58,13 +61,17 @@ func New(root string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	desktop, err := loadDesktopPreferences(store.Root())
+	if err != nil {
+		return nil, err
+	}
 	cloud, err := loadCloudSync(store.Root())
 	if err != nil {
 		// Optional cloud configuration must never prevent opening the local library.
 		cloud = newCloudSyncRuntime(store.Root())
 		cloud.lastError = err.Error()
 	}
-	return &Service{store: store, sources: sources.New(filepath.Join(store.Root(), "cache", "sources")), theme: "system", locale: "zh-CN", cloud: cloud}, nil
+	return &Service{desktop: desktop, store: store, sources: sources.New(filepath.Join(store.Root(), "cache", "sources")), theme: "system", locale: "zh-CN", cloud: cloud}, nil
 }
 
 func Attach(service *Service, app *application.App) {
@@ -229,7 +236,7 @@ func (s *Service) GetState() (AppState, error) {
 			projects = append(projects, target)
 		}
 	}
-	return AppState{DataDir: s.store.Root(), HomeDir: applicationPath(home), State: state, Snapshots: snapshots, DirectoryOptions: directories, Projects: projects, GlobalApplications: globals, CloudSync: cloud}, nil
+	return AppState{DesktopPreferences: s.desktopPreferences(), DataDir: s.store.Root(), HomeDir: applicationPath(home), State: state, Snapshots: snapshots, DirectoryOptions: directories, Projects: projects, GlobalApplications: globals, CloudSync: cloud}, nil
 }
 
 func (s *Service) Search(ctx context.Context, query string) ([]sources.SearchResult, error) {

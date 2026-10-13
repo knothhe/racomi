@@ -1,6 +1,18 @@
 import type { en } from "./en";
 
 export const zhCN = {
+  "文字大小": "文字大小",
+  "界面字体": "界面字体",
+  "系统字体": "系统字体",
+  "无衬线": "无衬线",
+  "衬线": "衬线",
+  "等宽": "等宽",
+  "应用": "应用",
+  "轻量模式": "轻量模式",
+  "开机自启": "开机自启",
+  "关闭窗口一分钟后释放页面，点击 Dock 图标重新打开。": "关闭窗口一分钟后释放页面，点击 Dock 图标重新打开。",
+  "This setting is available only on macOS": "此设置仅适用于 macOS",
+  "Install racomi in Applications before enabling open at login": "请先将 racomi 安装到「应用程序」，再开启开机自启",
   " 个": " 个",
   " 个预设": " 个预设",
   " 个预设 · ": " 个预设 · ",

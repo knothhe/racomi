@@ -107,6 +107,7 @@ test("pointer dragging previews widths, persists on release and cancels on Escap
   const initial = h.width;
   assert.equal(h.pointer("pointerdown", initial + 108).defaultPrevented, true);
   assert.equal(h.edge.hasPointerCapture(1), true);
+  assert.equal(h.edge.classes.has("is-resizing"), true);
   h.pointer("pointermove", initial + 208, 2);
   assert.equal(h.width, initial, "another pointer cannot resize the panes");
   h.pointer("pointermove", initial + 208);
@@ -115,11 +116,27 @@ test("pointer dragging previews widths, persists on release and cancels on Escap
   h.key("Escape");
   assert.equal(h.width, initial);
   assert.equal(h.edge.hasPointerCapture(1), false);
+  assert.equal(h.edge.classes.has("is-resizing"), false, "Escape clears the drag highlight");
   h.pointer("pointerdown", initial + 108); h.pointer("pointermove", initial + 150); h.pointer("pointerup", initial + 150);
   assert.equal(h.stored.size, 1);
   assert.equal(h.body.classes.has("workspace-split-drag"), false);
+  assert.equal(h.edge.classes.has("is-resizing"), false, "the drag highlight ends on release");
   const reloaded = harness({ storage: Object.fromEntries(h.stored) });
   assert.equal(reloaded.width, h.width);
+});
+
+test("pointer cancellation and capture loss clear the drag feedback without saving widths", () => {
+  for (const ending of ["pointercancel", "lostpointercapture"]) {
+    const h = harness();
+    const initial = h.width;
+    h.pointer("pointerdown", initial + 108);
+    h.pointer("pointermove", initial + 200);
+    h.pointer(ending, initial + 200);
+    assert.equal(h.edge.classes.has("is-resizing"), false);
+    assert.equal(h.body.classes.has("workspace-split-drag"), false);
+    assert.equal(h.width, initial);
+    assert.equal(h.stored.size, 0);
+  }
 });
 
 test("keyboard resizing clamps both panes, reports separator values and resets to the default", () => {

@@ -56,6 +56,8 @@ type ProjectDirectory struct {
 }
 
 type Settings struct {
+	TextSize                  int                `json:"textSize,omitempty"`
+	InterfaceFont             string             `json:"interfaceFont,omitempty"`
 	Theme                     string             `json:"theme,omitempty"`
 	Locale                    string             `json:"locale,omitempty"`
 	NavLayout                 string             `json:"navLayout,omitempty"`

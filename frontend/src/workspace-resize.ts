@@ -121,6 +121,7 @@ function endDrag(commit: boolean) {
   if (!drag) return;
   const ended = drag;
   drag = undefined;
+  ended.edge.classList.remove("is-resizing");
   document.body.classList.remove("workspace-split-drag");
   if (commit) keepRatio(ended.key, ended.ratio);
   try {
@@ -141,6 +142,7 @@ export function installWorkspaceResize() {
     const left = Math.max(item.bounds.min, Math.min(item.bounds.max, ratios.get(item.config.key) === undefined ? item.bounds.initial : item.bounds.width * ratios.get(item.config.key)!));
     drag = { layout: item.layout, edge, key: item.config.key, pointerId: event.pointerId, offset: left - event.clientX + item.layout.getBoundingClientRect().left + item.bounds.padding, ratio: left / item.bounds.width };
     event.preventDefault();
+    edge.classList.add("is-resizing");
     edge.focus({ preventScroll: true });
     try { edge.setPointerCapture(event.pointerId); } catch { /* Document listeners still finish the drag. */ }
     document.body.classList.add("workspace-split-drag");

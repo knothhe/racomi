@@ -465,13 +465,15 @@ func TestSharedFreshDeviceAcceptsRemotePreferencesWithoutFalseConflicts(t *testi
 	local := ExportShared(state(t, store))
 	// The WebView preference migration on a new device saves these defaults.
 	local.Settings.Theme, local.Settings.Locale, local.Settings.NavLayout = "system", "system", "auto"
+	local.Settings.TextSize, local.Settings.InterfaceFont = 100, "system"
 	remote := EmptyShared()
 	remote.Settings.Theme, remote.Settings.Locale, remote.Settings.NavLayout = "dark", "en", "side"
+	remote.Settings.TextSize, remote.Settings.InterfaceFont = 125, "serif"
 	merged, conflicts, err := MergeShared(EmptyShared(), local, remote, nil)
-	if err != nil || len(conflicts) != 0 || merged.Settings.Theme != "dark" || merged.Settings.Locale != "en" || merged.Settings.NavLayout != "side" {
+	if err != nil || len(conflicts) != 0 || merged.Settings.Theme != "dark" || merged.Settings.Locale != "en" || merged.Settings.NavLayout != "side" || merged.Settings.TextSize != 125 || merged.Settings.InterfaceFont != "serif" {
 		t.Fatalf("fresh defaults incorrectly conflicted with remote preferences: %+v, %+v, %v", merged.Settings, conflicts, err)
 	}
-	if original := state(t, store).Settings; original.Theme != "" || original.Locale != "" || original.NavLayout != "" {
+	if original := state(t, store).Settings; original.Theme != "" || original.Locale != "" || original.NavLayout != "" || original.TextSize != 0 || original.InterfaceFont != "" {
 		t.Fatal("canonical shared defaults modified the old local migration state")
 	}
 }

@@ -80,6 +80,12 @@ func relativeProjectTemplatePath(path string) bool {
 }
 
 func validateSettings(settings Settings, targets []Target) error {
+	if settings.TextSize != 0 && !slices.Contains([]int{100, 110, 125, 150}, settings.TextSize) {
+		return errors.New("text size must be 100, 110, 125, or 150")
+	}
+	if settings.InterfaceFont != "" && !slices.Contains([]string{"system", "sans", "serif", "mono"}, settings.InterfaceFont) {
+		return errors.New("invalid interface font")
+	}
 	if settings.Theme != "" && !slices.Contains([]string{"system", "light", "dark"}, settings.Theme) {
 		return errors.New("theme must be system, light, or dark")
 	}
@@ -129,6 +135,12 @@ func (l *Store) SaveSettings(settings Settings) error {
 	}
 	// Older clients omit these WebView preferences. Preserve them until a
 	// client explicitly chooses a supported value, including system/auto.
+	if settings.TextSize == 0 {
+		settings.TextSize = state.Settings.TextSize
+	}
+	if settings.InterfaceFont == "" {
+		settings.InterfaceFont = state.Settings.InterfaceFont
+	}
 	if settings.Theme == "" {
 		settings.Theme = state.Settings.Theme
 	}

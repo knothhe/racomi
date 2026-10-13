@@ -144,6 +144,7 @@ test("dragging captures the pointer, previews the width and saves only on releas
   assert.equal(h.pointer("pointerdown", 210).defaultPrevented, true);
   assert.equal(h.edge.hasPointerCapture(1), true);
   assert.equal(h.body.classes.has("side-drag"), true);
+  assert.equal(h.edge.classes.has("is-resizing"), true);
   h.pointer("pointermove", 500, 2);
   assert.equal(h.width, 212, "an unrelated pointer cannot resize the sidebar");
   h.pointer("pointermove", 270);
@@ -153,6 +154,7 @@ test("dragging captures the pointer, previews the width and saves only on releas
   assert.equal(h.stored.get("racomi.sideWidth"), "272");
   assert.equal(h.edge.hasPointerCapture(1), false);
   assert.equal(h.body.classes.has("side-drag"), false);
+  assert.equal(h.edge.classes.has("is-resizing"), false, "the drag highlight ends on release");
   assert.equal(h.widthEvents.at(-1), 272);
 });
 
@@ -184,6 +186,7 @@ test("Escape, pointer cancellation and losing capture restore the original width
     assert.equal(h.width, 240);
     assert.equal(h.stored.get("racomi.sideWidth"), "240");
     assert.equal(h.body.classes.has("side-drag"), false);
+    assert.equal(h.edge.classes.has("is-resizing"), false, `${ending} clears the drag highlight`);
     assert.equal(h.edge.hasPointerCapture(1), false);
     h.pointer("pointerup", 300);
     assert.equal(h.width, 240, "late pointerup cannot commit a cancelled drag");

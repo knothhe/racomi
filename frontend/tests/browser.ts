@@ -7,6 +7,7 @@ import { getThemePreference } from "../src/theme";
 import { getNavLayoutPreference } from "../src/layout";
 
 const state: AppState = {
+  desktopPreferences: { lightweight: false, openAtLogin: false, supported: true },
   cloudSync: { config: defaultCloudSyncConfig(), configured: false, syncing: false, lastSyncAt: "", lastError: "", conflicts: [] },
   dataDir: "/test/racomi", homeDir: "/test/home", directoryOptions: [], snapshots: [], projects: [],
   globalApplications: [
@@ -43,6 +44,11 @@ if (testParameters.has("cloud-conflicts")) state.cloudSync.conflicts = [
 let projectSelectionFailures = testParameters.has("project-selection-fail-once") ? 1 : 0;
 // Opt in to realistic, populated pages without changing regression-test fixtures.
 const visualReview = testParameters.has("visual-review");
+if (testParameters.has("many-directories")) {
+  state.state.settings.customProjectDirectories = Array.from({ length: 25 }, (_, i) => ({ id: `project-extra-${i}`, name: `项目目录 ${i + 1}`, path: `.team-${i}/skills` }));
+  state.globalApplications.push(...Array.from({ length: 25 }, (_, i) => ({ key: `global-extra-${i}`, agentId: "custom", agentName: "自定义", name: `全局目录 ${i + 1}`, path: `/test/home/extra-${i}/skills`, description: "", target: null })));
+}
+
 if (visualReview && testParameters.has("native-mac")) document.body.classList.add("native-mac");
 if (visualReview) {
   state.dataDir = "/test/home/Library/Application Support/Racomi/workspaces/product-design-team";
@@ -344,7 +350,10 @@ const installLocal = async (id: string, paths: string[]) => {
   return copy();
 };
 Object.assign(api, {
-  state: async () => copy(), setTheme: async () => {}, setLocale: async () => {},
+  state: async () => copy(), setTextSize: async () => {},
+  setLightweight: async (on: boolean) => { state.desktopPreferences!.lightweight = on; return copy(); },
+  setOpenAtLogin: async (on: boolean) => { state.desktopPreferences!.openAtLogin = on; return copy(); },
+  setTheme: async () => {}, setLocale: async () => {},
   saveSettingsPatch: async (patch: Partial<AppState["state"]["settings"]>, onlyMissing = false) => {
     const fields = onlyMissing ? Object.fromEntries(Object.entries(patch).filter(([key]) => !state.state.settings[key as keyof AppState["state"]["settings"]])) : patch;
     return api.saveSettings({ ...state.state.settings, ...fields });

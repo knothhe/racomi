@@ -90,6 +90,7 @@ function endDrag(commit: boolean): void {
   if (!drag) return;
   const ended = drag;
   drag = undefined;
+  ended.edge.classList.remove("is-resizing");
   document.body?.classList.remove("side-drag");
   try {
     if (ended.edge.hasPointerCapture(ended.pointerId)) ended.edge.releasePointerCapture(ended.pointerId);
@@ -139,6 +140,7 @@ export function installSidebarResize(): void {
     if (!edge || event.button !== 0 || getNavLayout() !== "side" || drag) return;
     event.preventDefault();
     drag = { edge, pointerId: event.pointerId, offset: sidebarWidth() - event.clientX, width: undefined };
+    edge.classList.add("is-resizing");
     try { edge.setPointerCapture(event.pointerId); } catch { /* Document listeners still finish the drag. */ }
     document.body?.classList.add("side-drag");
   });

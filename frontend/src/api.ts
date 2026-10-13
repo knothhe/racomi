@@ -23,6 +23,8 @@ export interface Target {
 }
 export interface ProjectDirectoryTemplate { id: string; name: string; path: string }
 export interface AppSettings {
+  textSize?: 100 | 110 | 125 | 150;
+  interfaceFont?: "system" | "sans" | "serif" | "mono";
   theme?: "light" | "dark" | "system";
   locale?: "zh-CN" | "zh-TW" | "en" | "system";
   navLayout?: "auto" | "side" | "top";
@@ -49,7 +51,9 @@ export interface CloudSyncStatus {
 }
 export interface CloudBackup { id: string; createdAt: string; skillCount: number; presetCount: number }
 export interface DirectoryOption { id: string; name: string; path: string; kind: "global" | "project"; description: string }
+export interface DesktopPreferences { lightweight: boolean; openAtLogin: boolean; supported: boolean }
 export interface AppState {
+  desktopPreferences?: DesktopPreferences;
   cloudSync: CloudSyncStatus;
   directoryOptions: DirectoryOption[];
   dataDir: string;
@@ -97,6 +101,9 @@ export const api = {
   listCloudBackups: () => invoke<CloudBackup[]>("ListCloudBackups"),
   restoreCloudBackup: (id: string) => invoke<AppState>("RestoreCloudBackup", id),
   readSkillDocument: (id: string) => invoke<string>("ReadSkillDocument", id),
+  setTextSize: (size: number) => invoke<void>("SetTextSize", size),
+  setLightweight: (on: boolean) => invoke<AppState>("SetLightweight", on),
+  setOpenAtLogin: (on: boolean) => invoke<AppState>("SetOpenAtLogin", on),
   setTheme: (preference: "light" | "dark" | "system") => invoke<void>("SetTheme", preference),
   setLocale: (locale: "zh-CN" | "zh-TW" | "en") => invoke<void>("SetLocale", locale),
   saveSettings: (settings: AppSettings) => invoke<AppState>("SaveSettings", settings),
