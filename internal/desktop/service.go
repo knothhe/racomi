@@ -252,7 +252,7 @@ func (s *Service) ListSkills(ctx context.Context, page int) (sources.SkillListPa
 }
 
 func (s *Service) Preview(ctx context.Context, source, ref, subpath string) (sources.Preview, error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, sources.SourceOperationTimeout)
 	defer cancel()
 	return s.sources.Preview(ctx, source, ref, subpath)
 }

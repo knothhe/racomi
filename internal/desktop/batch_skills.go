@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"slices"
-	"time"
 
 	skillstore "racomi/internal/skills"
+	"racomi/internal/sources"
 )
 
 // UpdateSkills prepares every selected skill before committing any update. It
@@ -70,7 +70,7 @@ func (s *Service) UpdateSkills(ctx context.Context, ids []string) (AppState, err
 			}
 			plans = append(plans, sourcePlan{source: source, paths: paths, ids: ids})
 		}
-		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		ctx, cancel := context.WithTimeout(ctx, sources.SourceOperationTimeout)
 		defer cancel()
 		prepared := []skillstore.Candidate{}
 		for _, plan := range plans {

@@ -711,7 +711,7 @@ function discoverPage() {
 }
 function previewWaitHint(request: PreviewRequest, seconds: number) {
   if (request.kind === "local") return t("正在读取本地技能文件，请稍候。");
-  if (seconds >= 45) return t("等待时间较长，请检查网络或代理连接。超时后可以重试。");
+  if (seconds >= 45) return t("仓库较大或传输较慢时可能需要几分钟，请稍候。超时后可以重试。");
   if (seconds >= 15) return t("仍在等待仓库内容，网络较慢或仓库较大时可能需要更久。");
   return t("正在获取仓库内容并查找技能。首次预览可能需要更长时间。");
 }
@@ -728,7 +728,7 @@ function previewRequestPanel() {
   const seconds = Math.max(0, Math.floor((Date.now() - request.startedAt) / 1000));
   const timedOut = /timed out|timeout|deadline exceeded/i.test(request.error);
   const title = request.loading ? t("正在准备预览…") : timedOut ? t("预览超时") : t("未能完成预览");
-  return `<section class="panel preview-panel preview-request" aria-labelledby="preview-request-title" aria-busy="${request.loading}"><div class="preview-heading"><h3 id="preview-request-title">${request.loading ? '<span class="spinner" aria-hidden="true"></span>' : icon("alert")}${title}</h3></div><p class="mono preview-request-source">${e(request.source)}</p>${request.loading ? `<p id="preview-elapsed" class="preview-elapsed" role="timer" aria-live="off">${t("已等待 {0} 秒", { 0: seconds })}</p><p id="preview-wait-hint" role="status">${previewWaitHint(request, seconds)}</p><p class="muted">${t("可以切换到其他页面，预览会继续进行。")}</p>` : `<div class="preview-request-error" role="alert"><p>${request.kind === "local" ? t("请检查目录是否存在且可读取，然后重试。") : timedOut ? t("获取仓库或读取技能内容超时。请检查网络或代理连接后重试。") : t("请检查网络、仓库地址和访问权限后重试。")}</p></div>${button(t("重试预览"), "retry-preview", "primary", "", "refresh")}<details class="preview-error-details"><summary>${t("错误详情")}</summary><pre>${e(tMessage(request.error))}</pre></details>`}</section>`;
+  return `<section class="panel preview-panel preview-request" aria-labelledby="preview-request-title" aria-busy="${request.loading}"><div class="preview-heading"><h3 id="preview-request-title">${request.loading ? '<span class="spinner" aria-hidden="true"></span>' : icon("alert")}${title}</h3></div><p class="mono preview-request-source">${e(request.source)}</p>${request.loading ? `<p id="preview-elapsed" class="preview-elapsed" role="timer" aria-live="off">${t("已等待 {0} 秒", { 0: seconds })}</p><p id="preview-wait-hint" role="status">${previewWaitHint(request, seconds)}</p><p class="muted">${t("可以切换到其他页面，预览会继续进行。")}</p>` : `<div class="preview-request-error" role="alert"><p>${request.kind === "local" ? t("请检查目录是否存在且可读取，然后重试。") : timedOut ? t("获取仓库或读取技能内容超过等待时限。仓库大小、传输速度或代理连接都可能影响耗时，请稍后重试。") : t("请检查网络、仓库地址和访问权限后重试。")}</p></div>${button(t("重试预览"), "retry-preview", "primary", "", "refresh")}<details class="preview-error-details"><summary>${t("错误详情")}</summary><pre>${e(tMessage(request.error))}</pre></details>`}</section>`;
 }
 function previewPanel() {
   const skipped = arr(preview!.skipped);

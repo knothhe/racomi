@@ -52,7 +52,7 @@ func (s *Service) refreshSource(ctx context.Context, source skillstore.Source) (
 }
 
 func (s *Service) refreshSourceWithCache(ctx context.Context, source skillstore.Source, fetch bool) (skillstore.Source, error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, sources.SourceOperationTimeout)
 	defer cancel()
 	state, err := s.store.State()
 	if err != nil {
@@ -182,7 +182,7 @@ func (s *Service) syncSource(ctx context.Context, state skillstore.State, source
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, sources.SourceOperationTimeout)
 	defer cancel()
 	candidates, previewID, err := s.sources.PrepareSourceSync(ctx, source, paths)
 	if err != nil {
@@ -219,7 +219,7 @@ func (s *Service) RelinkSourceSkill(ctx context.Context, skillID, sourceID, subp
 		if source.LastError != "" {
 			return errors.New("来源刷新失败，请成功刷新后再重新关联")
 		}
-		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		ctx, cancel := context.WithTimeout(ctx, sources.SourceOperationTimeout)
 		defer cancel()
 		candidates, previewID, err := s.sources.PrepareSourceSync(ctx, source, []string{subpath})
 		if err != nil {
@@ -325,9 +325,9 @@ func (s *Service) checkSourceUpdates(ctx context.Context) ([]sources.Update, err
 	failures := map[string]error{}
 	fetched := map[string]bool{}
 	for _, source := range state.Sources {
-		key := source.Repository
+		key := source.Repository + "\x00" + source.Ref
 		if normalized, normalizeErr := sources.NormalizeSource(source); normalizeErr == nil {
-			key = normalized.Repository
+			key = normalized.Repository + "\x00" + normalized.Ref
 		}
 		updated, refreshErr := s.refreshSourceWithCache(ctx, source, !fetched[key])
 		var upstreamError *sourceRefreshError

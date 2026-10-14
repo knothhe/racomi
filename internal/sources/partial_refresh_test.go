@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	skillstore "racomi/internal/skills"
@@ -23,25 +22,38 @@ func partialCatalogEntry(t *testing.T, source skillstore.Source, subpath string)
 
 func TestSourceRefreshSkipsUnrelatedSymlink(t *testing.T) {
 	repo := testRepo(t)
-	if err := os.WriteFile(filepath.Join(repo, "CLAUDE.md"), []byte("Repository instructions\n"), 0644); err != nil {
-		t.Fatal(err)
+	aliases := map[string]string{
+		".claude/CLAUDE.md":   "../AGENTS.md",
+		".claude/agents":      "../agents",
+		".claude/skills":      "../skills",
+		".opencode/agents":    "../agents",
+		".windsurf/workflows": "../workflows",
+		"GEMINI.md":           "AGENTS.md",
 	}
-	if err := os.Symlink("CLAUDE.md", filepath.Join(repo, "AGENTS.md")); err != nil {
-		t.Fatal(err)
+	for name, target := range aliases {
+		filename := filepath.Join(repo, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, filename); err != nil {
+			t.Fatal(err)
+		}
 	}
 	testGit(t, repo, "add", ".")
 	testGit(t, repo, "commit", "-m", "Add repository instructions alias")
 	client := New(t.TempDir())
-	source, previewID, err := client.RefreshSource(context.Background(), catalogSource(repo, "."))
+	registered := catalogSource(repo, ".")
+	registered.Warnings = []string{`skipped repository entry "GEMINI.md": symlink is not supported`}
+	source, previewID, err := client.RefreshSource(context.Background(), registered)
 	if err != nil {
 		t.Fatal("unrelated repository symlink blocked refresh", err)
 	}
 	defer client.Release(previewID)
-	if source.LastError != "" || len(source.Catalog) != 2 || len(source.Warnings) == 0 || !strings.Contains(strings.Join(source.Warnings, "\n"), "AGENTS.md") {
-		t.Fatalf("symlink warning or normal catalog missing: %+v", source)
+	if source.LastError != "" || len(source.Catalog) != 2 || len(source.Warnings) != 0 {
+		t.Fatalf("unrelated aliases affected source discovery: %+v", source)
 	}
 	preview, err := client.DescribePreview(previewID)
-	if err != nil || len(preview.Candidates) != 2 || len(preview.Skipped) != 0 || len(preview.Warnings) == 0 {
+	if err != nil || len(preview.Candidates) != 2 || len(preview.Skipped) != 0 || len(preview.Warnings) != 0 {
 		t.Fatalf("invalid partial preview: %+v %v", preview, err)
 	}
 	candidates, err := client.Candidates(previewID, []string{"skills/alpha"})
@@ -49,8 +61,10 @@ func TestSourceRefreshSkipsUnrelatedSymlink(t *testing.T) {
 		t.Fatal("normal skill was unavailable", err)
 	}
 	root := filepath.Dir(filepath.Dir(candidates[0].Path))
-	if _, err = os.Lstat(filepath.Join(root, "AGENTS.md")); !os.IsNotExist(err) {
-		t.Fatalf("skipped symlink was materialized: %v", err)
+	for name := range aliases {
+		if _, err = os.Lstat(filepath.Join(root, filepath.FromSlash(name))); !os.IsNotExist(err) {
+			t.Fatalf("skipped symlink %q was materialized: %v", name, err)
+		}
 	}
 }
 

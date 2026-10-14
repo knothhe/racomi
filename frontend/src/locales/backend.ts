@@ -2,7 +2,9 @@
 const messages: ReadonlyArray<readonly [string, string, string, string]> = [
   ["cannot clone repository: {0}", "Could not download the repository: {0}", "无法下载仓库：{0}", "無法下載儲存庫：{0}"],
   ["cannot refresh repository: {0}", "Could not refresh the repository: {0}", "无法刷新仓库：{0}", "無法重新整理儲存庫：{0}"],
-  ["Git operation timed out: {0}", "Git operation timed out. Check your network or proxy connection and retry. Details: {0}", "Git 操作超时，请检查网络或代理连接后重试。详情：{0}", "Git 操作逾時，請檢查網路或 Proxy 連線後重試。詳情：{0}"],
+  ["Git operation timed out: {0}", "Git operation exceeded the time limit. Retry later. Details: {0}", "Git 操作超过等待时限，请稍后重试。详情：{0}", "Git 操作超過等待時限，請稍後重試。詳情：{0}"],
+  ["repository download timed out after {0} seconds: {1}", "Repository download exceeded the {0}-second time limit. Large repositories or slow transfers can cause this. Retry later. Details: {1}", "仓库下载超过 {0} 秒等待时限。仓库较大或传输较慢都可能导致超时，请稍后重试。详情：{1}", "儲存庫下載超過 {0} 秒等待時限。儲存庫較大或傳輸較慢都可能導致逾時，請稍後重試。詳情：{1}"],
+  ["repository connection timed out after {0} seconds: {1}", "Connecting to the repository exceeded the {0}-second time limit. Check the repository address, network or proxy connection and retry. Details: {1}", "连接仓库超过 {0} 秒等待时限。请检查仓库地址、网络或代理连接后重试。详情：{1}", "連線儲存庫超過 {0} 秒等待時限。請檢查儲存庫位址、網路或 Proxy 連線後重試。詳情：{1}"],
   ["Git operation was canceled: {0}", "Git operation was canceled. Details: {0}", "Git 操作已取消。详情：{0}", "Git 操作已取消。詳情：{0}"],
   ["Git operation timed out or was canceled: {0}", "Git operation timed out or was canceled. Details: {0}", "Git 操作超时或已取消。详情：{0}", "Git 操作逾時或已取消。詳情：{0}"],
   ["context deadline exceeded", "The time limit was reached", "已达到等待时限", "已達等待時限"],

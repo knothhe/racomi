@@ -181,7 +181,7 @@ func (c *Client) Preview(ctx context.Context, input, ref, subpath string) (Previ
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, SourceOperationTimeout)
 	defer cancel()
 	return c.previewLocked(ctx, spec, true)
 }
@@ -194,44 +194,45 @@ func (c *Client) previewOptionsLocked(ctx context.Context, spec sourceSpec, refr
 	if spec.hosted {
 		return c.previewHostedLocked(ctx, spec, allowEmpty)
 	}
-	repo, err := c.repository(ctx, spec.source, refresh)
+	if spec.treeTail != "" {
+		var err error
+		spec, err = resolveTreeSource(ctx, spec)
+		if err != nil {
+			return Preview{}, err
+		}
+	}
+	repo, err := c.repository(ctx, spec.source, refresh, spec.ref)
 	if err != nil {
 		return Preview{}, err
-	}
-	if spec.treeTail != "" {
-		// GitHub branches can contain '/'. Resolve the longest existing ref prefix.
-		parts := strings.Split(spec.treeTail, "/")
-		matched := false
-		for n := len(parts); n >= 1; n-- {
-			treeRef := strings.Join(parts[:n], "/")
-			if spec.ref != "" && spec.ref != treeRef {
-				continue
-			}
-			if _, err := resolveRevision(ctx, repo, treeRef); err == nil {
-				spec.ref = treeRef
-				if spec.subpath == "." && n < len(parts) {
-					spec.subpath = strings.Join(parts[n:], "/")
-				}
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return Preview{}, errors.New("GitHub tree URL does not identify an available branch, tag, or commit")
-		}
 	}
 	resolvedRef := spec.ref
 	if resolvedRef == "" {
 		// Store the actual default branch so future checks follow the same source.
-		if out, err := gitCommand(ctx, repo, "symbolic-ref", "--short", "HEAD"); err == nil {
-			resolvedRef = strings.TrimSpace(out)
+		if out, err := gitCommand(ctx, repo, "symbolic-ref", "HEAD"); err == nil {
+			branchRef := strings.TrimSpace(out)
+			resolvedRef = strings.TrimPrefix(branchRef, "refs/heads/")
+			// Shallow downloads omit unrelated tags. Check upstream before
+			// shortening the branch, while keeping existing identities when
+			// the short name is unambiguous.
+			remoteRef, _, err := resolveRemoteRef(ctx, spec.source, resolvedRef)
+			if err != nil {
+				return Preview{}, err
+			}
+			if remoteRef != branchRef {
+				// Match the disambiguated spelling used by older previews.
+				resolvedRef = strings.TrimPrefix(branchRef, "refs/")
+			}
 		} else {
 			resolvedRef = "HEAD"
 		}
 	}
-	revision, err := resolveRevision(ctx, repo, resolvedRef)
+	// Resolve HEAD directly even when a cached tag shares the branch name.
+	revision, err := resolveRevision(ctx, repo, defaultRef(spec.ref))
 	if err != nil {
 		return Preview{}, fmt.Errorf("cannot resolve Git ref %q: %w", resolvedRef, err)
+	}
+	if err := retainRevision(ctx, repo, revision); err != nil {
+		return Preview{}, err
 	}
 	idBytes := make([]byte, 16)
 	if _, err := rand.Read(idBytes); err != nil {
@@ -363,13 +364,11 @@ func (c *Client) releaseLocked(id string) error {
 	return nil
 }
 
-// CheckUpdates reports failures per skill and refreshes each source only once.
+// CheckUpdates reports failures per skill and refreshes each source/ref only once.
 // It never edits installed content or the immutable preview snapshots.
 func (c *Client) CheckUpdates(ctx context.Context, skills []skillstore.Skill) ([]Update, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
 	type repoResult struct {
 		path string
 		err  error
@@ -422,10 +421,13 @@ func (c *Client) CheckUpdates(ctx context.Context, skills []skillstore.Skill) ([
 			result = append(result, update)
 			continue
 		}
-		r, ok := repos[spec.source]
+		key := spec.source + "\x00" + spec.ref
+		r, ok := repos[key]
 		if !ok {
-			r.path, r.err = c.repository(ctx, spec.source, true)
-			repos[spec.source] = r
+			fetchCtx, cancel := context.WithTimeout(ctx, SourceOperationTimeout)
+			r.path, r.err = c.repository(fetchCtx, spec.source, true, spec.ref)
+			cancel()
+			repos[key] = r
 		}
 		if r.err != nil {
 			update.Error = r.err.Error()
@@ -497,37 +499,6 @@ func (c *Client) PrepareUpdate(ctx context.Context, skill skillstore.Skill) (ski
 	return candidates[0], nil
 }
 
-func (c *Client) repository(ctx context.Context, source string, refresh bool) (string, error) {
-	hash := sha256.Sum256([]byte(source))
-	parent := filepath.Join(c.cacheDir, "repositories")
-	if err := os.MkdirAll(parent, 0700); err != nil {
-		return "", err
-	}
-	repo := filepath.Join(parent, hex.EncodeToString(hash[:]))
-	if _, err := os.Stat(filepath.Join(repo, "HEAD")); errors.Is(err, os.ErrNotExist) {
-		tmp, err := os.MkdirTemp(parent, ".clone-")
-		if err != nil {
-			return "", err
-		}
-		defer os.RemoveAll(tmp)
-		if _, err := gitCommand(ctx, "", "clone", "--bare", "--no-local", "--", source, tmp); err != nil {
-			return "", fmt.Errorf("cannot clone repository: %w", err)
-		}
-		if err := os.Rename(tmp, repo); err != nil {
-			return "", err
-		}
-		return repo, nil
-	} else if err != nil {
-		return "", err
-	}
-	if refresh {
-		if _, err := gitCommand(ctx, repo, "fetch", "--prune", "--force", "--tags", "--", "origin", "+refs/heads/*:refs/heads/*"); err != nil {
-			return "", fmt.Errorf("cannot refresh repository: %w", err)
-		}
-	}
-	return repo, nil
-}
-
 func resolveRevision(ctx context.Context, repo, ref string) (string, error) {
 	if !validRef(ref) || ref == "" {
 		return "", errors.New("invalid Git ref")
@@ -586,8 +557,22 @@ func gitExec(ctx context.Context, repo string, args ...string) *exec.Cmd {
 }
 
 func gitCommand(parent context.Context, repo string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(parent, 60*time.Second)
+	return gitCommandBudget(parent, time.Minute, "", repo, args...)
+}
+
+func gitDownload(parent context.Context, repo string, args ...string) (string, error) {
+	return gitCommandBudget(parent, gitDownloadTimeout, "repository download", repo, args...)
+}
+
+func gitConnection(parent context.Context, repo string, args ...string) (string, error) {
+	return gitCommandBudget(parent, gitConnectionTimeout, "repository connection", repo, args...)
+}
+
+func gitCommandBudget(parent context.Context, budget time.Duration, operation, repo string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, budget)
 	defer cancel()
+	deadline, _ := ctx.Deadline()
+	seconds := max(0, int((time.Until(deadline)+time.Second-1)/time.Second))
 	cmd := gitExec(ctx, repo, args...)
 	out := &limitedBuffer{limit: 64 << 10}
 	errOut := &limitedBuffer{limit: 4 << 10}
@@ -595,6 +580,9 @@ func gitCommand(parent context.Context, repo string, args ...string) (string, er
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				if operation != "" {
+					return "", fmt.Errorf("%s timed out after %d seconds: %w", operation, seconds, ctx.Err())
+				}
 				return "", fmt.Errorf("Git operation timed out: %w", ctx.Err())
 			}
 			return "", fmt.Errorf("Git operation was canceled: %w", ctx.Err())

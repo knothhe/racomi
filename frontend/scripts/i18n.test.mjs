@@ -164,11 +164,13 @@ test("preview limit reasons are localized inside unsupported-content diagnostics
 
 test("Git timeout and cancellation reasons translate inside clone and fetch errors", () => {
   const i = setup({ saved: "zh-CN" });
-  assert.equal(i.tMessage("cannot clone repository: Git operation timed out: context deadline exceeded"), "无法下载仓库：Git 操作超时，请检查网络或代理连接后重试。详情：已达到等待时限");
+  assert.equal(i.tMessage("cannot clone repository: Git operation timed out: context deadline exceeded"), "无法下载仓库：Git 操作超过等待时限，请稍后重试。详情：已达到等待时限");
+  assert.equal(i.tMessage("cannot clone repository: repository download timed out after 300 seconds: context deadline exceeded"), "无法下载仓库：仓库下载超过 300 秒等待时限。仓库较大或传输较慢都可能导致超时，请稍后重试。详情：已达到等待时限");
+  assert.equal(i.tMessage("cannot refresh repository: repository connection timed out after 30 seconds: context deadline exceeded"), "无法刷新仓库：连接仓库超过 30 秒等待时限。请检查仓库地址、网络或代理连接后重试。详情：已达到等待时限");
   assert.equal(i.tMessage("cannot refresh repository: Git operation was canceled: context canceled"), "无法刷新仓库：Git 操作已取消。详情：请求已取消");
   assert.equal(i.tMessage("cannot clone repository: fatal: unable to access 'https://example.com/team/repo': connection reset"), "无法下载仓库：fatal: unable to access 'https://example.com/team/repo': connection reset");
   i.setLocale("zh-TW");
-  assert.match(i.tMessage("cannot clone repository: Git operation timed out: context deadline exceeded"), /無法下載儲存庫：Git 操作逾時/);
+  assert.match(i.tMessage("cannot clone repository: Git operation timed out: context deadline exceeded"), /無法下載儲存庫：Git 操作超過等待時限/);
   i.setLocale("en");
   assert.match(i.tMessage("cannot refresh repository: Git operation was canceled: context canceled"), /Could not refresh the repository: Git operation was canceled/);
 });

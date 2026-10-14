@@ -56,8 +56,8 @@ func TestSourcePartialRefreshSynchronizesValidNeighborAndPreservesLocalSkill(t *
 		t.Fatal(err)
 	}
 	refreshed := state.State.Sources[0]
-	if refreshed.Revision == oldSource.Revision || refreshed.LastError != "" || len(refreshed.Warnings) == 0 {
-		t.Fatalf("partial refresh did not persist success and warnings: %+v", refreshed)
+	if refreshed.Revision == oldSource.Revision || refreshed.LastError != "" || len(refreshed.Warnings) != 0 {
+		t.Fatalf("partial refresh failed or reported an unrelated alias: %+v", refreshed)
 	}
 	alphaEntry := partialSourceEntry(t, refreshed, "skills/alpha")
 	if alphaEntry.SkipReason == "" || alphaEntry.Removed || alphaEntry.ContentHash != alphaBefore.ContentHash || alphaEntry.Revision != alphaBefore.Revision {

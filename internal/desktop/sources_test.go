@@ -61,6 +61,81 @@ func (f *sourceFixture) commit(message string) {
 	f.git("add", "-A")
 	f.git("-c", "core.hooksPath=/dev/null", "commit", "-m", message)
 }
+
+func TestCheckSourceUpdatesRefreshesDifferentBranchesOfSameRepository(t *testing.T) {
+	f := newSourceFixture(t)
+	ctx := context.Background()
+	f.git("branch", "release")
+	ids := map[string]string{}
+	for _, ref := range []string{"main", "release"} {
+		app, err := f.service.SaveSource(skillstore.Source{Name: ref, Repository: f.repo, Ref: ref, Subpath: "skills", Mode: "selected"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, source := range app.State.Sources {
+			if source.Ref == ref {
+				ids[ref] = source.ID
+			}
+		}
+		if _, err := f.service.RefreshSource(ctx, ids[ref]); err != nil {
+			t.Fatal(err)
+		}
+		f.git("checkout", ref)
+		f.write("skills/alpha", "alpha", ref+" changed")
+		f.commit("Update " + ref)
+	}
+	if _, err := f.service.CheckUpdates(ctx); err != nil {
+		t.Fatal(err)
+	}
+	app, err := f.service.GetState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range app.State.Sources {
+		if source.LastError != "" {
+			t.Fatalf("branch refresh failed: %+v", source)
+		}
+		f.git("checkout", source.Ref)
+		preview, err := f.service.Preview(ctx, f.repo, source.Ref, "skills")
+		if err != nil || preview.Revision != source.Revision {
+			t.Fatalf("branch %s used stale or different branch data: %+v %v", source.Ref, source, err)
+		}
+	}
+}
+
+func TestDefaultBranchPreviewReusesLegacyDisambiguatedSource(t *testing.T) {
+	f := newSourceFixture(t)
+	ctx := context.Background()
+	f.git("tag", "main")
+	f.write("skills/alpha", "alpha", "branch version")
+	f.commit("advance default branch past tag")
+	state, err := f.service.SaveSource(skillstore.Source{Name: "Legacy", Repository: f.repo, Ref: "heads/main", Mode: "selected"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := state.State.Sources[0].ID
+	preview, err := f.service.Preview(ctx, f.repo, "", "")
+	if err != nil || preview.Ref != "heads/main" {
+		t.Fatalf("default branch identity changed: %+v %v", preview, err)
+	}
+	state, err = f.service.Install(preview.ID, []string{"skills/alpha"})
+	if err != nil || len(state.State.Sources) != 1 {
+		t.Fatalf("discovery failed to reuse the existing source: %+v %v", state.State.Sources, err)
+	}
+	alpha := sourceSkill(t, state, "alpha")
+	if alpha.SourceID != id || alpha.Ref != "heads/main" {
+		t.Fatalf("installed skill lost its source association: %+v", alpha)
+	}
+	document, err := f.service.ReadSkillDocument(alpha.ID)
+	if err != nil || !strings.Contains(document, "branch version") {
+		t.Fatalf("default preview installed tag content: %s %v", document, err)
+	}
+	state, err = f.service.RefreshSource(ctx, id)
+	if err != nil || state.State.Sources[0].LastError != "" || state.State.Sources[0].Revision != preview.Revision {
+		t.Fatalf("legacy branch source failed to refresh: %+v %v", state.State.Sources, err)
+	}
+}
+
 func sourceSkill(t *testing.T, state AppState, name string) skillstore.Skill {
 	t.Helper()
 	for _, skill := range state.State.Skills {

@@ -155,6 +155,8 @@ func (c *Client) RefreshCachedSource(ctx context.Context, source skillstore.Sour
 }
 
 func (c *Client) refreshSource(ctx context.Context, source skillstore.Source, refresh bool) (skillstore.Source, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, SourceOperationTimeout)
+	defer cancel()
 	spec, err := parseSource(source.Repository, source.Ref, source.Subpath)
 	if err != nil {
 		return source, "", err
@@ -240,12 +242,11 @@ func (c *Client) PreviewAdvances(ctx context.Context, previewID, oldRevision str
 		latest, err := os.ReadFile(filepath.Join(c.hostedSnapshotBase(spec), "latest"))
 		return err == nil && string(latest) == record.preview.Revision
 	}
-	repo, err := c.repository(ctx, record.preview.Source, false)
+	repo, err := c.repository(ctx, record.preview.Source, false, record.preview.Ref)
 	if err != nil {
 		return false
 	}
-	_, err = gitCommand(ctx, repo, "merge-base", "--is-ancestor", oldRevision, record.preview.Revision)
-	return err == nil
+	return revisionAdvances(ctx, repo, oldRevision, record.preview.Revision)
 }
 
 func (c *Client) UpdateSummary(ctx context.Context, source skillstore.Source, skill skillstore.Skill) string {
@@ -264,7 +265,7 @@ func (c *Client) UpdateSummary(ctx context.Context, source skillstore.Source, sk
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	repo, err := c.repository(ctx, spec.source, false)
+	repo, err := c.repository(ctx, spec.source, false, spec.ref)
 	if err != nil {
 		return ""
 	}

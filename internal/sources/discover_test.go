@@ -131,3 +131,35 @@ func TestScanDoesNotFollowSelectedScopeSymlinks(t *testing.T) {
 		}
 	}
 }
+
+func TestScanSilentlySkipsUnrelatedLinksAndKeepsSpecialFileWarnings(t *testing.T) {
+	root, external := t.TempDir(), t.TempDir()
+	writeTestSkill(t, root, "skills/alpha", "alpha", "Safe skill", "Alpha")
+	writeTestSkill(t, external, "beta", "beta", "External skill", "Must not be read")
+	for name, target := range map[string]string{
+		"external": external,
+		"broken":   "missing",
+		"cycle":    "cycle",
+		"alias":    "skills",
+	} {
+		if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	issues := []repositoryIssue{{Path: "submodule", Reason: "unsupported repository file type"}}
+	items, skipped, warnings, err := scanSkills(root, ".", "revision", issues, false)
+	if err != nil || len(items) != 1 || items[0].Subpath != "skills/alpha" || len(skipped) != 0 || len(warnings) != 1 || !strings.Contains(warnings[0], "submodule") {
+		t.Fatalf("unrelated links changed discovery or hid special-file warnings: %+v %+v %+v %v", items, skipped, warnings, err)
+	}
+}
+
+func TestScanReportsUnmaterializedLinksBlockingSelectedScope(t *testing.T) {
+	root := t.TempDir()
+	issues := []repositoryIssue{{Path: "skills", Reason: "symlink is not supported"}}
+	for _, scope := range []string{"skills", "skills/alpha"} {
+		items, skipped, warnings, err := scanSkills(root, scope, "revision", issues, true)
+		if err != nil || len(items) != 0 || len(skipped) != 0 || len(warnings) != 1 || !strings.Contains(warnings[0], "symlink") {
+			t.Fatalf("selected scope %q lost its link warning: %+v %+v %+v %v", scope, items, skipped, warnings, err)
+		}
+	}
+}

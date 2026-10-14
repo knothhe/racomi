@@ -7,7 +7,45 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	skillstore "racomi/internal/skills"
 )
+
+// Exercise repositories that previously exceeded the full-clone time limit.
+// Temporary caches leave the application's source state and installed skills alone.
+func TestLiveLargeRepositoryRefresh(t *testing.T) {
+	if os.Getenv("RACOMI_TEST_LIVE_SOURCES") != "1" {
+		t.Skip("set RACOMI_TEST_LIVE_SOURCES=1 to validate large Git sources")
+	}
+	for _, item := range []struct{ repository, ref string }{
+		{"tt-a1i/archify", "main"},
+		{"cloudflare/cloudflare-docs", "production"},
+		{"heygen-com/hyperframes", "main"},
+	} {
+		t.Run(item.repository, func(t *testing.T) {
+			client := New(t.TempDir())
+			source, err := NormalizeSource(skillstore.Source{Repository: item.repository, Ref: item.ref})
+			if err != nil {
+				t.Fatal(err)
+			}
+			start := time.Now()
+			source, id, err := client.RefreshSource(context.Background(), source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer client.Release(id)
+			repo, err := client.repository(context.Background(), source.Repository, false, source.Ref)
+			if err != nil {
+				t.Fatal(err)
+			}
+			count, err := gitCommand(context.Background(), repo, "rev-list", "--count", source.Revision)
+			if err != nil || count != "1\n" {
+				t.Fatalf("downloaded unrequested history: %q %v", count, err)
+			}
+			t.Logf("Refreshed %s at %s in %s: %d skills, one commit", source.Repository, source.Ref, time.Since(start).Round(time.Millisecond), len(source.Catalog))
+		})
+	}
+}
 
 // This smoke test only reads two public leaderboard pages, without cloning any
 // repositories. It verifies the anonymous endpoint used by the website itself.

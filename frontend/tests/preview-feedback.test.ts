@@ -64,8 +64,8 @@ test("preview immediately shows loading, updates long-wait guidance, and retains
   assert.equal(h.elapsed.textContent, "已等待 16 秒");
   assert.match(h.hint.textContent, /仍在等待仓库内容/);
   h.advance(30);
-  assert.match(h.hint.textContent, /检查网络或代理/);
-  h.pending[0].reject(new Error("cannot clone repository: Git operation timed out: context deadline exceeded"));
+  assert.match(h.hint.textContent, /仓库较大或传输较慢/);
+  h.pending[0].reject(new Error("cannot clone repository: repository download timed out after 300 seconds: context deadline exceeded"));
   await work;
   assert.equal(h.timers.size, 0);
   assert.equal(h.snapshot().busy, 0);

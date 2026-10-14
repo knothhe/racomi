@@ -69,6 +69,8 @@ const backendExact = new Map(Object.entries(backendMessages).flatMap(([key, tran
 
 // Only these diagnostic wrappers contain another backend message in slot 1.
 const backendReasonTemplates = new Set([
+  "repository download timed out after {0} seconds: {1}",
+  "repository connection timed out after {0} seconds: {1}",
   "unsupported skill content at {0}: {1}",
   "skipped repository entry {0}: {1}",
   "skill {0} was skipped during refresh: {1}",

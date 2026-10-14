@@ -304,6 +304,13 @@ func scanSkills(root, subpath, revision string, issues []repositoryIssue, allowE
 	}
 	for i, issue := range scanIssues {
 		if !relevant[i] && (repositoryPathWithin(subpath, issue.Path) || repositoryPathWithin(issue.Path, subpath)) {
+			// Unrelated aliases are common in agent repositories. Keep the
+			// issue for catalog retention, but only surface a link warning when
+			// it blocks the explicitly selected scope. Links inside a skill
+			// already explain that skill's skipped status above.
+			if issue.Reason == "symlink is not supported" && !repositoryPathWithin(issue.Path, subpath) {
+				continue
+			}
 			warnings = append(warnings, fmt.Sprintf("skipped repository entry %q: %s", issue.Path, issue.Reason))
 		}
 	}
