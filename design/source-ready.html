@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="board.css">
+<script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script>
+<title>来源 · 同步入口</title>
+</head>
+<body>
+<header class="header">
+<span class="brand">◈ Racomi</span>
+<nav class="nav">
+<span class="">技能</span>
+<span class="">项目</span>
+<span class="">全局</span>
+<span class="active">来源</span>
+<span class="">发现</span>
+<span class="">预设</span>
+</nav>
+<span class="theme">☀︎　◐</span>
+</header>
+<main class="page">
+<div class="page-heading">
+<div>
+<h1>来源</h1>
+<p>刷新来源目录，选择要同步到本地的技能。</p>
+</div>
+<button class="button primary">＋ 添加来源</button>
+</div>
+<div class="layout sources">
+<section class="panel">
+<div class="list-toolbar">
+<span>⌕ 搜索来源</span>
+<span>2 个来源</span>
+</div>
+<div class="list-row current">
+<span>团队技能</span>
+<span class="origin">挑选安装</span>
+<span class="badge amber">3 个变化</span>
+</div>
+<div class="list-row">
+<span>个人技能</span>
+<span class="origin">全部订阅</span>
+<span class="badge green">已同步</span>
+</div>
+</section>
+<aside class="panel">
+<div class="source-heading">
+<h2>团队技能 <span class="badge">挑选安装</span>
+</h2>
+<p class="mono">https://github.com/example/team-skills</p>
+</div>
+<dl class="source-meta">
+<dt>引用</dt>
+<dd class="mono">main</dd>
+<dt>扫描范围</dt>
+<dd class="mono">skills</dd>
+<dt>上次刷新</dt>
+<dd>2026/10/15 20:30</dd>
+<dt>目录版本</dt>
+<dd class="mono">a4e93f1</dd>
+</dl>
+<div class="refresh-bar">
+<span>选择需要安装或更新的技能；全选不会改变订阅模式。</span>
+<button class="button">↻ 刷新来源</button>
+</div>
+<div class="source-summary">
+<span>可安装 <b>2</b>
+</span>
+<span>可更新 <b>1</b>
+</span>
+<span>上游移除 <b>0</b>
+</span>
+</div>
+<div class="source-catalog-toolbar">
+<div class="filters">
+<span class="filter active">查看变化</span>
+<span class="filter">全部技能 <small>6</small>
+</span>
+</div>
+<div class="catalog-actions">
+<button class="button quiet">取消全选</button>
+<button class="button primary">↓ 同步所选技能到本地</button>
+</div>
+</div>
+<div class="catalog-row">
+<input type="checkbox" checked aria-label="选择 h2-design-first">
+<span class="catalog-copy">
+<strong>h2-design-first</strong>
+<small>设计产品 UI 修改，先完成可审阅的 HTML 画板。</small>
+<code>skills/h2-design-first</code>
+</span>
+<span class="badge ">可安装</span>
+</div>
+<div class="catalog-row">
+<input type="checkbox" checked aria-label="选择 h2-commit">
+<span class="catalog-copy">
+<strong>h2-commit</strong>
+<small>检查当前变更并创建经过验证的本地 Git 提交。</small>
+<code>skills/h2-commit</code>
+</span>
+<span class="badge amber">可更新</span>
+</div>
+<div class="catalog-row">
+<input type="checkbox" checked aria-label="选择 h2-semver-release">
+<span class="catalog-copy">
+<strong>h2-semver-release</strong>
+<small>为项目准备语义化版本发布。</small>
+<code>skills/h2-semver-release</code>
+</span>
+<span class="badge ">可安装</span>
+</div>
+<div class="source-sync-footer">
+<strong>已选择 3 个技能</strong>
+<small>上游移除的技能保留本地版本；同步后请到“项目”或“全局”手动应用。</small>
+</div>
+</aside>
+</div>
+</main>
+<footer class="statusbar">
+<span>✓ 就绪</span>
+<span>6 个技能　·　2 个来源</span>
+</footer>
+</body>
+</html>

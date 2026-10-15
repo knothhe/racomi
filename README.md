@@ -78,4 +78,4 @@ make release VERSION=0.2.0 BUILD_NUMBER=2
 - [S3 / R2 同步配置指南](docs/s3-r2-sync.md)
 - [安装与卸载说明](build/macos/INSTALL.txt)
 - [图标设计与生成](build/design/README.md)
-- [第三方许可](frontend/public/THIRD_PARTY_NOTICES.txt)（Agent 品牌图标来自 Magpie／Lobe Icons；通用操作图标为本地 SVG）
+- [第三方许可](frontend/public/THIRD_PARTY_NOTICES.txt)（Agent 品牌图标来自 Magpie／Lobe Icons；通用操作图标为本地 SVG，Markdown 解析使用 markdown-it）

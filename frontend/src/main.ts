@@ -1,4 +1,5 @@
 import { installSelects } from "./select";
+import { renderMarkdownDocument } from "./markdown";
 import { applyInterfaceSettings, defaultFontStyle, loadInterfaceFonts, textSizes } from "./interface";
 import { renderSourceFilter, installSourceFilters } from "./source-filter";
 import { syncNavigationMarkup } from "./navigation-render";
@@ -19,6 +20,7 @@ import { homeRelativePath } from "./paths";
 import { enableNativeLocaleSync, getLocale, getLocalePreference, setLocale, t, tMessage, type LocalePreference, type TranslationVariables } from "./i18n";
 import "./style.css";
 import "./source-filter.css";
+import "./markdown.css";
 import { defaultSkillFilters, filterSkills, pendingSkills, skillSource, type SkillFilters } from "./skill-filters";
 import { catalogEntries, sourceSyncPaths, summarizeSource, type SourceEntry } from "./source-catalog";
 import { defaultSettings, projectDirectories, settingsPage } from "./settings";
@@ -88,8 +90,10 @@ let cloudConflictDraft: SyncConflict[] = [];
 let cloudBackupDraft: CloudBackup[] = [];
 const sourceEditorBaselines = new WeakMap<HTMLFormElement, Source | null>();
 const presetEditorBaselines = new WeakMap<HTMLFormElement, Preset | null>();
-const documents = new Map<string, { hash: string; text: string }>();
+const documents = new Map<string, { hash: string; text: string; rendered?: { locale: string; html: string } }>();
 const loadingDocuments = new Set<string>();
+const documentErrors = new Map<string, { hash: string; message: string }>();
+const rawDocuments = new Set<string>();
 let modalPreviousFocus: HTMLElement | null = null;
 let modalGeneration = 0;
 let searchResults: SearchResult[] | null = null;
@@ -570,7 +574,7 @@ function skillsPage() {
   const selected = skills().find((skill) => skill.id === selectedSkill);
   const updateCount = updates?.filter((update) => skills().some((skill) => skill.id === update.skillId) && update.available && !update.removed && !update.error).length || 0;
   const pending = pendingSkillIDs();
-  return `${heading(t("技能"), "", button(t("检查更新"), "check-updates", "", "", "refresh") + button(t("导入技能"), "go-discover", "primary", "", "plus"))}<div class="skills-controls"><label class="sort-control"><span>${t("状态")}</span><select class="sort-select" name="skills-status" aria-label="${t("技能状态筛选")}">${([["all", t("全部"), skills().length], ["updates", t("有更新"), updateCount], ["pending", t("待应用"), pending.size]] as const).map(([id, label, count]) => `<option value="${id}" ${skillsFilter === id ? "selected" : ""}>${label} · ${count}</option>`).join("")}</select></label><div class="sort-control source-filter-control"><span>${t("来源")}</span>${sourceFilter("skills-source", skillsSourceFilter)}</div><label class="sort-control"><span>${t("排序")}</span><select class="sort-select" name="skills-sort" aria-label="${t("技能排序")}"><option value="asc" ${skillsSort === "asc" ? "selected" : ""}>${t("名称 A → Z")}</option><option value="desc" ${skillsSort === "desc" ? "selected" : ""}>${t("名称 Z → A")}</option></select></label></div><div class="skills-layout"><section class="panel skill-browser" data-preserve-scroll="skills-browser">${skillsSelectionToolbar()}<div id="skill-list" data-preserve-scroll="skills-list" tabindex="0" role="region" aria-label="${t("技能")}">${skillList()}</div></section><aside class="panel skill-detail" data-preserve-scroll="skill-detail:${e(selectedSkill)}:${detailTab}" tabindex="0" aria-label="${t("技能详情")}">${selected ? skillDetail(selected) : !skills().length ? empty(t("开始管理你的技能"), "", button(t("发现技能"), "go-discover", "primary", "", "plus")) : empty(t("没有匹配的技能"), skillsFilter === "updates" && updates === null ? t("先检查更新，再查看可更新的技能。") : t("试试其他筛选条件或关键词。"))}</aside></div>`;
+  return `${heading(t("技能"), "", button(t("检查更新"), "check-updates", "", "", "refresh") + button(t("导入技能"), "go-discover", "primary", "", "plus"))}<div class="skills-controls"><label class="sort-control"><span>${t("状态")}</span><select class="sort-select" name="skills-status" aria-label="${t("技能状态筛选")}">${([["all", t("全部"), skills().length], ["updates", t("有更新"), updateCount], ["pending", t("待应用"), pending.size]] as const).map(([id, label, count]) => `<option value="${id}" ${skillsFilter === id ? "selected" : ""}>${label} · ${count}</option>`).join("")}</select></label><div class="sort-control source-filter-control"><span>${t("来源")}</span>${sourceFilter("skills-source", skillsSourceFilter)}</div><label class="sort-control"><span>${t("排序")}</span><select class="sort-select" name="skills-sort" aria-label="${t("技能排序")}"><option value="asc" ${skillsSort === "asc" ? "selected" : ""}>${t("名称 A → Z")}</option><option value="desc" ${skillsSort === "desc" ? "selected" : ""}>${t("名称 Z → A")}</option></select></label></div><div class="skills-layout"><section class="panel skill-browser" data-preserve-scroll="skills-browser">${skillsSelectionToolbar()}<div id="skill-list" data-preserve-scroll="skills-list" tabindex="0" role="region" aria-label="${t("技能")}">${skillList()}</div></section><aside class="panel skill-detail" aria-label="${t("技能详情")}">${selected ? skillDetail(selected) : `<div class="skill-overview" tabindex="0" role="region" aria-label="${t("技能详情")}">${!skills().length ? empty(t("开始管理你的技能"), "", button(t("发现技能"), "go-discover", "primary", "", "plus")) : empty(t("没有匹配的技能"), skillsFilter === "updates" && updates === null ? t("先检查更新，再查看可更新的技能。") : t("试试其他筛选条件或关键词。"))}</div>`}</aside></div>`;
 }
 function skillsSelectionToolbar() {
   const list = filteredSkills();
@@ -596,19 +600,52 @@ function skillDetail(skill: Skill) {
   const update = updates?.find((update) => update.skillId === skill.id);
   const removed = skill.upstreamRemoved || update?.removed;
   const source = skillSource(skill, sources());
-  const doc = documents.get(skill.id);
   const hosted = !!hostedSourceDomain(skill.source);
-  return `<div class="detail-header"><div class="detail-title"><span class="detail-symbol">${icon("box")}</span><h2>${e(skill.name)}</h2></div><span class="badge ${removed ? "amber" : "green"}">${removed ? t("上游移除") : t("已安装")}</span></div><div class="detail-tabs tabs" role="tablist" aria-label="${t("技能详情")}"><button type="button" class="tab-button ${detailTab === "overview" ? "active" : ""}" data-action="detail-tab" data-tab="overview" role="tab" aria-selected="${detailTab === "overview"}">${t("概览")}</button><button type="button" class="tab-button ${detailTab === "document" ? "active" : ""}" data-action="detail-tab" data-tab="document" role="tab" aria-selected="${detailTab === "document"}">SKILL.md</button></div>${detailTab === "document" ? `<div class="skill-document" role="tabpanel" aria-label="SKILL.md">${doc?.hash === skill.contentHash ? `<pre><code>${e(doc.text)}</code></pre>` : `<div class="small-empty">${loadingDocuments.has(skill.id) ? `<span class="spinner"></span>${t(" 正在读取 SKILL.md")}` : button(t("读取 SKILL.md"), "read-document", "small", `data-id="${e(skill.id)}"`, "refresh")}</div>`}</div>` : `${skill.description ? `<p class="detail-description">${e(skill.description)}</p>` : ""}<dl class="metadata">${source ? `<dt>${t("来源")}</dt><dd>${button(sourceDisplayName(source), "open-source", "quiet small source-link", `data-id="${e(source.id)}"`)}</dd>` : `<dt>${t("来源")}</dt><dd>${t("本地 · 无来源")}</dd>`}<dt>${t(hosted ? "来源地址" : "仓库")}</dt><dd class="mono">${e(skill.source || "—")}</dd><dt>${t("技能路径")}</dt><dd class="mono">${e(skill.subpath || ".")}</dd>${hosted ? "" : `<dt>${t("Git 引用")}</dt><dd class="mono">${e(skill.ref || t("默认分支"))}</dd>`}<dt>${t("当前版本")}</dt><dd class="mono" title="${e(skill.revision)}">${e(short(skill.revision))}</dd><dt>${t("安装时间")}</dt><dd>${e(date(skill.installedAt))}</dd><dt>${t("更新时间")}</dt><dd>${e(date(skill.updatedAt))}</dd></dl>${removed ? `<div class="info-note source-retained"><strong>${t("上游已移除此技能")}</strong><p>${t("本地版本与预设引用已保留，可继续使用。如技能被移动或改名，可到来源重新关联。")}</p></div>` : update ? `<div class="update-notice ${update.error ? "error-notice" : ""}"><strong>${update.error ? t("检查失败") : update.available ? t("发现新版本") : t("已是最新版本")}</strong>${update.error || update.available ? `<p>${e(tMessage(update.error || update.summary) || t("新版本 {0}", { 0: short(update.revision) }))}</p>` : ""}${update.available && !update.removed && !update.error ? button(t("更新技能"), "update-skill", "primary small", `data-id="${e(skill.id)}"`, "download") : ""}</div>` : ""}`}<div class="detail-footer">${button(t("移除技能"), "remove-skill", "danger-quiet small", `data-id="${e(skill.id)}"`, "trash")}</div>`;
+  return `<div class="detail-header"><div class="detail-title"><span class="detail-symbol">${icon("box")}</span><h2>${e(skill.name)}</h2></div><span class="badge ${removed ? "amber" : "green"}">${removed ? t("上游移除") : t("已安装")}</span></div><div class="detail-tabs tabs" role="tablist" aria-label="${t("技能详情")}"><button type="button" class="tab-button ${detailTab === "overview" ? "active" : ""}" data-action="detail-tab" data-tab="overview" role="tab" aria-selected="${detailTab === "overview"}">${t("概览")}</button><button type="button" class="tab-button ${detailTab === "document" ? "active" : ""}" data-action="detail-tab" data-tab="document" role="tab" aria-selected="${detailTab === "document"}">SKILL.md</button></div>${detailTab === "document" ? skillDocument(skill) : `<div class="skill-overview" role="tabpanel" aria-label="${t("概览")}" tabindex="0" data-preserve-scroll="skill-overview:${e(skill.id)}">${skill.description ? `<p class="detail-description">${e(skill.description)}</p>` : ""}<dl class="metadata">${source ? `<dt>${t("来源")}</dt><dd>${button(sourceDisplayName(source), "open-source", "quiet small source-link", `data-id="${e(source.id)}"`)}</dd>` : `<dt>${t("来源")}</dt><dd>${t("本地 · 无来源")}</dd>`}<dt>${t(hosted ? "来源地址" : "仓库")}</dt><dd class="mono">${e(skill.source || "—")}</dd><dt>${t("技能路径")}</dt><dd class="mono">${e(skill.subpath || ".")}</dd>${hosted ? "" : `<dt>${t("Git 引用")}</dt><dd class="mono">${e(skill.ref || t("默认分支"))}</dd>`}<dt>${t("当前版本")}</dt><dd class="mono" title="${e(skill.revision)}">${e(short(skill.revision))}</dd><dt>${t("安装时间")}</dt><dd>${e(date(skill.installedAt))}</dd><dt>${t("更新时间")}</dt><dd>${e(date(skill.updatedAt))}</dd></dl>${removed ? `<div class="info-note source-retained"><strong>${t("上游已移除此技能")}</strong><p>${t("本地版本与预设引用已保留，可继续使用。如技能被移动或改名，可到来源重新关联。")}</p></div>` : update ? `<div class="update-notice ${update.error ? "error-notice" : ""}"><strong>${update.error ? t("检查失败") : update.available ? t("发现新版本") : t("已是最新版本")}</strong>${update.error || update.available ? `<p>${e(tMessage(update.error || update.summary) || t("新版本 {0}", { 0: short(update.revision) }))}</p>` : ""}${update.available && !update.removed && !update.error ? button(t("更新技能"), "update-skill", "primary small", `data-id="${e(skill.id)}"`, "download") : ""}</div>` : ""}</div>`}<div class="detail-footer">${button(t("移除技能"), "remove-skill", "danger-quiet small", `data-id="${e(skill.id)}"`, "trash")}</div>`;
+}
+function skillDocument(skill: Skill) {
+  const cached = documents.get(skill.id);
+  const doc = cached?.hash === skill.contentHash ? cached : undefined;
+  const failure = documentErrors.get(skill.id);
+  const error = failure?.hash === skill.contentHash ? failure.message : "";
+  const loading = loadingDocuments.has(skill.id);
+  const raw = rawDocuments.has(skill.id);
+  let content: string;
+  if (doc) {
+    if (!raw && doc.rendered?.locale !== getLocale()) doc.rendered = { locale: getLocale(), html: renderMarkdownDocument(doc.text, { frontmatterLabel: t("元信息") }) };
+    content = raw ? `<pre class="document-raw"><code>${e(doc.text)}</code></pre>` : `<div class="markdown-body">${doc.rendered!.html}</div>`;
+  } else if (loading) {
+    content = `<div class="small-empty" role="status"><span class="spinner" aria-hidden="true"></span>${t(" 正在读取 SKILL.md")}</div>`;
+  } else if (error) {
+    content = `<div class="document-error" role="alert"><strong>${t("文档读取失败")}</strong><p>${e(tMessage(error))}</p>${button(t("重试读取"), "read-document", "small", `data-id="${e(skill.id)}"`, "refresh")}</div>`;
+  } else {
+    content = `<div class="small-empty">${button(t("读取 SKILL.md"), "read-document", "small", `data-id="${e(skill.id)}"`, "refresh")}</div>`;
+  }
+  return `<div class="document-panel" role="tabpanel" aria-label="SKILL.md" aria-busy="${loading}"><div class="document-toolbar"><span>SKILL.md</span><button type="button" class="document-toggle" data-action="toggle-document-raw" data-id="${e(skill.id)}" role="switch" aria-label="${t("显示原文")}" aria-checked="${raw}" ${doc ? "" : "disabled"}><span>${t("原文")}</span><span class="document-switch" aria-hidden="true"></span></button></div><div class="skill-document" tabindex="0" role="region" aria-label="SKILL.md" data-preserve-scroll="skill-document:${e(skill.id)}:${e(skill.contentHash)}:${raw ? "raw" : "rendered"}">${content}</div></div>`;
 }
 async function loadSkillDocument(id: string) {
   const skill = skills().find((skill) => skill.id === id);
   if (!skill || loadingDocuments.has(id) || documents.get(id)?.hash === skill.contentHash) return;
   loadingDocuments.add(id);
+  documentErrors.delete(id);
   if (currentPage === "skills" && selectedSkill === id) render();
-  const text = await task({ key: "正在读取 {0} 的 SKILL.md…", variables: { 0: skill.name } }, () => api.readSkillDocument(id));
+  let error = "";
+  const text = await task({ key: "正在读取 {0} 的 SKILL.md…", variables: { 0: skill.name, skillId: id, hash: skill.contentHash } }, async () => {
+    try { return await api.readSkillDocument(id); }
+    catch (err) { error = err instanceof Error ? err.message : String(err); return undefined; }
+  });
   loadingDocuments.delete(id);
-  if (text !== undefined && skills().find((item) => item.id === id)?.contentHash === skill.contentHash) documents.set(id, { hash: skill.contentHash, text });
-  if (currentPage === "skills" && selectedSkill === id) render();
+  const current = skills().find((item) => item.id === id);
+  if (current?.contentHash === skill.contentHash) {
+    if (text !== undefined) documents.set(id, { hash: skill.contentHash, text });
+    else if (error) documentErrors.set(id, { hash: skill.contentHash, message: error });
+  }
+  if (currentPage === "skills" && selectedSkill === id) {
+    render();
+    // A sync may replace the skill while its previous document is in flight.
+    // Discard that result and load the version now shown in the inspector.
+    if (detailTab === "document" && current && current.contentHash !== skill.contentHash) void loadSkillDocument(id);
+  }
 }
 function sourceEntries(source: Source): SourceEntry[] {
   return catalogEntries(source, skills(), getLocale());
@@ -651,7 +688,7 @@ function sourceDetail(source: Source) {
   const visible = entries.filter((entry) => entry.kind === "skipped" || !entry.item.removed || entry.local);
   const shown = sourceCatalogFilter === "all" ? visible : visible.filter((entry) => entry.kind !== "current");
   const removedLocals = entries.filter((entry) => entry.kind === "removed" && entry.local).map((entry) => entry.local!);
-  return `<div class="source-detail-heading"><div><div class="title-line"><h2>${e(sourceDisplayName(source))}</h2><span class="badge">${source.mode === "all" ? t("全部订阅") : t("挑选安装")}</span></div><p class="mono">${e(source.repository)}</p></div><div class="source-actions">${iconButton(t("编辑来源"), "edit-source", "edit", `data-id="${e(source.id)}"`)}${iconButton(t("删除来源"), "delete-source", "trash", `data-id="${e(source.id)}"`, "danger-quiet")}</div></div><dl class="source-metadata">${hosted ? "" : `<dt>${t("引用")}</dt><dd class="mono">${e(source.ref || t("默认分支"))}</dd>`}<dt>${t("扫描范围")}</dt><dd class="mono">${e(source.subpath || t(hosted ? "所有技能" : "整个仓库"))}</dd><dt>${t("上次刷新")}</dt><dd>${e(date(source.refreshedAt))}</dd><dt>${t("目录版本")}</dt><dd class="mono" title="${e(source.revision)}">${e(short(source.revision))}</dd></dl>${source.lastError ? `<div class="source-error" role="status"><strong>${t("刷新失败")}</strong><p>${e(tMessage(source.lastError))}</p><small>${t("保留上次成功获取的目录和本地技能，请重新刷新后同步。")}</small></div>` : ""}${!source.lastError && skipped ? `<div class="source-partial-note" role="status">${t("已跳过 {0} 个技能；已有版本已保留，其他技能可继续同步。", { 0: skipped })}</div>` : ""}${scanWarnings(source.warnings)}<div class="source-refresh-bar"><span class="muted">${source.mode === "all" ? t("同步会安装全部技能，并更新已安装技能。") : t("选择需要安装或更新的技能；全选不会改变订阅模式。")}</span>${button(t("刷新来源"), "refresh-source", "small", `data-id="${e(source.id)}"`, "refresh")}</div>${!source.revision ? `<div class="small-empty">${t("来源已保存。刷新后即可浏览技能与同步变化。")}</div>` : `<div class="source-summary"><span>${t("可安装 ")}<strong>${installs}</strong></span><span>${t("可更新 ")}<strong>${changed}</strong></span><span>${t("上游移除 ")}<strong>${removed}</strong></span>${skipped ? `<span>${t("本次跳过 ")}<strong>${skipped}</strong></span>` : ""}</div><div class="source-catalog-toolbar"><div class="skills-filters" role="group" aria-label="${t("来源目录筛选")}"><button type="button" class="filter-chip ${sourceCatalogFilter === "changes" ? "active" : ""}" data-action="source-filter" data-filter="changes" aria-pressed="${sourceCatalogFilter === "changes"}">${t("查看变化")}</button><button type="button" class="filter-chip ${sourceCatalogFilter === "all" ? "active" : ""}" data-action="source-filter" data-filter="all" aria-pressed="${sourceCatalogFilter === "all"}">${t("全部技能 ")}<span class="filter-count">${visible.length}</span></button></div>${source.mode === "selected" && available.length ? button(available.every((entry) => selection.has(entry.item.subpath)) ? t("取消全选") : t("全选变化"), "select-all-source", "quiet small", `data-id="${e(source.id)}" ${source.lastError ? "disabled" : ""}`) : ""}</div><div class="source-catalog">${shown.map((entry) => sourceCatalogRow(source, entry, removedLocals)).join("") || `<div class="small-empty">${entries.length ? t("与本地技能一致，没有待同步的变化。") : t("扫描范围内没有有效的 SKILL.md。")}</div>`}</div><div class="source-sync-footer"><div><strong id="source-sync-count">${source.mode === "all" ? t("待同步 {0} 个技能", { 0: count }) : t("已选择 {0} 个技能", { 0: count })}</strong><small>${t("上游移除的技能保留本地版本；同步后请到“项目”或“全局”手动应用。")}</small></div>${button(source.mode === "all" ? t("同步全部技能到本地") : t("同步所选技能到本地"), "sync-source", "primary small", `data-id="${e(source.id)}" ${!count || source.lastError ? "disabled" : ""}`, "download")}</div>`}`;
+  return `<div class="source-detail-heading"><div><div class="title-line"><h2>${e(sourceDisplayName(source))}</h2><span class="badge">${source.mode === "all" ? t("全部订阅") : t("挑选安装")}</span></div><p class="mono">${e(source.repository)}</p></div><div class="source-actions">${iconButton(t("编辑来源"), "edit-source", "edit", `data-id="${e(source.id)}"`)}${iconButton(t("删除来源"), "delete-source", "trash", `data-id="${e(source.id)}"`, "danger-quiet")}</div></div><dl class="source-metadata">${hosted ? "" : `<dt>${t("引用")}</dt><dd class="mono">${e(source.ref || t("默认分支"))}</dd>`}<dt>${t("扫描范围")}</dt><dd class="mono">${e(source.subpath || t(hosted ? "所有技能" : "整个仓库"))}</dd><dt>${t("上次刷新")}</dt><dd>${e(date(source.refreshedAt))}</dd><dt>${t("目录版本")}</dt><dd class="mono" title="${e(source.revision)}">${e(short(source.revision))}</dd></dl>${source.lastError ? `<div class="source-error" role="status"><strong>${t("刷新失败")}</strong><p>${e(tMessage(source.lastError))}</p><small>${t("保留上次成功获取的目录和本地技能，请重新刷新后同步。")}</small></div>` : ""}${!source.lastError && skipped ? `<div class="source-partial-note" role="status">${t("已跳过 {0} 个技能；已有版本已保留，其他技能可继续同步。", { 0: skipped })}</div>` : ""}${scanWarnings(source.warnings)}<div class="source-refresh-bar"><span class="muted">${source.mode === "all" ? t("同步会安装全部技能，并更新已安装技能。") : t("选择需要安装或更新的技能；全选不会改变订阅模式。")}</span>${button(t("刷新来源"), "refresh-source", "small", `data-id="${e(source.id)}"`, "refresh")}</div>${!source.revision ? `<div class="small-empty">${t("来源已保存。刷新后即可浏览技能与同步变化。")}</div>` : `<div class="source-summary"><span>${t("可安装 ")}<strong>${installs}</strong></span><span>${t("可更新 ")}<strong>${changed}</strong></span><span>${t("上游移除 ")}<strong>${removed}</strong></span>${skipped ? `<span>${t("本次跳过 ")}<strong>${skipped}</strong></span>` : ""}</div><div class="source-catalog-toolbar"><div class="skills-filters" role="group" aria-label="${t("来源目录筛选")}"><button type="button" class="filter-chip ${sourceCatalogFilter === "changes" ? "active" : ""}" data-action="source-filter" data-filter="changes" aria-pressed="${sourceCatalogFilter === "changes"}">${t("查看变化")}</button><button type="button" class="filter-chip ${sourceCatalogFilter === "all" ? "active" : ""}" data-action="source-filter" data-filter="all" aria-pressed="${sourceCatalogFilter === "all"}">${t("全部技能 ")}<span class="filter-count">${visible.length}</span></button></div><div class="source-catalog-actions">${source.mode === "selected" && available.length ? button(available.every((entry) => selection.has(entry.item.subpath)) ? t("取消全选") : t("全选变化"), "select-all-source", "quiet small", `data-id="${e(source.id)}" ${source.lastError ? "disabled" : ""}`) : ""}${button(source.mode === "all" ? t("同步全部技能到本地") : t("同步所选技能到本地"), "sync-source", "primary small", `data-id="${e(source.id)}" ${!count || source.lastError ? "disabled" : ""}`, "download")}</div></div><div class="source-catalog">${shown.map((entry) => sourceCatalogRow(source, entry, removedLocals)).join("") || `<div class="small-empty">${entries.length ? t("与本地技能一致，没有待同步的变化。") : t("扫描范围内没有有效的 SKILL.md。")}</div>`}</div><div class="source-sync-footer"><div><strong id="source-sync-count">${source.mode === "all" ? t("待同步 {0} 个技能", { 0: count }) : t("已选择 {0} 个技能", { 0: count })}</strong><small>${t("上游移除的技能保留本地版本；同步后请到“项目”或“全局”手动应用。")}</small></div></div>`}`;
 }
 function sourceCatalogRow(source: Source, entry: SourceEntry, removedLocals: Skill[]) {
   const { item, local, kind } = entry;
@@ -1462,6 +1499,21 @@ document.addEventListener("submit", async (ev) => {
     }
   } finally { if (submit) submit.disabled = false; }
 });
+// Chapter links scroll only the document; native fragment navigation can also
+// move overflow-hidden ancestors and hide the inspector's fixed controls.
+app.addEventListener("click", (ev) => {
+  const link = (ev.target as Element).closest<HTMLAnchorElement>('.skill-document .markdown-body a[href^="#"]');
+  if (!link) return;
+  ev.preventDefault();
+  const scroller = link.closest<HTMLElement>(".skill-document")!;
+  let id = link.getAttribute("href")!.slice(1);
+  try { id = decodeURIComponent(id); } catch { return; }
+  const heading = scroller.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+  if (!heading) return;
+  scroller.scrollTo({ top: heading.offsetTop - (parseFloat(getComputedStyle(scroller).paddingTop) || 0) });
+  heading.tabIndex = -1;
+  heading.focus({ preventScroll: true });
+});
 document.addEventListener("click", async (ev) => {
   const target = (ev.target as Element).closest<HTMLButtonElement>("button");
   if (!target || target.disabled) return;
@@ -1575,6 +1627,11 @@ document.addEventListener("click", async (ev) => {
     return;
   }
   if (action === "source-filter") { sourceCatalogFilter = target.dataset.filter === "all" ? "all" : "changes"; render(); return; }
+  if (action === "toggle-document-raw") {
+    if (rawDocuments.has(id)) rawDocuments.delete(id); else rawDocuments.add(id);
+    render();
+    return;
+  }
   if (action === "detail-tab") {
     detailTab = target.dataset.tab as "overview" | "document"; render();
     if (detailTab === "document") void loadSkillDocument(selectedSkill);

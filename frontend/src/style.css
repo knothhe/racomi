@@ -259,8 +259,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .skill-browser, .sources-browser { display: flex; flex-direction: column; min-height: 0; }
 .skill-browser > .panel-toolbar, .sources-browser > .panel-toolbar, .skills-selection-toolbar { flex: none; }
 #skill-list, .source-list { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-.skill-detail, .source-detail { min-height: 0; overflow: auto; overscroll-behavior: contain; }
-#skill-list:focus-visible, .source-list:focus-visible, .skill-detail:focus-visible, .source-detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.source-detail { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+#skill-list:focus-visible, .source-list:focus-visible, .skill-overview:focus-visible, .skill-document:focus-visible, .source-detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .panel-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px var(--surface-inset); border-bottom: 1px solid var(--line-2); }
 .panel-toolbar > .muted { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .panel-toolbar .search-field { background: var(--card-2); }
@@ -282,7 +282,12 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .row-arrow { align-self: center; font-size: 18px; color: var(--muted); flex: none; }
 .row-badges { display: flex; align-items: center; white-space: nowrap; gap: 4px; flex: none; }
 .skill-row:focus-visible, .source-row:focus-visible { outline-offset: -2px; }
-.skill-detail { padding: var(--surface-inset); }
+.skill-detail { display: flex; flex-direction: column; min-height: 0; padding: var(--surface-inset); overflow: hidden; }
+.skill-detail > .detail-header, .skill-detail > .detail-tabs, .skill-detail > .detail-footer { flex: none; }
+.skill-detail > .detail-header { margin-bottom: 0; }
+.skill-overview { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.document-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.document-panel > .document-toolbar { flex: none; }
 .detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
 .detail-header > .badge { flex: none; margin-top: 4px; }
 .detail-title { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
@@ -301,9 +306,17 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .detail-tabs { display: flex; align-items: center; gap: 3px; padding: 3px; margin: 12px 0; border-radius: 7px; background: var(--pill); }
 .detail-tabs button { flex: 1; border-radius: 5px; font-size: 11.5px; padding: 5px 9px; color: var(--ctl-fg); }
 .detail-tabs button.active, .detail-tabs button[aria-selected="true"] { background: var(--seg-thumb); color: var(--fg); box-shadow: var(--seg-edge); }
-.skill-document, .document-content { white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; margin: 0; padding: 12px; max-height: calc(100vh - 270px); border: 1px solid var(--line); border-radius: 7px; background: var(--card-2); color: var(--fg-2); font: 11.5px/1.7 var(--code); tab-size: 2; user-select: text; }
-.skill-document > pre, .skill-document code { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
-.skill-detail .skill-document { max-height: none; overflow: visible; }
+.document-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; color: var(--muted); font-size: 11.5px; }
+.document-toggle { display: inline-flex; align-items: center; gap: 7px; padding: 2px 0; white-space: nowrap; font-size: 11.5px; }
+.document-switch { position: relative; display: inline-block; width: 28px; height: 16px; border-radius: 999px; background: var(--line); transition: background .15s; }
+.document-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--card); box-shadow: 0 1px 2px #0002; transition: transform .15s; }
+.document-toggle[aria-checked="true"] .document-switch { background: var(--accent); }
+.document-toggle[aria-checked="true"] .document-switch::after { transform: translateX(12px); background: var(--accent-fg); }
+.skill-document { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--card-2); color: var(--fg-2); user-select: text; }
+.document-raw, .document-raw code { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 11.5px/1.7 var(--code); tab-size: 2; }
+.document-error { display: flex; align-items: flex-start; flex-direction: column; gap: 10px; padding: 12px 0; font-size: 12px; }
+.document-error strong { color: var(--red); font-weight: 500; }
+.document-error p { overflow-wrap: anywhere; white-space: pre-wrap; }
 .update-notice { margin-top: 14px; padding: 10px; border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line)); border-radius: 7px; background: var(--accent-soft); color: var(--accent); }
 .update-notice strong { font-size: 12px; font-weight: 600; }
 .update-notice p { margin: 7px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
@@ -415,7 +428,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .source-sync-footer > div { display: flex; flex-direction: column; gap: 5px; }
 .source-sync-footer strong { font-size: 11px; font-weight: 500; color: var(--fg-2); }
 .source-sync-footer small { font-size: 10.5px; color: var(--muted); line-height: 1.5; }
-.source-sync-footer > button { flex: none; }
+.source-catalog-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.source-catalog-actions > button { flex: none; }
 .source-error { padding: 10px 12px; margin: 14px 16px; border-radius: 7px; background: var(--red-soft); color: var(--red); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .source-error strong { font-weight: 550; }
 .source-error p { margin: 4px 0; white-space: pre-wrap; }

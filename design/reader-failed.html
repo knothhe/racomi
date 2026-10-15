@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="board.css">
+<script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script>
+<title>技能文档 · 读取失败</title>
+</head>
+<body>
+<header class="header">
+<span class="brand">◈ Racomi</span>
+<nav class="nav">
+<span class="active">技能</span>
+<span class="">项目</span>
+<span class="">全局</span>
+<span class="">来源</span>
+<span class="">发现</span>
+<span class="">预设</span>
+</nav>
+<span class="theme">☀︎　◐</span>
+</header>
+<main class="page">
+<div class="page-heading">
+<h1>技能</h1>
+<div class="actions">
+<button class="button">↻ 检查更新</button>
+<button class="button primary">＋ 导入技能</button>
+</div>
+</div>
+<div class="controls">
+<span>状态 <b>全部 · 6　⌄</b>
+</span>
+<span>来源 <b>全部来源　⌄</b>
+</span>
+<span>排序 <b>名称 A → Z　⌄</b>
+</span>
+</div>
+<div class="layout">
+<section class="panel">
+<div class="list-toolbar">
+<span>选择技能</span>
+<span>6 个技能</span>
+</div>
+<div class="list-row current">
+<span>◇</span>
+<span>h2-design-first</span>
+<span class="origin">团队技能</span>
+<span class="badge green">已安装</span>
+</div>
+<div class="list-row ">
+<span>◇</span>
+<span>h2-commit</span>
+<span class="origin">团队技能</span>
+<span class="badge green">已安装</span>
+</div>
+<div class="list-row ">
+<span>◇</span>
+<span>h2-bug-review</span>
+<span class="origin">团队技能</span>
+<span class="badge green">已安装</span>
+</div>
+<div class="list-row ">
+<span>◇</span>
+<span>h2-semver-release</span>
+<span class="origin">团队技能</span>
+<span class="badge green">已安装</span>
+</div>
+<div class="list-row ">
+<span>◇</span>
+<span>h2-browser-extension</span>
+<span class="origin">团队技能</span>
+<span class="badge green">已安装</span>
+</div>
+<div class="list-row ">
+<span>◇</span>
+<span>h2-award-quality</span>
+<span class="origin">团队技能</span>
+<span class="badge green">已安装</span>
+</div>
+</section>
+<aside class="panel detail">
+<div class="detail-header">
+<div class="detail-title">
+<span class="symbol">◇</span>
+<h2>h2-design-first</h2>
+</div>
+<span class="badge green">已安装</span>
+</div>
+<div class="tabs">
+<span>概览</span>
+<span class="active">SKILL.md</span>
+</div>
+<div class="document-toolbar">
+<span>SKILL.md</span>
+<button class="document-toggle" data-action="toggle-document-raw" role="switch" aria-label="显示原文" aria-checked="false" disabled>
+<span>原文</span>
+<span class="switch" aria-hidden="true">
+</span>
+</button>
+</div>
+<div class="document empty failure" role="status">
+<strong>文档读取失败</strong>
+<p>无法读取技能文档，请重试。</p>
+<button class="button">↻ 重试读取</button>
+</div>
+<div class="detail-footer">♲ 移除技能</div>
+</aside>
+</div>
+</main>
+<footer class="statusbar">
+<span>✓ 就绪</span>
+<span>6 个技能　·　2 个来源</span>
+</footer>
+</body>
+</html>

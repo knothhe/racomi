@@ -42,6 +42,14 @@ if (testParameters.has("cloud-conflicts")) state.cloudSync.conflicts = [
   { key: "source/source-design", kind: "source", name: "Design source", local: null, remote: { repository: "https://example.com/team/design", ref: "main" } },
 ];
 let projectSelectionFailures = testParameters.has("project-selection-fail-once") ? 1 : 0;
+let documentFailures = testParameters.has("document-fail-once") ? 1 : 0;
+async function readFixtureDocument(content: string) {
+  document.documentElement.dataset.documentReads = String(Number(document.documentElement.dataset.documentReads || 0) + 1);
+  const delay = Math.min(2000, Math.max(0, Number(testParameters.get("document-delay")) || 0));
+  if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+  if (documentFailures > 0) { documentFailures--; throw new Error("本地文档暂时不可读取 <fixture>"); }
+  return content;
+}
 // Opt in to realistic, populated pages without changing regression-test fixtures.
 const visualReview = testParameters.has("visual-review");
 if (testParameters.has("many-directories")) {
@@ -417,7 +425,7 @@ Object.assign(api, {
   }),
   previewLocal,
   install: installLocal,
-  readSkillDocument: async () => "# 名称\n\n设置 must remain authored text.",
+  readSkillDocument: async () => readFixtureDocument("# 名称\n\n设置 must remain authored text."),
   saveSettings: async (settings: AppState["state"]["settings"]) => {
     if (settingsDelay) await new Promise((resolve) => setTimeout(resolve, settingsDelay));
     if (settingsFailure) { settingsFailure = false; throw new Error("Test settings save failed"); }
@@ -600,9 +608,7 @@ if (visualReview) {
     },
     readSkillDocument: async (id: string) => {
       const skill = checkedSkills([id])[0];
-      const delay = Math.min(2000, Math.max(0, Number(testParameters.get("document-delay")) || 0));
-      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-      return `# ${skill.name}\n\n${skill.description}\n\n## 工作流程 / Workflow\n\n1. 明确用户目标，检查信息层级和阅读顺序。\n2. 对齐标题、表单、操作与内容边界。\n3. 验证长文本、中英文和紧凑窗口下的布局。\n\n## Quality checks\n\n- Consistent spacing and readable typography\n- Keyboard access and visible focus\n- Clear feedback before applying changes\n`;
+      return readFixtureDocument(`---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n# ${skill.name}\n\n${skill.description}\n\n[质量检查](#quality-checks)\n\n## 工作流程 / Workflow\n\n1. 明确用户目标，检查信息层级和阅读顺序。\n2. 对齐标题、表单、操作与内容边界。\n3. 验证长文本、中英文和紧凑窗口下的布局。\n\n## Quality checks\n\n- Consistent spacing and readable typography\n- Keyboard access and visible focus\n- Clear feedback before applying changes\n\n> 阅读完成后再应用到项目或全局目录。\n\n| 状态 | 操作 |\n| --- | --- |\n| 正常 | 阅读文档、切换原文 |\n| 失败 | 重试读取 |\n\n\`\`\`sh\nmake check\n\`\`\`\n\n[设计说明](references/workflow.md)\n\n![布局示例](assets/layout.png)\n`);
     },
     saveSource: async (source: AppState["state"]["sources"][number]) => {
       const saved = { ...source, id: source.id || `visual-source-${nextVisualID++}` };

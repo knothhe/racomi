@@ -1,5 +1,10 @@
 // Authored source strings are keys, matching Magpie's small dictionary API.
 export const en = {
+  "元信息": "Metadata",
+  "原文": "Raw text",
+  "显示原文": "Show raw text",
+  "文档读取失败": "Could not read document",
+  "重试读取": "Retry reading",
   "文字大小": "Text size",
   "界面字体": "Interface font",
   "系统字体": "System font",

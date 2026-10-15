@@ -1,0 +1,46 @@
+.markdown-body {
+  min-width: 0;
+  color: var(--fg-2);
+  font: 12.5px/1.75 var(--font);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.markdown-body > :first-child { margin-top: 0; }
+.markdown-body > :last-child { margin-bottom: 0; }
+.markdown-body :is(h1, h2, h3, h4, h5, h6) {
+  margin: 1.5em 0 .65em;
+  color: var(--fg);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.markdown-body h1 { font-size: 21px; letter-spacing: -.35px; }
+.markdown-body h2 { padding-bottom: .35em; border-bottom: 1px solid var(--line); font-size: 17px; }
+.markdown-body h3 { font-size: 14px; }
+.markdown-body :is(h4, h5, h6) { font-size: 12.5px; }
+.markdown-body :is(p, ul, ol, blockquote, pre, table) { margin: 0 0 1em; }
+.markdown-body p { line-height: inherit; }
+.markdown-body :is(ul, ol) { padding-left: 1.8em; }
+.markdown-body li + li { margin-top: .3em; }
+.markdown-body li > :is(ul, ol) { margin-top: .3em; margin-bottom: 0; }
+.markdown-body li > p { margin-bottom: .5em; }
+.markdown-body strong { color: var(--fg); font-weight: 600; }
+.markdown-body a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.markdown-body a:hover { text-decoration-thickness: 2px; }
+.markdown-body a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+.markdown-body .markdown-reference { color: var(--muted); }
+.markdown-body blockquote { margin-left: 0; padding: .2em 1em; border-left: 3px solid var(--line); color: var(--muted); }
+.markdown-body blockquote > :last-child { margin-bottom: 0; }
+.markdown-body code { padding: .15em .35em; border-radius: 4px; background: var(--pill); font: .9em/1.6 var(--code); white-space: normal; }
+.markdown-body pre { max-width: 100%; padding: 12px 14px; overflow-x: auto; border: 1px solid var(--line); border-radius: 7px; background: var(--card-2); }
+.markdown-body pre code { display: block; padding: 0; border-radius: 0; background: transparent; color: inherit; font: 11.5px/1.7 var(--code); white-space: pre; overflow-wrap: normal; tab-size: 2; }
+.markdown-body hr { margin: 1.5em 0; border: 0; border-top: 1px solid var(--line); }
+.markdown-body table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 12px; }
+.markdown-body :is(th, td) { padding: 7px 10px; border: 1px solid var(--line); text-align: left; }
+.markdown-body th { background: var(--card-2); color: var(--fg); font-weight: 600; }
+.markdown-body img { max-width: 100%; height: auto; border-radius: 4px; vertical-align: middle; }
+.markdown-body .markdown-frontmatter { margin-bottom: 18px; border: 1px solid var(--line); border-radius: 7px; background: var(--card-2); }
+.markdown-body .markdown-frontmatter summary { padding: 7px 10px; color: var(--muted); font-size: 11.5px; cursor: pointer; }
+.markdown-body .markdown-frontmatter summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 5px; }
+.markdown-body .markdown-frontmatter pre { margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0 0 7px 7px; }

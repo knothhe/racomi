@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="board.css">
+<script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script>
+<title>技能文档 · 渲染阅读</title>
+</head>
+<body>
+<header class="header">
+<span class="brand">◈ Racomi</span>
+<nav class="nav">
+<span class="active">技能</span>
+<span class="">项目</span>
+<span class="">全局</span>
+<span class="">来源</span>
+<span class="">发现</span>
+<span class="">预设</span>
+</nav>
+<span class="theme">☀︎　◐</span>
+</header>
+<main class="page">
+<div class="page-heading">
+<h1>技能</h1>
+<div class="actions">
+<button class="button">↻ 检查更新</button>
+<button class="button primary">＋ 导入技能</button>
+</div>
+</div>
+<div class="controls">
+<span>状态 <b>全部 · 6　⌄</b>
+</span>
+<span>来源 <b>全部来源　⌄</b>
+</span>
+<span>排序 <b>名称 A → Z　⌄</b>
+</span>
+</div>
+<div class="layout">
+<section class="panel">
+<div class="list-toolbar">
+<span>选择技能</span>
+<span>6 个技能</span>
+</div>
+<div class="list-row current">
+<span>◇</span>
+<span>h2-design-first</span>
+<span class="origin">团队技能</span>
+<span class="badge green">已安装</span>
+</div>
+<div class="list-row ">
+<span>◇</span>
+<span>h2-commit</span>
+<span class="origin">团队技能</span>
+<span class="badge green">已安装</span>
+</div>
+<div class="list-row ">
+<span>◇</span>
+<span>h2-bug-review</span>
+<span class="origin">团队技能</span>
+<span class="badge green">已安装</span>
+</div>
+<div class="list-row ">
+<span>◇</span>
+<span>h2-semver-release</span>
+<span class="origin">团队技能</span>
+<span class="badge green">已安装</span>
+</div>
+<div class="list-row ">
+<span>◇</span>
+<span>h2-browser-extension</span>
+<span class="origin">团队技能</span>
+<span class="badge green">已安装</span>
+</div>
+<div class="list-row ">
+<span>◇</span>
+<span>h2-award-quality</span>
+<span class="origin">团队技能</span>
+<span class="badge green">已安装</span>
+</div>
+</section>
+<aside class="panel detail">
+<div class="detail-header">
+<div class="detail-title">
+<span class="symbol">◇</span>
+<h2>h2-design-first</h2>
+</div>
+<span class="badge green">已安装</span>
+</div>
+<div class="tabs">
+<span>概览</span>
+<span class="active">SKILL.md</span>
+</div>
+<div class="document-toolbar">
+<span>SKILL.md</span>
+<button class="document-toggle" data-action="toggle-document-raw" role="switch" aria-label="显示原文" aria-checked="false" >
+<span>原文</span>
+<span class="switch" aria-hidden="true">
+</span>
+</button>
+</div>
+<article class="document markdown-body" aria-busy="false">
+<details class="frontmatter">
+<summary>元信息</summary>
+<pre>name: h2-design-first
+description: 设计产品 UI 修改，先完成可审阅的 HTML 画板。</pre>
+</details>
+<h1>H2 设计先行</h1>
+<p>把用户看见和操作的界面先做成可审阅的设计，再让实现与设计一致。</p>
+<h2>确定这次交付</h2>
+<ul>
+<li>
+<strong>设计或修改设计</strong>：完成布局、文案、可见状态与交互说明。</li>
+<li>
+<strong>设计并实现</strong>：先完成设计文件，再修改实现并对照验证。</li>
+</ul>
+<blockquote>
+<p>用户仅需局部改动时，不要求额外的汇报文档或全量截图。</p>
+</blockquote>
+<h2>预览与验证</h2>
+<p>从仓库根目录启动本地预览：</p>
+<pre>
+<code>python3 -m http.server 4780 --bind 127.0.0.1 --directory design</code>
+</pre>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>可以做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>正常</td>
+<td>阅读文档、切换原文</td>
+</tr>
+<tr>
+<td>失败</td>
+<td>重试读取</td>
+</tr>
+</tbody>
+</table>
+<p>继续阅读 <a href="#">设计判断与实现对照</a>。</p>
+</article>
+<div class="detail-footer">♲ 移除技能</div>
+</aside>
+</div>
+</main>
+<footer class="statusbar">
+<span>✓ 就绪</span>
+<span>6 个技能　·　2 个来源</span>
+</footer>
+</body>
+</html>

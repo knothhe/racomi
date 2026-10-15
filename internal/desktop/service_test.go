@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	skillstore "racomi/internal/skills"
 
@@ -240,28 +241,29 @@ func TestImportUsesCanonicalDataRootWhenConfiguredThroughSymlink(t *testing.T) {
 	}
 }
 
-func TestReadSkillDocumentVerifiesIndexedObject(t *testing.T) {
+func TestReadSkillDocumentReadsIndexedDocumentSafely(t *testing.T) {
 	const document = "---\nname: document\ndescription: 阅读技能说明\n---\n# 使用说明\n安全阅读。\n"
 	tests := []struct {
 		name    string
 		content string
 		mutate  func(t *testing.T, object string)
+		want    string
 		wantErr string
 	}{
 		{name: "valid UTF-8 document", content: document},
 		{name: "size limit", content: strings.Repeat("x", (1<<20)+1), wantErr: "1 MiB"},
-		{name: "tampered document", content: document, mutate: func(t *testing.T, object string) {
+		{name: "local document edit", content: document, mutate: func(t *testing.T, object string) {
 			t.Helper()
 			if err := os.WriteFile(filepath.Join(object, "SKILL.md"), []byte("changed"), 0644); err != nil {
 				t.Fatal(err)
 			}
-		}, wantErr: "校验失败"},
-		{name: "tampered supporting file", content: document, mutate: func(t *testing.T, object string) {
+		}, want: "changed"},
+		{name: "unrelated supporting file edit", content: document, mutate: func(t *testing.T, object string) {
 			t.Helper()
 			if err := os.WriteFile(filepath.Join(object, "extra.txt"), []byte("changed"), 0644); err != nil {
 				t.Fatal(err)
 			}
-		}, wantErr: "校验失败"},
+		}},
 		{name: "symlink document", content: document, mutate: func(t *testing.T, object string) {
 			t.Helper()
 			filename := filepath.Join(object, "SKILL.md")
@@ -272,6 +274,26 @@ func TestReadSkillDocumentVerifiesIndexedObject(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, wantErr: "普通文件"},
+		{name: "directory document", content: document, mutate: func(t *testing.T, object string) {
+			t.Helper()
+			filename := filepath.Join(object, "SKILL.md")
+			if err := os.Remove(filename); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(filename, 0755); err != nil {
+				t.Fatal(err)
+			}
+		}, wantErr: "普通文件"},
+		{name: "symlink object", content: document, mutate: func(t *testing.T, object string) {
+			t.Helper()
+			moved := object + "-moved"
+			if err := os.Rename(object, moved); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(moved, object); err != nil {
+				t.Fatal(err)
+			}
+		}, wantErr: "普通目录"},
 		{name: "invalid UTF-8", content: "\xff", wantErr: "UTF-8"},
 	}
 	for _, test := range tests {
@@ -305,10 +327,70 @@ func TestReadSkillDocumentVerifiesIndexedObject(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || content != test.content {
+			want := test.want
+			if want == "" {
+				want = test.content
+			}
+			if err != nil || content != want {
 				t.Fatalf("unexpected document %q, %v", content, err)
 			}
 		})
+	}
+}
+
+func TestReadSkillDocumentDoesNotWaitForSourceMutation(t *testing.T) {
+	base := t.TempDir()
+	source := filepath.Join(base, "skill")
+	if err := os.Mkdir(source, 0755); err != nil {
+		t.Fatal(err)
+	}
+	const document = "# Installed locally\nAvailable while a source is refreshing.\n"
+	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte(document), 0644); err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(filepath.Join(base, "data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed, err := service.store.Install([]skillstore.Candidate{{Path: source, Skill: skillstore.Skill{Name: "document"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, release := make(chan struct{}), make(chan struct{})
+	mutationDone := make(chan error, 1)
+	go func() {
+		_, err := service.mutate(func() error {
+			// Source refresh/sync uses this same mutation scope while waiting
+			// on the network. Keep that scope suspended until the read ends.
+			close(started)
+			<-release
+			return nil
+		})
+		mutationDone <- err
+	}()
+	<-started
+	defer func() {
+		close(release)
+		if err := <-mutationDone; err != nil {
+			t.Errorf("mutation failed: %v", err)
+		}
+	}()
+	type result struct {
+		content string
+		err     error
+	}
+	readDone := make(chan result, 1)
+	go func() {
+		content, err := service.ReadSkillDocument(installed[0].ID)
+		readDone <- result{content, err}
+	}()
+	select {
+	case got := <-readDone:
+		if got.err != nil || got.content != document {
+			t.Fatalf("local document unavailable during source mutation: %q, %v", got.content, got.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("local document waited for an unrelated source mutation")
 	}
 }
 

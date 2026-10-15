@@ -127,28 +127,53 @@ func (s *Service) applyThemeLocked() {
 	}
 }
 
-// ReadSkillDocument only reads a verified skill object identified by the index.
-// No caller-provided path is accepted, and skill contents are never executed.
+// ReadSkillDocument reads only the bounded document from an indexed local object.
+// Import and deployment verify the whole object; reading its documentation must
+// not wait for source network requests or rehash unrelated assets.
 func (s *Service) ReadSkillDocument(skillID string) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// A concurrent install/removal can retire the indexed object. Keep it alive
+	// until this read finishes without taking the service's mutation/network lock.
+	release := s.store.SuspendContentCleanup()
+	defer release()
 	state, err := s.store.State()
 	if err != nil {
 		return "", err
 	}
-	var object string
-	var expectedHash string
+	var contentHash string
 	for _, skill := range state.Skills {
 		if skill.ID == skillID {
-			expectedHash = skill.ContentHash
-			object = filepath.Join(s.store.Root(), "objects", expectedHash)
+			contentHash = skill.ContentHash
 			break
 		}
 	}
-	if object == "" {
+	if contentHash == "" {
 		return "", errors.New("技能不存在")
 	}
-	info, err := os.Lstat(filepath.Join(object, "SKILL.md"))
+	objects, err := os.OpenRoot(filepath.Join(s.store.Root(), "objects"))
+	if err != nil {
+		return "", err
+	}
+	defer objects.Close()
+	objectInfo, err := objects.Lstat(contentHash)
+	if err != nil {
+		return "", err
+	}
+	if !objectInfo.IsDir() || objectInfo.Mode()&os.ModeSymlink != 0 {
+		return "", errors.New("技能内容必须为本地普通目录")
+	}
+	root, err := objects.OpenRoot(contentHash)
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+	currentObject, err := root.Stat(".")
+	if err != nil {
+		return "", err
+	}
+	if !os.SameFile(objectInfo, currentObject) {
+		return "", errors.New("读取时技能目录发生变化")
+	}
+	info, err := root.Lstat("SKILL.md")
 	if err != nil {
 		return "", err
 	}
@@ -156,18 +181,6 @@ func (s *Service) ReadSkillDocument(skillID string) (string, error) {
 	if !info.Mode().IsRegular() || info.Size() > maxDocumentSize {
 		return "", errors.New("SKILL.md 必须为不超过 1 MiB 的普通文件")
 	}
-	hash, err := skillstore.HashDir(object)
-	if err != nil {
-		return "", err
-	}
-	if hash != expectedHash {
-		return "", errors.New("技能内容校验失败，请重新导入")
-	}
-	root, err := os.OpenRoot(object)
-	if err != nil {
-		return "", err
-	}
-	defer root.Close()
 	file, err := root.Open("SKILL.md")
 	if err != nil {
 		return "", err
@@ -177,7 +190,10 @@ func (s *Service) ReadSkillDocument(skillID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !current.Mode().IsRegular() || !os.SameFile(info, current) || current.Size() != info.Size() {
+	sameVersion := func(before, after os.FileInfo) bool {
+		return after.Mode().IsRegular() && os.SameFile(before, after) && before.Size() == after.Size() && before.ModTime().Equal(after.ModTime())
+	}
+	if !sameVersion(info, current) {
 		return "", errors.New("读取时技能文档发生变化")
 	}
 	content, err := io.ReadAll(io.LimitReader(file, maxDocumentSize+1))
@@ -187,13 +203,18 @@ func (s *Service) ReadSkillDocument(skillID string) (string, error) {
 	if len(content) > maxDocumentSize {
 		return "", errors.New("SKILL.md 不能超过 1 MiB")
 	}
-	// Recheck after reading as local changes can happen outside this process.
-	hash, err = skillstore.HashDir(object)
+	// Check both the open file and its name after the read, catching concurrent
+	// edits and replacements without walking the rest of the skill directory.
+	after, err := file.Stat()
 	if err != nil {
 		return "", err
 	}
-	if hash != expectedHash || int64(len(content)) != current.Size() {
-		return "", errors.New("读取时技能内容发生变化")
+	named, err := root.Lstat("SKILL.md")
+	if err != nil {
+		return "", err
+	}
+	if !sameVersion(current, after) || !sameVersion(current, named) || int64(len(content)) != current.Size() {
+		return "", errors.New("读取时技能文档发生变化")
 	}
 	if !utf8.Valid(content) {
 		return "", errors.New("SKILL.md 必须为有效的 UTF-8 文本")
