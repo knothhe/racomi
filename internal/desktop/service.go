@@ -364,19 +364,19 @@ func (s *Service) ChooseDirectory() (string, error) {
 	if s.app == nil {
 		return "", errors.New(s.nativeText("Directory selection is available only in the desktop app", "目录选择仅在桌面应用中可用", "目錄選擇僅在桌面應用程式中可用"))
 	}
-	return s.app.Dialog.OpenFile().SetTitle(s.nativeText("Choose target directory", "选择目标目录", "選擇目標目錄")).CanChooseDirectories(true).CanChooseFiles(false).ShowHiddenFiles(true).PromptForSingleSelection()
+	return s.openFileDialog().SetTitle(s.nativeText("Choose target directory", "选择目标目录", "選擇目標目錄")).CanChooseDirectories(true).CanChooseFiles(false).ShowHiddenFiles(true).PromptForSingleSelection()
 }
 func (s *Service) ChooseExportFile() (string, error) {
 	if s.app == nil {
 		return "", errors.New(s.nativeText("File selection is available only in the desktop app", "文件选择仅在桌面应用中可用", "檔案選擇僅在桌面應用程式中可用"))
 	}
-	return s.app.Dialog.SaveFile().SetFilename("racomi-"+time.Now().Format("2006-01-02")+".zip").AddFilter(s.nativeText("racomi backup", "racomi 备份", "racomi 備份"), "*.zip").PromptForSingleSelection()
+	return s.saveFileDialog().SetFilename("racomi-"+time.Now().Format("2006-01-02")+".zip").AddFilter(s.nativeText("racomi backup", "racomi 备份", "racomi 備份"), "*.zip").PromptForSingleSelection()
 }
 func (s *Service) ChooseImportFile() (string, error) {
 	if s.app == nil {
 		return "", errors.New(s.nativeText("File selection is available only in the desktop app", "文件选择仅在桌面应用中可用", "檔案選擇僅在桌面應用程式中可用"))
 	}
-	return s.app.Dialog.OpenFile().SetTitle(s.nativeText("Import racomi backup", "导入 racomi 备份", "匯入 racomi 備份")).AddFilter(s.nativeText("racomi backup", "racomi 备份", "racomi 備份"), "*.zip").PromptForSingleSelection()
+	return s.openFileDialog().SetTitle(s.nativeText("Import racomi backup", "导入 racomi 备份", "匯入 racomi 備份")).AddFilter(s.nativeText("racomi backup", "racomi 备份", "racomi 備份"), "*.zip").PromptForSingleSelection()
 }
 
 func (s *Service) mutate(change func() error) (AppState, error) {

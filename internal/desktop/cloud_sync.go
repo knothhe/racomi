@@ -245,9 +245,14 @@ func (s *Service) SaveSettingsPatch(patch map[string]json.RawMessage, onlyMissin
 }
 
 func (s *Service) SaveCloudSyncConfig(input CloudSyncConfig) (AppState, error) {
+	c := s.cloud
+	// A session keeps its endpoint and credentials until its conditional commit
+	// finishes. Wait before taking the local mutation lock so a slow cloud
+	// request cannot make an unrelated project or library edit wait with it.
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	c := s.cloud
 	c.mu.Lock()
 	config, err := mergedCloudConfig(input, c.config)
 	if err != nil {
@@ -325,10 +330,8 @@ func (s *Service) runCloudSync(ctx context.Context, resolutions map[string]strin
 		return AppState{}, errors.New("cloud sync is already running")
 	}
 	defer c.runMu.Unlock()
-	// Always take the mutation lock before reading configuration. A queued sync
-	// must not commit to an endpoint replaced by a concurrent configuration save.
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Configuration saves share runMu, keeping this session's destination stable
+	// without holding the application's local mutation lock across network I/O.
 	c.mu.Lock()
 	config := c.config
 	if err := cloudsync.ValidateConfig(config.remote()); err != nil {
@@ -337,16 +340,17 @@ func (s *Service) runCloudSync(ctx context.Context, resolutions map[string]strin
 	}
 	c.syncing, c.lastError, c.lastAttempt = true, "", time.Now()
 	c.mu.Unlock()
-	// Keep application writes serialized until the remote conditional commit and
-	// local commit have completed. Reads and status polling remain available.
+	// Only the final state check, conditional publication, and local commit take
+	// the mutation lock. Reads and content transfers leave local edits available;
+	// the final critical section preserves compound edits and deletion history.
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	var result cloudsync.Result
 	var err error
 	if restoreID != "" {
-		result, err = cloudsync.RestoreBackup(ctx, s.store, config.remote(), restoreID)
+		result, err = cloudsync.RestoreBackupWithLocalLock(ctx, s.store, config.remote(), restoreID, &s.mu)
 	} else {
-		result, err = cloudsync.Sync(ctx, s.store, config.remote(), resolutions)
+		result, err = cloudsync.SyncWithLocalLock(ctx, s.store, config.remote(), resolutions, &s.mu)
 	}
 	err = redactCloudError(err, config)
 	c.mu.Lock()

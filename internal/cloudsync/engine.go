@@ -372,8 +372,16 @@ func (s *session) commit(ctx context.Context, state skills.SharedState, parent, 
 // Sync merges against the last locally committed common state. Conflicts leave
 // both indices unchanged. Resolution choices (local or remote) must include
 // __token from the result that displayed those precise versions.
-// The caller must serialize application mutations while Sync runs.
+// The caller must serialize application mutations, sync sessions, and their
+// configuration changes; applications can use SyncWithLocalLock for this.
 func Sync(ctx context.Context, store *skills.Store, config Config, resolutions map[string]string) (Result, error) {
+	return SyncWithLocalLock(ctx, store, config, resolutions, nil)
+}
+
+// SyncWithLocalLock coordinates the final state check, conditional remote
+// publication, and local commit with application edits. The optional lock is
+// not held during remote reads, provider probes, or content transfers.
+func SyncWithLocalLock(ctx context.Context, store *skills.Store, config Config, resolutions map[string]string, localLock sync.Locker) (Result, error) {
 	releaseContent := store.SuspendContentCleanup()
 	defer releaseContent()
 	result := Result{Conflicts: []skills.SyncConflict{}}
@@ -438,10 +446,21 @@ func Sync(ctx context.Context, store *skills.Store, config Config, resolutions m
 			return result, errors.New("local library changed during sync; retry synchronization")
 		}
 		if remote.ID != "" && sharedEqual(merged, remote.State) {
-			if !sharedEqual(local, merged) {
-				if err = store.ApplySharedIfCurrent(merged, local); err != nil {
-					return result, err
+			err = withLocalCommitLock(localLock, func() error {
+				current, err := currentShared(store)
+				if err != nil {
+					return err
 				}
+				if !sharedEqual(current, local) {
+					return errors.New("local library changed during sync; retry synchronization")
+				}
+				if !sharedEqual(local, merged) {
+					return store.ApplySharedIfCurrent(merged, local)
+				}
+				return nil
+			})
+			if err != nil {
+				return result, err
 			}
 			if err = saveCheckpoint(store, config, remote.ID, merged); err != nil {
 				return result, err
@@ -455,14 +474,24 @@ func Sync(ctx context.Context, store *skills.Store, config Config, resolutions m
 		if err != nil {
 			return result, err
 		}
-		current, err = currentShared(store)
-		if err != nil {
-			return result, err
-		}
-		if !sharedEqual(current, local) {
-			return result, errors.New("local library changed during sync; retry synchronization")
-		}
-		committed, err := s.commit(ctx, merged, remote.ID, etag)
+		var committed manifest
+		err = withLocalCommitLock(localLock, func() error {
+			current, err := currentShared(store)
+			if err != nil {
+				return err
+			}
+			if !sharedEqual(current, local) {
+				return errors.New("local library changed during sync; retry synchronization")
+			}
+			committed, err = s.commit(ctx, merged, remote.ID, etag)
+			if err != nil {
+				return err
+			}
+			if err = store.ApplySharedIfCurrent(merged, local); err != nil {
+				return fmt.Errorf("remote sync committed but local application failed; retry synchronization: %w", err)
+			}
+			return nil
+		})
 		if statusIs(err, 412, 409) {
 			if len(choices) > 0 {
 				return result, errors.New("remote library changed while resolving conflicts; run synchronization again")
@@ -472,9 +501,6 @@ func Sync(ctx context.Context, store *skills.Store, config Config, resolutions m
 		if err != nil {
 			return result, err
 		}
-		if err = store.ApplySharedIfCurrent(merged, local); err != nil {
-			return result, fmt.Errorf("remote sync committed but local application failed; retry synchronization: %w", err)
-		}
 		if err = saveCheckpoint(store, config, committed.ID, merged); err != nil {
 			return result, err
 		}
@@ -483,6 +509,14 @@ func Sync(ctx context.Context, store *skills.Store, config Config, resolutions m
 		return result, nil
 	}
 	return result, errors.New("remote library kept changing; retry synchronization")
+}
+
+func withLocalCommitLock(localLock sync.Locker, commit func() error) error {
+	if localLock != nil {
+		localLock.Lock()
+		defer localLock.Unlock()
+	}
+	return commit()
 }
 
 // TestConnection verifies read/list/write/delete access and, critically, that
@@ -589,8 +623,16 @@ func ListBackups(ctx context.Context, config Config) ([]BackupInfo, error) {
 
 // RestoreBackup publishes the selected historical library as a new revision.
 // It never rewinds/deletes history, and a concurrent remote update cancels the
-// restore rather than being overwritten. The caller serializes local mutations.
+// restore rather than being overwritten. The caller serializes application
+// mutations and sessions; applications can use RestoreBackupWithLocalLock.
 func RestoreBackup(ctx context.Context, store *skills.Store, config Config, id string) (Result, error) {
+	return RestoreBackupWithLocalLock(ctx, store, config, id, nil)
+}
+
+// RestoreBackupWithLocalLock coordinates the final state check, conditional
+// remote publication, and local restore with application edits. Remote reads,
+// provider probes, and content transfers do not hold the optional lock.
+func RestoreBackupWithLocalLock(ctx context.Context, store *skills.Store, config Config, id string, localLock sync.Locker) (Result, error) {
 	releaseContent := store.SuspendContentCleanup()
 	defer releaseContent()
 	result := Result{Conflicts: []skills.SyncConflict{}}
@@ -656,21 +698,25 @@ func RestoreBackup(ctx context.Context, store *skills.Store, config Config, id s
 	if err != nil {
 		return result, err
 	}
-	latest, err := currentShared(store)
-	if err != nil {
-		return result, err
-	}
-	if !sharedEqual(local, latest) {
-		return result, errors.New("local library changed during backup restore; retry")
-	}
-	committed, err := s.commit(ctx, target.State, current.ID, etag)
+	var committed manifest
+	err = withLocalCommitLock(localLock, func() error {
+		latest, err := currentShared(store)
+		if err != nil {
+			return err
+		}
+		if !sharedEqual(local, latest) {
+			return errors.New("local library changed during backup restore; retry")
+		}
+		committed, err = s.commit(ctx, target.State, current.ID, etag)
+		if err != nil {
+			return err
+		}
+		return store.ApplySharedIfCurrent(target.State, local)
+	})
 	if statusIs(err, 409, 412) {
 		return result, errors.New("remote library changed during restore; review the latest library before restoring again")
 	}
 	if err != nil {
-		return result, err
-	}
-	if err = store.ApplySharedIfCurrent(target.State, local); err != nil {
 		return result, err
 	}
 	if err = saveCheckpoint(store, config, committed.ID, target.State); err != nil {

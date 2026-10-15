@@ -46,7 +46,7 @@ func (s *Service) ChooseSkillsManagerFile() (string, error) {
 	if s.app == nil {
 		return "", errors.New(s.nativeText("File selection is available only in the desktop app", "文件选择仅在桌面应用中可用", "檔案選擇僅在桌面應用程式中可用"))
 	}
-	return s.app.Dialog.OpenFile().SetTitle(s.nativeText("Choose skills-manager database", "选择 skills-manager 数据库", "選擇 skills-manager 資料庫")).ShowHiddenFiles(true).AddFilter(s.nativeText("SQLite database", "SQLite 数据库", "SQLite 資料庫"), "*.db;*.sqlite;*.sqlite3").PromptForSingleSelection()
+	return s.openFileDialog().SetTitle(s.nativeText("Choose skills-manager database", "选择 skills-manager 数据库", "選擇 skills-manager 資料庫")).ShowHiddenFiles(true).AddFilter(s.nativeText("SQLite database", "SQLite 数据库", "SQLite 資料庫"), "*.db;*.sqlite;*.sqlite3").PromptForSingleSelection()
 }
 
 func (s *Service) PreviewSkillsManager(filename string) (SkillsManagerPreview, error) {
