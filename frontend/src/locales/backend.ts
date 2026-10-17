@@ -149,6 +149,7 @@ const messages: ReadonlyArray<readonly [string, string, string, string]> = [
   ["target directory cannot be empty", "target directory cannot be empty", "目标目录不能为空", "目標目錄不能為空"],
   ["select a repository directory for project targets", "select a repository directory for project targets", "请选择项目仓库根目录", "請選擇專案儲存庫根目錄"],
   ["clear and apply the target before changing its directory", "clear and apply the target before changing its directory", "请先清空选择并应用，再更改目标目录", "請先清空選擇並套用，再變更目標目錄"],
+  ["project root directory does not exist: {0}", "Project root directory does not exist. Choose an existing directory: {0}", "项目根目录不存在，请选择一个现有目录：{0}", "專案根目錄不存在，請選擇一個現有目錄：{0}"],
   ["repository must be a directory", "repository must be a directory", "项目仓库必须是目录", "專案儲存庫必須是目錄"],
   ["select at least one project directory", "select at least one project directory", "请至少选择一个项目目录", "請至少選擇一個專案目錄"],
   ["unknown project directory", "unknown project directory", "未知项目目录", "未知專案目錄"],

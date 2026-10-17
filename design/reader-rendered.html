@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="board.css">
 <script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script>
 <title>技能文档 · 渲染阅读</title>
-</head>
+<style>.frontmatter pre{white-space:pre-wrap;overflow-wrap:anywhere}</style></head>
 <body>
 <header class="header">
 <span class="brand">◈ Racomi</span>
@@ -101,7 +101,7 @@
 </div>
 <article class="document markdown-body" aria-busy="false">
 <details class="frontmatter">
-<summary>元信息</summary>
+<summary>元信息 <button type="button" class="button" aria-pressed="true" aria-label="软换行" style="float:right;color:var(--accent);background:var(--accent-soft)">↩</button></summary>
 <pre>name: h2-design-first
 description: 设计产品 UI 修改，先完成可审阅的 HTML 画板。</pre>
 </details>

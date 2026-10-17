@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="board.css">
+<script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script>
+<title>来源 · 同步入口</title>
+</head>
+<body>
+<header class="header">
+<span class="brand">◈ Racomi</span>
+<nav class="nav">
+<span class="">技能</span>
+<span class="">项目</span>
+<span class="">全局</span>
+<span class="active">来源</span>
+<span class="">发现</span>
+<span class="">预设</span>
+</nav>
+<span class="theme">☀︎　◐</span>
+</header>
+<main class="page">
+<div class="page-heading">
+<div>
+<h1>来源</h1>
+<p>刷新来源目录，选择要同步到本地的技能。</p>
+</div>
+<button class="button primary">＋ 添加来源</button>
+</div>
+<div class="layout sources">
+<section class="panel"><div class="list-toolbar"><span>⌕ 搜索来源</span><span>6 个来源</span></div>
+<div class="list-row source-list-row current" title="example/team-design
+挑选安装。已安装的 1 个技能与当前清单一致。另有 2 个技能可按需安装。"><strong>example/team-design</strong><span class="list-status synced">✓ 已同步</span></div>
+<div class="list-row source-list-row " title="emilkowalski/skills
+挑选安装。已安装的 2 个技能与当前清单一致。"><strong>emilkowalski/skills</strong><span class="list-status synced">✓ 已同步</span></div>
+<div class="list-row source-list-row " title="example/team-skills
+挑选安装。已安装 3 个技能，其中 2 个可更新。另有 5 个技能可按需安装。"><strong>example/team-skills</strong><span class="list-status warning">↑ 2 个可更新</span></div>
+<div class="list-row source-list-row " title="showheyotaki/motion-prompt
+挑选安装。尚未安装此来源的技能。可按需选择 1 个技能安装。"><strong>showheyotaki/motion-prompt</strong><span class="list-status neutral">未安装</span></div>
+<div class="list-row source-list-row " title="example/retired-skills
+挑选安装。1 个已安装技能被上游移除，本地版本仍保留。"><strong>example/retired-skills</strong><span class="list-status warning">! 1 个上游移除</span></div>
+<div class="list-row source-list-row " title="example/unavailable
+全部订阅。来源刷新失败，当前显示上次保存的清单。请刷新成功后再同步。"><strong>example/unavailable</strong><span class="list-status error">! 刷新失败</span></div>
+</section>
+<aside class="panel">
+<div class="source-heading">
+<h2>example/team-design <span class="badge">挑选安装</span>
+</h2>
+<p class="mono">https://example.com/team-design</p>
+</div>
+<dl class="source-meta">
+<dt>引用</dt>
+<dd class="mono">main</dd>
+<dt>扫描范围</dt>
+<dd class="mono">skills</dd>
+<dt>上次刷新</dt>
+<dd>2026/10/15 20:30</dd>
+<dt>目录版本</dt>
+<dd class="mono">a4e93f1</dd>
+</dl>
+<div class="refresh-bar">
+<span>选择需要安装或更新的技能；全选不会改变订阅模式。</span>
+<button class="button">↻ 刷新来源</button>
+</div>
+<p class="muted" style="padding:0 16px 14px">已安装的技能与当前清单一致；其余技能可按需安装。</p><div class="source-summary">
+<span>可安装 <b>2</b>
+</span>
+<span>可更新 <b>0</b>
+</span>
+<span>上游移除 <b>0</b>
+</span>
+</div>
+<div class="source-catalog-toolbar">
+<div class="filters">
+<span class="filter">可安装 / 更新</span>
+<span class="filter active">全部技能 <small>3</small>
+</span>
+</div>
+<div class="catalog-actions">
+<button class="button quiet">全选可同步</button>
+<button class="button primary" disabled>↓ 同步所选技能到本地</button>
+</div>
+</div>
+<div class="catalog-row">
+<input type="checkbox" aria-label="选择 h2-design-first">
+<span class="catalog-copy">
+<strong>h2-design-first</strong>
+<small>设计产品 UI 修改，先完成可审阅的 HTML 画板。</small>
+<code>skills/h2-design-first</code>
+</span>
+<span class="badge ">可安装</span>
+</div>
+<div class="catalog-row">
+<input type="checkbox" aria-label="选择 h2-commit">
+<span class="catalog-copy">
+<strong>h2-commit</strong>
+<small>检查当前变更并创建经过验证的本地 Git 提交。</small>
+<code>skills/h2-commit</code>
+</span>
+<span class="badge green">已同步</span>
+</div>
+<div class="catalog-row">
+<input type="checkbox" aria-label="选择 h2-semver-release">
+<span class="catalog-copy">
+<strong>h2-semver-release</strong>
+<small>为项目准备语义化版本发布。</small>
+<code>skills/h2-semver-release</code>
+</span>
+<span class="badge ">可安装</span>
+</div>
+<div class="source-sync-footer">
+<strong>已选择 0 个技能</strong>
+<small>上游移除的技能保留本地版本；同步后请到“项目”或“全局”手动应用。</small>
+</div>
+</aside>
+</div>
+</main>
+<footer class="statusbar">
+<span>✓ 就绪</span>
+<span>6 个技能　·　6 个来源</span>
+</footer>
+</body>
+</html>

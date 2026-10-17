@@ -79,7 +79,7 @@ func TestGlobalApplicationBrowseAndEmptyPreviewDoNotWrite(t *testing.T) {
 		if application.Target != nil || application.Path != expected[application.Key] || application.AgentID != agentIDs[application.Key] || application.AgentName == "" {
 			t.Fatalf("incorrect empty Agent directory: %+v", application)
 		}
-		if application.Key == "codex-user" && (application.AgentName != "共享" || application.Name != "用户技能目录") {
+		if application.Key == "codex-user" && (application.AgentName != "Agent Skills" || application.Name != "共享技能目录") {
 			t.Fatalf("shared user directory was mislabeled as one Agent's directory: %+v", application)
 		}
 		plan, err := service.PlanGlobal(application.Key)

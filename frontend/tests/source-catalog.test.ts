@@ -1,11 +1,56 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Source, Skill, SourceSkill } from "../src/api.ts";
-import { catalogEntries, sourceSyncPaths, summarizeSource } from "../src/source-catalog.ts";
+import { catalogEntries, sourceStatus, sourceStatusDetails, sourceSyncPaths, summarizeSource } from "../src/source-catalog.ts";
 
 const entry = (path: string, overrides: Partial<SourceSkill> = {}): SourceSkill => ({ name: path, description: path, subpath: path, revision: "latest", contentHash: "latest", removed: false, new: false, ...overrides });
 const local = (path: string, overrides: Partial<Skill> = {}): Skill => ({ ...entry(path), id: path, source: "owner/repo", sourceId: "source", ref: "main", installedAt: "", updatedAt: "", upstreamRemoved: false, ...overrides });
 const source = (catalog: SourceSkill[], overrides: Partial<Source> = {}): Source => ({ id: "source", name: "Source", repository: "owner/repo", ref: "main", subpath: ".", mode: "selected", revision: "latest", refreshedAt: "", lastError: "", catalog, ...overrides });
+
+test("optional uninstalled skills do not make a selected source look out of date", () => {
+  const selected = source([entry("installed"), entry("optional"), entry("new-optional", { new: true })]);
+  const entries = catalogEntries(selected, [local("installed")]);
+  assert.equal(summarizeSource(entries).installs, 2);
+  assert.equal(sourceStatus(selected, entries).label, "已同步");
+  assert.equal(sourceStatus(selected, entries).tone, "");
+  assert.deepEqual(sourceStatus({ ...selected, mode: "all" }, entries), { label: "{0} 个待安装", tone: "amber", count: 2 });
+  const updates = catalogEntries(selected, [local("installed", { contentHash: "old" })]);
+  assert.deepEqual(sourceStatus(selected, updates), { label: "{0} 个可更新", tone: "amber", count: 1 });
+  assert.equal(sourceStatus(selected, catalogEntries(selected, [])).label, "未安装");
+});
+
+test("source errors, skipped content and installed removals remain explicit", () => {
+  const selected = source([entry("removed", { removed: true }), entry("optional")]);
+  const entries = catalogEntries(selected, [local("removed")]);
+  assert.deepEqual(sourceStatus(selected, entries), { label: "{0} 个上游移除", tone: "amber", count: 1 });
+  assert.equal(sourceStatus({ ...selected, lastError: "network failure" }, entries).label, "刷新失败");
+  assert.equal(sourceStatus({ ...selected, revision: "" }, entries).label, "尚未刷新");
+  const skipped = catalogEntries(source([entry("bad", { skipReason: "unsafe" })]), []);
+  assert.equal(sourceStatus(selected, skipped).label, "部分刷新");
+});
+
+test("hover details distinguish installed skills from optional and subscribed installs", () => {
+  const selected = source([entry("installed"), entry("optional"), entry("another")]);
+  const entries = catalogEntries(selected, [local("installed")]);
+  const details = sourceStatusDetails(selected, entries);
+  assert.deepEqual(details, [
+    { key: "已安装的 {0} 个技能与当前清单一致。", count: 1 },
+    { key: "另有 {0} 个技能可按需安装。", count: 2 },
+  ]);
+  assert.deepEqual(sourceStatusDetails({ ...selected, mode: "all" }, entries)[1], { key: "全部订阅中还有 {0} 个技能待安装。", count: 2 });
+});
+
+test("hover details cover simultaneous issues without presenting skipped content as synced", () => {
+  const selected = source([entry("update"), entry("removed", { removed: true }), entry("skipped", { skipReason: "unsafe" }), entry("optional")]);
+  const entries = catalogEntries(selected, [local("update", { contentHash: "old" }), local("removed"), local("skipped")]);
+  const details = sourceStatusDetails(selected, entries);
+  assert.deepEqual(details.map((detail) => detail.count), [3, 1, 1, 1, 1]);
+  assert.equal(details.some((detail) => detail.key.includes("与当前清单一致")), false);
+  const onlySkipped = catalogEntries(source([entry("skipped", { skipReason: "unsafe" })]), [local("skipped")]);
+  assert.equal(sourceStatusDetails(selected, onlySkipped).some((detail) => detail.key.includes("与当前清单一致")), false);
+  assert.deepEqual(sourceStatusDetails({ ...selected, lastError: "fetch failed" }, entries), [{ key: "来源刷新失败，当前显示上次保存的清单；请刷新成功后再同步。" }]);
+  assert.deepEqual(sourceStatusDetails({ ...selected, revision: "" }, entries), [{ key: "刷新来源后，才能检查已安装技能并浏览可安装技能。" }]);
+});
 
 test("partial refresh keeps skipped skills separate from installs, updates and removals", () => {
   const data = source([

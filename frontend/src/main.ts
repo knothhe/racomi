@@ -22,7 +22,7 @@ import "./style.css";
 import "./source-filter.css";
 import "./markdown.css";
 import { defaultSkillFilters, filterSkills, pendingSkills, skillSource, type SkillFilters } from "./skill-filters";
-import { catalogEntries, sourceSyncPaths, summarizeSource, type SourceEntry } from "./source-catalog";
+import { catalogEntries, sourceStatus, sourceStatusDetails, sourceSyncPaths, summarizeSource, type SourceEntry } from "./source-catalog";
 import { defaultSettings, projectDirectories, settingsPage } from "./settings";
 import { enableNativeThemeSync, getThemePreference, setThemePreference, type ThemePreference } from "./theme";
 import { api, type AppSettings, type AppState, type ApplyPlan, type CloudBackup, type SyncConflict, type Source, type ImportResult, type Preset, type Preview, type SearchResult, type SkillListPage, type Skill, type SkillsManagerPreview, type Target, type Update } from "./api";
@@ -47,6 +47,10 @@ const arr = <T>(value: T[] | null | undefined): T[] => value || [];
 if (location.protocol === "wails:" && /Mac/.test(navigator.platform || navigator.userAgent)) document.body.classList.add("native-mac");
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const modalRoot = document.querySelector<HTMLDivElement>("#modal-root")!;
+// Give the webview a neutral initial focus target. Keyboard navigation retains
+// its normal visible focus ring when the user starts tabbing through controls.
+app.tabIndex = -1;
+app.focus({ preventScroll: true });
 let currentPage: Page = "skills";
 let data: AppState | null = null;
 let stateRevision = 0;
@@ -90,10 +94,11 @@ let cloudConflictDraft: SyncConflict[] = [];
 let cloudBackupDraft: CloudBackup[] = [];
 const sourceEditorBaselines = new WeakMap<HTMLFormElement, Source | null>();
 const presetEditorBaselines = new WeakMap<HTMLFormElement, Preset | null>();
-const documents = new Map<string, { hash: string; text: string; rendered?: { locale: string; html: string } }>();
+const documents = new Map<string, { hash: string; text: string; rendered?: { locale: string; wrap: boolean; html: string } }>();
 const loadingDocuments = new Set<string>();
 const documentErrors = new Map<string, { hash: string; message: string }>();
 const rawDocuments = new Set<string>();
+let metadataWrap = true;
 let modalPreviousFocus: HTMLElement | null = null;
 let modalGeneration = 0;
 let searchResults: SearchResult[] | null = null;
@@ -127,7 +132,7 @@ const sources = () => arr(data?.state.sources);
 const presets = () => arr(data?.state.presets);
 const managedApplications = () => arr(data?.state.targets);
 const projects = () => arr(data?.projects);
-const globalApplications = () => arr(data?.globalApplications).map((application) => ({ ...application, agentName: application.agentId === "custom" ? t("自定义") : application.agentId === "agents" ? t("共享") : application.agentName, name: application.agentId === "custom" ? application.name : t(application.name), description: t(application.description) }));
+const globalApplications = () => arr(data?.globalApplications).map((application) => ({ ...application, agentName: application.agentId === "custom" ? t("自定义") : application.agentId === "agents" ? "Agent Skills" : application.agentName, name: application.agentId === "custom" ? application.name : t(application.name), description: t(application.description) }));
 const globalPath = (path: string) => homeRelativePath(path, data?.homeDir);
 function uniqueApplications<T extends { path: string }>(applications: T[]): T[] {
   const seen = new Set<string>();
@@ -612,7 +617,7 @@ function skillDocument(skill: Skill) {
   const raw = rawDocuments.has(skill.id);
   let content: string;
   if (doc) {
-    if (!raw && doc.rendered?.locale !== getLocale()) doc.rendered = { locale: getLocale(), html: renderMarkdownDocument(doc.text, { frontmatterLabel: t("元信息") }) };
+    if (!raw && (doc.rendered?.locale !== getLocale() || doc.rendered?.wrap !== metadataWrap)) doc.rendered = { locale: getLocale(), wrap: metadataWrap, html: renderMarkdownDocument(doc.text, { frontmatterLabel: t("元信息"), frontmatterWrap: { label: t("软换行"), enabled: metadataWrap } }) };
     content = raw ? `<pre class="document-raw"><code>${e(doc.text)}</code></pre>` : `<div class="markdown-body">${doc.rendered!.html}</div>`;
   } else if (loading) {
     content = `<div class="small-empty" role="status"><span class="spinner" aria-hidden="true"></span>${t(" 正在读取 SKILL.md")}</div>`;
@@ -673,22 +678,25 @@ function sourcesPage() {
   if (!list.some((source) => source.id === selectedSource)) selectedSource = list[0]?.id || "";
   const selected = sources().find((source) => source.id === selectedSource);
   return `${heading(t("来源"), "", button(t("添加来源"), "new-source", "primary", "", "plus"))}${!sources().length ? empty(t("保存你的技能来源"), "", button(t("添加来源"), "new-source", "primary", "", "plus"), "refresh") : `<div class="sources-layout"><section class="panel sources-browser" data-preserve-scroll="sources-browser"><div class="panel-toolbar">${pageSearch("sources", t("搜索来源"))}<span class="muted">${list.length}${t(" 个")}</span></div><div class="source-list" data-preserve-scroll="sources-list" tabindex="0" role="region" aria-label="${t("来源")}">${list.map((source) => {
-    const summary = sourceSummary(source);
-    const hasChanges = summary.installs + summary.changed + summary.removed > 0;
-    const status = t(source.lastError ? "刷新失败" : !source.revision ? "尚未刷新" : summary.skipped ? "部分刷新" : hasChanges ? "有变化" : "无变化");
-    const tone = source.lastError ? "error" : !source.revision ? "" : summary.skipped || hasChanges ? "amber" : "green";
-    return `<button type="button" class="source-row ${selectedSource === source.id ? "selected" : ""}" data-action="select-source" data-id="${e(source.id)}" aria-pressed="${selectedSource === source.id}"><strong class="source-name" title="${e(sourceDisplayName(source))}">${e(sourceDisplayName(source))}</strong><span class="source-mode">${source.mode === "all" ? t("全部订阅") : t("挑选安装")}</span><span class="badge source-status ${tone}">${e(status)}</span></button>`;
+    const entries = sourceEntries(source);
+    const state = sourceStatus(source, entries);
+    const status = t(state.label, { 0: state.count });
+    const tone = state.tone;
+    const description = [t("安装方式：{0}", { 0: t(source.mode === "all" ? "全部订阅" : "挑选安装") }), ...sourceStatusDetails(source, entries).map((detail) => t(detail.key, { 0: detail.count ?? 0 })), ...(source.lastError ? [tMessage(source.lastError)] : [])].join("\n");
+    const synced = status === t("已同步");
+    const symbol = synced ? icon("check") : tone ? icon("alert") : "";
+    return `<button type="button" class="source-row ${selectedSource === source.id ? "selected" : ""}" data-action="select-source" data-id="${e(source.id)}" aria-pressed="${selectedSource === source.id}" aria-describedby="source-status-${e(source.id)}" title="${e(`${sourceDisplayName(source)}\n${description}`)}"><strong class="source-name">${e(sourceDisplayName(source))}</strong><span class="source-status ${tone} ${synced ? "synced" : ""}" title="${e(description)}">${symbol}${e(status)}</span><span hidden id="source-status-${e(source.id)}">${e(description)}</span></button>`;
   }).join("") || `<div class="small-empty">${t("没有匹配的来源")}</div>`}</div></section><section class="panel source-detail" data-preserve-scroll="source-detail:${e(selectedSource)}" tabindex="0" aria-label="${e(selected ? sourceDisplayName(selected) : t("来源"))}">${selected ? sourceDetail(selected) : empty(t("没有匹配的来源"), t("试试其他名称或来源地址。"))}</section></div>`}`;
 }
 function sourceDetail(source: Source) {
   const hosted = !!hostedSourceDomain(source.repository);
-  const { entries, available, installs, changed, removed, skipped } = sourceSummary(source);
+  const { entries, available, installs, changed, removed, skipped, installed } = sourceSummary(source);
   const selection = sourceSelection(source.id);
   const count = source.mode === "all" ? available.length : available.filter((entry) => selection.has(entry.item.subpath)).length;
   const visible = entries.filter((entry) => entry.kind === "skipped" || !entry.item.removed || entry.local);
   const shown = sourceCatalogFilter === "all" ? visible : visible.filter((entry) => entry.kind !== "current");
   const removedLocals = entries.filter((entry) => entry.kind === "removed" && entry.local).map((entry) => entry.local!);
-  return `<div class="source-detail-heading"><div><div class="title-line"><h2>${e(sourceDisplayName(source))}</h2><span class="badge">${source.mode === "all" ? t("全部订阅") : t("挑选安装")}</span></div><p class="mono">${e(source.repository)}</p></div><div class="source-actions">${iconButton(t("编辑来源"), "edit-source", "edit", `data-id="${e(source.id)}"`)}${iconButton(t("删除来源"), "delete-source", "trash", `data-id="${e(source.id)}"`, "danger-quiet")}</div></div><dl class="source-metadata">${hosted ? "" : `<dt>${t("引用")}</dt><dd class="mono">${e(source.ref || t("默认分支"))}</dd>`}<dt>${t("扫描范围")}</dt><dd class="mono">${e(source.subpath || t(hosted ? "所有技能" : "整个仓库"))}</dd><dt>${t("上次刷新")}</dt><dd>${e(date(source.refreshedAt))}</dd><dt>${t("目录版本")}</dt><dd class="mono" title="${e(source.revision)}">${e(short(source.revision))}</dd></dl>${source.lastError ? `<div class="source-error" role="status"><strong>${t("刷新失败")}</strong><p>${e(tMessage(source.lastError))}</p><small>${t("保留上次成功获取的目录和本地技能，请重新刷新后同步。")}</small></div>` : ""}${!source.lastError && skipped ? `<div class="source-partial-note" role="status">${t("已跳过 {0} 个技能；已有版本已保留，其他技能可继续同步。", { 0: skipped })}</div>` : ""}${scanWarnings(source.warnings)}<div class="source-refresh-bar"><span class="muted">${source.mode === "all" ? t("同步会安装全部技能，并更新已安装技能。") : t("选择需要安装或更新的技能；全选不会改变订阅模式。")}</span>${button(t("刷新来源"), "refresh-source", "small", `data-id="${e(source.id)}"`, "refresh")}</div>${!source.revision ? `<div class="small-empty">${t("来源已保存。刷新后即可浏览技能与同步变化。")}</div>` : `<div class="source-summary"><span>${t("可安装 ")}<strong>${installs}</strong></span><span>${t("可更新 ")}<strong>${changed}</strong></span><span>${t("上游移除 ")}<strong>${removed}</strong></span>${skipped ? `<span>${t("本次跳过 ")}<strong>${skipped}</strong></span>` : ""}</div><div class="source-catalog-toolbar"><div class="skills-filters" role="group" aria-label="${t("来源目录筛选")}"><button type="button" class="filter-chip ${sourceCatalogFilter === "changes" ? "active" : ""}" data-action="source-filter" data-filter="changes" aria-pressed="${sourceCatalogFilter === "changes"}">${t("查看变化")}</button><button type="button" class="filter-chip ${sourceCatalogFilter === "all" ? "active" : ""}" data-action="source-filter" data-filter="all" aria-pressed="${sourceCatalogFilter === "all"}">${t("全部技能 ")}<span class="filter-count">${visible.length}</span></button></div><div class="source-catalog-actions">${source.mode === "selected" && available.length ? button(available.every((entry) => selection.has(entry.item.subpath)) ? t("取消全选") : t("全选变化"), "select-all-source", "quiet small", `data-id="${e(source.id)}" ${source.lastError ? "disabled" : ""}`) : ""}${button(source.mode === "all" ? t("同步全部技能到本地") : t("同步所选技能到本地"), "sync-source", "primary small", `data-id="${e(source.id)}" ${!count || source.lastError ? "disabled" : ""}`, "download")}</div></div><div class="source-catalog">${shown.map((entry) => sourceCatalogRow(source, entry, removedLocals)).join("") || `<div class="small-empty">${entries.length ? t("与本地技能一致，没有待同步的变化。") : t("扫描范围内没有有效的 SKILL.md。")}</div>`}</div><div class="source-sync-footer"><div><strong id="source-sync-count">${source.mode === "all" ? t("待同步 {0} 个技能", { 0: count }) : t("已选择 {0} 个技能", { 0: count })}</strong><small>${t("上游移除的技能保留本地版本；同步后请到“项目”或“全局”手动应用。")}</small></div></div>`}`;
+  return `<div class="source-detail-heading"><div><div class="title-line"><h2>${e(sourceDisplayName(source))}</h2><span class="badge">${source.mode === "all" ? t("全部订阅") : t("挑选安装")}</span></div><p class="mono">${e(source.repository)}</p></div><div class="source-actions">${iconButton(t("编辑来源"), "edit-source", "edit", `data-id="${e(source.id)}"`)}${iconButton(t("删除来源"), "delete-source", "trash", `data-id="${e(source.id)}"`, "danger-quiet")}</div></div><dl class="source-metadata">${hosted ? "" : `<dt>${t("引用")}</dt><dd class="mono">${e(source.ref || t("默认分支"))}</dd>`}<dt>${t("扫描范围")}</dt><dd class="mono">${e(source.subpath || t(hosted ? "所有技能" : "整个仓库"))}</dd><dt>${t("上次刷新")}</dt><dd>${e(date(source.refreshedAt))}</dd><dt>${t("目录版本")}</dt><dd class="mono" title="${e(source.revision)}">${e(short(source.revision))}</dd></dl>${source.lastError ? `<div class="source-error" role="status"><strong>${t("刷新失败")}</strong><p>${e(tMessage(source.lastError))}</p><small>${t("保留上次成功获取的目录和本地技能，请重新刷新后同步。")}</small></div>` : ""}${!source.lastError && skipped ? `<div class="source-partial-note" role="status">${t("已跳过 {0} 个技能；已有版本已保留，其他技能可继续同步。", { 0: skipped })}</div>` : ""}${scanWarnings(source.warnings)}<div class="source-refresh-bar"><span class="muted">${source.mode === "all" ? t("同步会安装全部技能，并更新已安装技能。") : t("选择需要安装或更新的技能；全选不会改变订阅模式。")}</span>${button(t("刷新来源"), "refresh-source", "small", `data-id="${e(source.id)}"`, "refresh")}</div>${!source.revision ? `<div class="small-empty">${t("来源已保存。刷新后即可浏览技能与同步变化。")}</div>` : `<div class="source-summary">${source.mode === "selected" ? `<span>${t("已安装 ")}<strong>${installed}</strong></span>` : ""}<span>${t("可安装 ")}<strong>${installs}</strong></span><span>${t("可更新 ")}<strong>${changed}</strong></span><span>${t("上游移除 ")}<strong>${removed}</strong></span>${skipped ? `<span>${t("本次跳过 ")}<strong>${skipped}</strong></span>` : ""}</div><div class="source-catalog-toolbar"><div class="skills-filters" role="group" aria-label="${t("来源目录筛选")}"><button type="button" class="filter-chip ${sourceCatalogFilter === "changes" ? "active" : ""}" data-action="source-filter" data-filter="changes" aria-pressed="${sourceCatalogFilter === "changes"}">${t("可安装 / 更新")}</button><button type="button" class="filter-chip ${sourceCatalogFilter === "all" ? "active" : ""}" data-action="source-filter" data-filter="all" aria-pressed="${sourceCatalogFilter === "all"}">${t("全部技能 ")}<span class="filter-count">${visible.length}</span></button></div><div class="source-catalog-actions">${source.mode === "selected" && available.length ? button(available.every((entry) => selection.has(entry.item.subpath)) ? t("取消全选") : t("全选可同步"), "select-all-source", "quiet small", `data-id="${e(source.id)}" ${source.lastError ? "disabled" : ""}`) : ""}${button(source.mode === "all" ? t("同步全部技能到本地") : t("同步所选技能到本地"), "sync-source", "primary small", `data-id="${e(source.id)}" ${!count || source.lastError ? "disabled" : ""}`, "download")}</div></div><div class="source-catalog">${shown.map((entry) => sourceCatalogRow(source, entry, removedLocals)).join("") || `<div class="small-empty">${entries.length ? t("与本地技能一致，没有待同步的变化。") : t("扫描范围内没有有效的 SKILL.md。")}</div>`}</div><div class="source-sync-footer"><div><strong id="source-sync-count">${source.mode === "all" ? t("待同步 {0} 个技能", { 0: count }) : t("已选择 {0} 个技能", { 0: count })}</strong><small>${t("上游移除的技能保留本地版本；同步后请到“项目”或“全局”手动应用。")}</small></div></div>`}`;
 }
 function sourceCatalogRow(source: Source, entry: SourceEntry, removedLocals: Skill[]) {
   const { item, local, kind } = entry;
@@ -839,7 +847,7 @@ function globalPage() {
     <section class="panel global-directory-selector" aria-label="${e(t("全局目录列表"))}">
       <div class="global-directory-heading"><h2>${t("技能目录")}</h2><span class="global-directory-count" title="${e(t("部分 Agent 会读取相同的技能目录。"))}">${selectedCount}</span></div>
       <div class="global-directory-toolbar">${pageSearch("global", t("搜索目录、路径或技能"))}<div class="global-directory-filters" role="group" aria-label="${e(t("全局目录筛选"))}">${([["all", t("全部"), applications.length], ["pending", t("待应用"), applications.filter((directory) => directory.target?.pending).length]] as const).map(([filter, label, count]) => `<button type="button" class="filter-chip ${globalFilter === filter ? "active" : ""}" data-action="filter-global-directories" data-filter="${filter}" aria-pressed="${globalFilter === filter}">${label}<span class="filter-count">${count}</span></button>`).join("")}</div><div class="global-directory-tools">${button(t(allSelected ? "取消全选" : "全选目录"), "select-global-directories", "quiet small")}${button(t("使用默认目录"), "default-global-directories", "quiet small")}</div></div>
-      <div class="global-directory-list" data-preserve-scroll="global-directory-list" tabindex="0" role="region" aria-label="${e(t("全局目录列表"))}">${list.map((directory) => `<label class="global-directory-row ${selectedGlobalKeys.has(directory.key) ? "selected" : ""}" title="${e(directory.description)}"><input type="checkbox" name="global-directory-selection" value="${e(directory.key)}" ${selectedGlobalKeys.has(directory.key) ? "checked" : ""}>${agentIcon(directory.agentId)}<span class="global-directory-copy"><span class="global-directory-title"><strong title="${e(`${directory.agentName} · ${directory.name}`)}">${e(directory.agentName)}<span> · ${e(directory.name)}</span></strong>${applicationStatus(directory.target)}</span><code title="${e(directory.path)}">${e(globalPath(directory.path))}</code></span></label>`).join("") || `<div class="small-empty">${t("没有匹配的全局目录")}${button(t("清除筛选"), "clear-global-filters", "quiet small", "", "close")}</div>`}</div>
+      <div class="global-directory-list" data-preserve-scroll="global-directory-list" tabindex="0" role="region" aria-label="${e(t("全局目录列表"))}">${list.map((directory) => `<label class="global-directory-row ${selectedGlobalKeys.has(directory.key) ? "selected" : ""}" title="${e(t(directory.description))}"><input type="checkbox" name="global-directory-selection" value="${e(directory.key)}" ${selectedGlobalKeys.has(directory.key) ? "checked" : ""}>${agentIcon(directory.agentId)}<span class="global-directory-copy"><span class="global-directory-title"><strong title="${e(`${directory.agentName} · ${directory.name}`)}">${e(directory.agentName)}<span> · ${e(directory.name)}</span></strong>${applicationStatus(directory.target)}</span><code title="${e(directory.path)}">${e(globalPath(directory.path))}</code></span></label>`).join("") || `<div class="small-empty">${t("没有匹配的全局目录")}${button(t("清除筛选"), "clear-global-filters", "quiet small", "", "close")}</div>`}</div>
     </section>
     ${selected.length && application ? `<article class="panel application-card project-detail global-detail" data-scope="global" data-id="${e(selectedGlobalKey)}"><div class="global-configuration-heading"><h2>${t("技能配置")}</h2>${differing ? `<span class="badge amber">${t("配置不同")}</span>` : applicationStatus(application.target)}<span class="global-deployment-mode">${data?.state.settings.deploymentMode === "symlink" ? t("软链接") : t("复制")}</span></div>${differing ? `<div class="global-selection-note">${icon("info")}<span>${t("所选目录的技能配置不同，当前显示合并结果。修改选择或预览应用时会统一配置。")}</span></div>` : ""}${applicationBody("global", selectedGlobalKey, application.target, selected.map((directory) => directory.path))}</article>` : `<section class="panel project-detail project-detail-empty global-detail">${empty(t("选择全局目录"), t("勾选一个或多个目录，然后选择技能或预设。"), button(t("使用默认目录"), "default-global-directories", "small"), "monitor")}</section>`}
   </div>`;
@@ -878,6 +886,7 @@ function findApplication(scope: ApplicationScope, id: string): { name: string; p
   return application && { name: `${application.agentName} · ${application.name}`, path: application.path, target: application.target };
 }
 function applicationStatus(target: Target | null) {
+  if (target?.kind === "project" && data?.projectDirectoryErrors?.[target.id]) return `<span class="badge amber">${t("目录不可用")}</span>`;
   return !target ? `<span class="badge">${t("尚未配置")}</span>` : target.pending ? `<span class="badge amber">${t("待应用")}</span>` : arr(target.deployments).length ? `<span class="badge green">${t("已应用")}</span>` : `<span class="badge">${t("未选择技能")}</span>`;
 }
 function projectRoot(path: string) { return path.replace(/\/\.(agents|claude|codex|cursor)\/skills\/?$/, ""); }
@@ -891,7 +900,7 @@ function projectDisclosure(id: string, section: string) { return projectDetailsO
 function projectCard(project: Target) {
   const root = project.projectRoot || projectRoot(project.path);
   const dirty = applicationDirty("project", project.id, project);
-  return `<article class="panel application-card project-detail" data-scope="project" data-id="${e(project.id)}"><div class="application-heading"><button type="button" class="card-icon project-icon-button" data-action="edit-project" data-id="${e(project.id)}" title="${e(t("编辑项目图标"))}" aria-label="${e(t("编辑项目图标"))}">${icon(projectIconName(project.icon))}</button><div><div class="title-line"><h2>${e(project.name)}</h2>${dirty ? `<span class="badge">${selectionSaveStatus("project", project.id)}</span>` : applicationStatus(project)}</div><p class="mono" title="${e(root)}">${e(globalPath(root))}</p></div><div class="application-actions">${iconButton(t("编辑项目"), "edit-project", "edit", `data-id="${e(project.id)}"`)}${iconButton(t("移除项目"), "delete-project", "trash", `data-id="${e(project.id)}"`, "danger-quiet")}</div></div><details class="project-destinations" data-project-disclosure="directories" data-id="${e(project.id)}" ${projectDisclosure(project.id, "directories")}><summary>${icon("folder")}<span>${t("{0} 个技能目录", { 0: targetPaths(project).length })}</span><span class="badge">${data?.state.settings.deploymentMode === "symlink" ? t("软链接") : t("复制")}</span>${icon("chevron-down")}</summary><div class="application-destination-list">${targetPaths(project).map((path) => `<code title="${e(path)}">${e(path.startsWith(`${root}/`) ? path.slice(root.length + 1) : globalPath(path))}</code>`).join("")}</div></details>${applicationBody("project", project.id, project)}</article>`;
+  return `<article class="panel application-card project-detail" data-scope="project" data-id="${e(project.id)}"><div class="application-heading"><button type="button" class="card-icon project-icon-button" data-action="edit-project" data-id="${e(project.id)}" title="${e(t("编辑项目图标"))}" aria-label="${e(t("编辑项目图标"))}">${icon(projectIconName(project.icon))}</button><div><div class="title-line"><h2>${e(project.name)}</h2>${dirty ? `<span class="badge">${selectionSaveStatus("project", project.id)}</span>` : applicationStatus(project)}</div><p class="mono" title="${e(root)}">${e(globalPath(root))}</p></div><div class="application-actions">${iconButton(t("编辑项目"), "edit-project", "edit", `data-id="${e(project.id)}"`)}${iconButton(t("移除项目"), "delete-project", "trash", `data-id="${e(project.id)}"`, "danger-quiet")}</div></div>${data?.projectDirectoryErrors?.[project.id] ? `<div class="project-directory-error" role="status"><strong>${t("项目目录不可用")}</strong><p>${t("目录已删除或无法访问。重新选择目录后，可继续使用已保存的技能配置。")}</p>${button(t("重新选择目录"), "edit-project", "small", `data-id="${e(project.id)}"`, "folder")}</div>` : ""}<details class="project-destinations" data-project-disclosure="directories" data-id="${e(project.id)}" ${projectDisclosure(project.id, "directories")}><summary>${icon("folder")}<span>${t("{0} 个技能目录", { 0: targetPaths(project).length })}</span><span class="badge">${data?.state.settings.deploymentMode === "symlink" ? t("软链接") : t("复制")}</span>${icon("chevron-down")}</summary><div class="application-destination-list">${targetPaths(project).map((path) => `<code title="${e(path)}">${e(path.startsWith(`${root}/`) ? path.slice(root.length + 1) : globalPath(path))}</code>`).join("")}</div></details>${applicationBody("project", project.id, project)}</article>`;
 }
 function selectionSaveStatus(scope: ApplicationScope, id: string) {
   const state = selectionAutosave.state(applicationKey(scope, id));
@@ -917,6 +926,7 @@ function applicationBody(scope: ApplicationScope, id: string, target: Target | n
   const visible = new Set(skills().filter((skill) => matchesProjectSkill(skill, filters.query, filters.selectedOnly, effective)).map((skill) => skill.id));
   const plan = plans.get(applicationKey(scope, id));
   const force = plan && applicationPlanDisposition(plan) === "overwrite";
+  const directoryUnavailable = scope === "project" && !!data?.projectDirectoryErrors?.[id];
   const enabled = skills().filter((skill) => effective.has(skill.id));
   const removing = [...new Map(arr(target?.deployments).filter((item) => !effective.has(item.skillId)).map((item) => [item.skillId, item.name])).values()];
   return `<form class="application-selection project-selection" data-scope="${scope}" data-id="${e(id)}">
@@ -929,7 +939,7 @@ function applicationBody(scope: ApplicationScope, id: string, target: Target | n
       }).join("") || `<p class="muted">${t("选择预设，或展开下方直接选择技能。")}</p>`}</div>${removing.length ? `<p class="project-removing">${t("待移除：{0}", { 0: removing.join("、") })}</p>` : ""}</section>
       <details class="project-direct-skills" data-project-disclosure="skills" data-id="${e(uiKey)}" ${projectDisclosure(uiKey, "skills")}><summary>${icon("skills")}<span>${t("直接选择技能")}</span><small>${t("已选 {0} 个", { 0: selection.skillIds.length })}</small>${icon("chevron-down")}</summary><div class="project-skill-controls"><label class="search-field">${icon("search")}<input name="project-skill-search" data-project-skill-search="${e(uiKey)}" placeholder="${e(t("搜索名称或描述"))}" aria-label="${e(t(scope === "project" ? "搜索项目可用技能" : "搜索全局可用技能"))}" value="${e(filters.query)}"></label><button type="button" class="filter-chip ${filters.selectedOnly ? "active" : ""}" data-action="filter-project-skills" data-id="${e(uiKey)}" aria-pressed="${filters.selectedOnly}">${t("仅已选")}</button></div><div class="application-skills project-skills" data-preserve-scroll="application-skills:${e(scope)}:${e(id)}">${skills().map((skill) => `<label class="application-skill" ${visible.has(skill.id) ? "" : "hidden"}><input type="checkbox" name="application-skill" value="${e(skill.id)}" ${selection.skillIds.includes(skill.id) ? "checked" : ""}><span><strong>${e(skill.name)}</strong>${skill.description ? `<small title="${e(skill.description)}">${e(skill.description)}</small>` : ""}</span>${fromPresets.has(skill.id) ? `<span class="badge">${t("预设已包含")}</span>` : ""}</label>`).join("")}${!skills().length ? `<p class="muted padded">${t("尚未安装技能，请先从“发现”导入。")}</p>` : !visible.size ? `<p class="muted padded">${t("没有匹配的技能，试试其他筛选条件。")}</p>` : ""}</div></details>
       ${plan ? planView(plan, scope) : ""}
-    </div><div class="application-bottom project-application-bottom">${selectionSaveFooter(scope, id)}<div>${button(t("预览变化"), `plan-${scope}`, "small", `data-id="${e(id)}" ${!target && !effective.size ? "disabled" : ""}`, "eye")}${button(force ? t("强制覆盖…") : t(scope === "project" ? "应用到项目" : "应用到全局"), `apply-${scope}`, force ? "danger small" : "primary small", `data-id="${e(id)}" ${!target && !effective.size ? "disabled" : ""}`, "arrow")}</div></div></form>`;
+    </div><div class="application-bottom project-application-bottom">${selectionSaveFooter(scope, id)}<div>${button(t("预览变化"), `plan-${scope}`, "small", `data-id="${e(id)}" ${directoryUnavailable || !target && !effective.size ? "disabled" : ""}`, "eye")}${button(force ? t("强制覆盖…") : t(scope === "project" ? "应用到项目" : "应用到全局"), `apply-${scope}`, force ? "danger small" : "primary small", `data-id="${e(id)}" ${directoryUnavailable || !target && !effective.size ? "disabled" : ""}`, "arrow")}</div></div></form>`;
 }
 
 function planView(plan: ApplyPlan, scope: ApplicationScope) {
@@ -1076,7 +1086,6 @@ function entityIconPicker(kind: "project" | "preset", value?: string) {
 function projectEditor(id = "") {
   const project = projects().find((item) => item.id === id);
   const root = project ? project.projectRoot || projectRoot(project.path) : "";
-  const deployed = !!arr(project?.deployments).length;
   const defaults = data?.state.settings.defaultProjectDirectories || ["agents"];
   const directoryIDs = project?.directoryIds !== undefined ? arr(project.directoryIds) : project ? projectDirectories.filter((directory) => targetPaths(project).some((path) => path === `${root}/${directory.path}`)).map((directory) => directory.id) : defaults;
   const templates = arr(data?.state.settings.customProjectDirectories);
@@ -1086,7 +1095,7 @@ function projectEditor(id = "") {
     ...templates.map((directory) => ({ name: directory.name, path: matchingSnapshot(directory.path) || directory.path, checked: project ? matchingSnapshot(directory.path) !== undefined : defaults.includes(directory.id) })),
     ...snapshots.filter((path) => !templates.some((directory) => resolveProjectPath(root, directory.path) === resolveProjectPath(root, path))).map((path) => ({ name: t("当前项目目录"), path, checked: true })),
   ];
-  modal(project ? t("编辑项目") : t("添加项目"), "", `<input type="hidden" name="entityId" value="${e(project?.id)}"><label class="field"><span>${t("项目根目录")}</span><div class="input-with-button"><input name="path" value="${e(root)}" required ${deployed ? "readonly" : ""} placeholder="/Users/you/Projects/my-project">${iconButton(t("选择目录"), "choose-project-dir", "folder", deployed ? "disabled" : "")}</div>${deployed ? `<small>${t("修改根目录前，请先清空技能选择并应用以移除已应用技能。")}</small>` : ""}</label><label class="field"><span>${t("项目名称 ")}<i>${t("可选")}</i></span><input name="name" value="${e(project?.name)}" placeholder="${t("默认使用项目文件夹名称")}" maxlength="80"></label>${entityIconPicker("project", project?.icon)}<fieldset class="settings-fieldset project-directory-options"><legend>${t("项目技能目录 · 可多选")}</legend><div class="settings-directory-grid">${projectDirectories.map((directory) => `<label class="settings-choice" title="${e(t(directory.description))}"><input type="checkbox" name="project-directory" value="${directory.id}" ${directoryIDs.includes(directory.id) ? "checked" : ""}>${agentIcon(directory.id)}<span><strong>${e(t(directory.name))}</strong><code>${e(directory.path)}</code></span></label>`).join("")}${customOptions.map((directory) => `<label class="settings-choice"><input type="checkbox" name="project-custom-path" value="${e(directory.path)}" ${directory.checked ? "checked" : ""}>${agentIcon("custom")}<span><strong>${e(directory.name)}</strong><code>${e(directory.path)}</code></span></label>`).join("")}</div><p class="muted">${t("自定义目录在设置中管理。")}</p></fieldset><div class="info-note"><strong>${t("应用目录")}</strong><div id="project-destination" class="application-destination-list"></div><p>${t("当前应用方式：")}${data?.state.settings.deploymentMode === "symlink" ? t("软链接") : t("复制")}${t("。保存项目仅记录配置，预览后应用才会更新技能文件。")}</p></div>`, `<button class="button primary" type="submit">${t("保存项目")}</button>`, "project-editor");
+  modal(project ? t("编辑项目") : t("添加项目"), "", `<input type="hidden" name="entityId" value="${e(project?.id)}"><label class="field"><span>${t("项目根目录")}</span><div class="input-with-button"><input name="path" value="${e(root)}" required aria-describedby="project-path-help project-path-error" placeholder="/Users/you/Projects/my-project">${iconButton(t("选择目录"), "choose-project-dir", "folder")}</div><small id="project-path-help">${t("可直接输入路径，或选择目录；保存时检查目录是否存在。")}</small><small id="project-path-error" class="field-error" role="alert" hidden></small>${arr(project?.deployments).length ? `<small>${t("更改根目录后，请重新预览并应用；仍存在的旧目录会列出待移除的受管技能。")}</small>` : ""}</label><label class="field"><span>${t("项目名称 ")}<i>${t("可选")}</i></span><input name="name" value="${e(project?.name)}" placeholder="${t("默认使用项目文件夹名称")}" maxlength="80"></label>${entityIconPicker("project", project?.icon)}<fieldset class="settings-fieldset project-directory-options"><legend>${t("项目技能目录 · 可多选")}</legend><div class="settings-directory-grid">${projectDirectories.map((directory) => `<label class="settings-choice" title="${e(t(directory.description))}"><input type="checkbox" name="project-directory" value="${directory.id}" ${directoryIDs.includes(directory.id) ? "checked" : ""}>${agentIcon(directory.id)}<span><strong>${e(t(directory.name))}</strong><code>${e(directory.path)}</code></span></label>`).join("")}${customOptions.map((directory) => `<label class="settings-choice"><input type="checkbox" name="project-custom-path" value="${e(directory.path)}" ${directory.checked ? "checked" : ""}>${agentIcon("custom")}<span><strong>${e(directory.name)}</strong><code>${e(directory.path)}</code></span></label>`).join("")}</div><p class="muted">${t("自定义目录在设置中管理。")}</p></fieldset><div class="info-note"><strong>${t("应用目录")}</strong><div id="project-destination" class="application-destination-list"></div><p>${t("当前应用方式：")}${data?.state.settings.deploymentMode === "symlink" ? t("软链接") : t("复制")}${t("。保存项目仅记录配置，预览后应用才会更新技能文件。")}</p></div>`, `<button class="button primary" type="submit">${t("保存项目")}</button>`, "project-editor");
   updateProjectDestination();
 }
 function resolveProjectPath(root: string, path: string) {
@@ -1105,6 +1114,9 @@ function updateProjectDestination() {
   const chosen = selectedIDs(form, "project-directory");
   const customPaths = selectedIDs(form, "project-custom-path").map((path) => path.trim()).filter(Boolean);
   const paths = [...projectDirectories.filter((directory) => chosen.includes(directory.id)).map((directory) => `${path}/${directory.path}`), ...customPaths.map((customPath) => resolveProjectPath(path, customPath))];
+  const feedback = form.querySelector<HTMLElement>("#project-path-error");
+  if (feedback) feedback.hidden = true;
+  form.querySelector<HTMLInputElement>('[name="path"]')?.removeAttribute("aria-invalid");
   const destination = form.querySelector("#project-destination");
   if (destination) destination.innerHTML = path ? paths.map((path) => `<code>${e(path)}</code>`).join("") || `<span class="muted">${t("请至少选择一个技能目录")}</span>` : `<span class="muted">${t("选择项目后显示")}</span>`;
 }
@@ -1346,7 +1358,7 @@ app.addEventListener("change", async (ev) => {
       const sync = document.querySelector<HTMLButtonElement>('[data-action="sync-source"]');
       if (sync) sync.disabled = !count || !!source.lastError;
       const selectAll = document.querySelector<HTMLButtonElement>('[data-action="select-all-source"]');
-      if (selectAll) selectAll.textContent = available.every((entry) => selection.has(entry.item.subpath)) ? t("取消全选") : t("全选变化");
+      if (selectAll) selectAll.textContent = available.every((entry) => selection.has(entry.item.subpath)) ? t("取消全选") : t("全选可同步");
     }
   }
 });
@@ -1442,7 +1454,16 @@ document.addEventListener("submit", async (ev) => {
       if (!directoryIds.length && !customPaths.length) { toast(t("请至少选择一个项目技能目录。"), true); return; }
       const project: Target = { id: field(form, "entityId"), name, icon: field(form, "icon"), kind: "project", path, directoryIds, customPaths, enabledSkillIds: arr(existing?.enabledSkillIds), enabledPresetIds: arr(existing?.enabledPresetIds), deployments: arr(existing?.deployments), pending: existing?.pending || false };
       const previousIDs = new Set(projects().map((item) => item.id));
-      const next = await task("正在保存项目…", () => api.saveProject(project));
+      const next = await task("正在保存项目…", async () => {
+        try { return await api.saveProject(project); }
+        catch (error) {
+          const message = tMessage(error instanceof Error ? error.message : String(error));
+          const feedback = form.querySelector<HTMLElement>("#project-path-error");
+          if (feedback) { feedback.textContent = message; feedback.hidden = false; }
+          form.querySelector<HTMLInputElement>('[name="path"]')?.setAttribute("aria-invalid", "true");
+          throw error;
+        }
+      });
       if (next) {
         const showResult = form.isConnected && modalRoot.contains(form);
         const created = !existing ? arr(next.projects).find((item) => !previousIDs.has(item.id)) : undefined;
@@ -1627,6 +1648,13 @@ document.addEventListener("click", async (ev) => {
     return;
   }
   if (action === "source-filter") { sourceCatalogFilter = target.dataset.filter === "all" ? "all" : "changes"; render(); return; }
+  if (action === "toggle-metadata-wrap") {
+    ev.preventDefault();
+    metadataWrap = !metadataWrap;
+    target.setAttribute("aria-pressed", String(metadataWrap));
+    target.closest<HTMLElement>(".markdown-frontmatter")!.dataset.wrap = String(metadataWrap);
+    return;
+  }
   if (action === "toggle-document-raw") {
     if (rawDocuments.has(id)) rawDocuments.delete(id); else rawDocuments.add(id);
     render();

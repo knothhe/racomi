@@ -2,6 +2,20 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { renderMarkdownDocument } from "../src/markdown.ts";
 
+test("frontmatter wrap control preserves long metadata and escapes its label", () => {
+  const text = "description: " + "A long authored line <&> ".repeat(40);
+  const wrapped = renderMarkdownDocument(`---\n${text}\n---\n# Body`, { frontmatterWrap: { label: '软换行"<&>', enabled: true } });
+  assert.match(wrapped, /data-wrap="true"/);
+  assert.match(wrapped, /data-action="toggle-metadata-wrap"/);
+  assert.match(wrapped, /aria-pressed="true"/);
+  assert.match(wrapped, /aria-label="软换行&quot;&lt;&amp;&gt;"/);
+  assert.match(wrapped, /A long authored line &lt;&amp;&gt;/);
+  const unwrapped = renderMarkdownDocument(`---\n${text}\n---\n# Body`, { frontmatterWrap: { label: "Wrap", enabled: false } });
+  assert.match(unwrapped, /data-wrap="false"/);
+  assert.match(unwrapped, /aria-pressed="false"/);
+  assert.equal(wrapped.split("<pre>")[1], unwrapped.split("<pre>")[1]);
+});
+
 test("skill Markdown renders headings, nested lists, code, tables, links and quotes", () => {
   const result = renderMarkdownDocument(`# Review 技能
 

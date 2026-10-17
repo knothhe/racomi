@@ -229,7 +229,7 @@ func TestLegacyProjectsWithoutCustomPathsRemainReadable(t *testing.T) {
 	}
 }
 
-func TestCustomOnlyProjectMovesRelativePathsOnlyBeforeDeploying(t *testing.T) {
+func TestCustomOnlyProjectMovesRelativePathsAndRetainsDeployedOwnership(t *testing.T) {
 	store, base := newStore(t)
 	skill := install(t, store, candidate(t, base, "alpha", "original"))[0]
 	first, second := filepath.Join(base, "first"), filepath.Join(base, "second")
@@ -247,7 +247,9 @@ func TestCustomOnlyProjectMovesRelativePathsOnlyBeforeDeploying(t *testing.T) {
 		t.Fatalf("relative custom path did not follow a new project root: %+v %v", moved, err)
 	}
 	mustApply(t, store, moved)
-	if _, err = store.SaveTarget(Target{ID: target.ID, Name: target.Name, Kind: "project", Path: first}); err == nil {
-		t.Fatal("moving a deployed custom-only project lost its previous directory ownership")
+	relocated, err := store.SaveTarget(Target{ID: target.ID, Name: target.Name, Kind: "project", Path: first})
+	if err != nil || relocated.Path != filepath.Join(first, "custom", "skills") || !relocated.Pending || len(relocated.Deployments) != 1 || deploymentPath(relocated, relocated.Deployments[0]) != moved.Path {
+		t.Fatalf("moving a deployed custom-only project lost its previous directory ownership: %+v %v", relocated, err)
 	}
+	missing(t, relocated.Path)
 }

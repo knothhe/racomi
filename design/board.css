@@ -96,3 +96,11 @@
 .metadata dt{color:var(--muted)}.metadata dd{margin:0;color:var(--fg-2)}.metadata .mono{font-size:10.5px}
 .update-notice{margin-top:14px;padding:10px;border:1px solid var(--line);border-radius:7px;background:var(--accent-soft);color:var(--accent);font-size:12px}
 .update-notice p{margin:7px 0;font-size:11px;line-height:1.65}
+
+/* Source list: one line, a name and a compact status. */
+.source-list-row{display:grid;grid-template-columns:minmax(0,1fr) max-content;gap:12px;min-height:40px}
+.source-list-row strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:500}
+.list-status{justify-self:end;white-space:nowrap;font-size:10.5px;line-height:18px;color:var(--muted)}
+.list-status.warning,.list-status.error{padding:0 6px;border-radius:4px}
+.list-status.warning{color:var(--amber);background:var(--amber-soft)}
+.list-status.error{color:var(--red);background:var(--red-soft)}

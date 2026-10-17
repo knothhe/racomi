@@ -18,7 +18,7 @@ function harness() {
     } },
   });
   vm.runInContext(ts.transpileModule(`
-    let currentPage = "skills", selectedSkill = "alpha", detailTab = "document";
+    let currentPage = "skills", selectedSkill = "alpha", detailTab = "document", metadataWrap = true;
     let installed = [{ id: "alpha", name: "Alpha", contentHash: "v1" }];
     const skills = () => installed;
     const documents = new Map(), loadingDocuments = new Set(), documentErrors = new Map(), rawDocuments = new Set();

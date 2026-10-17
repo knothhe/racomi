@@ -11,7 +11,7 @@ const state: AppState = {
   cloudSync: { config: defaultCloudSyncConfig(), configured: false, syncing: false, lastSyncAt: "", lastError: "", conflicts: [] },
   dataDir: "/test/racomi", homeDir: "/test/home", directoryOptions: [], snapshots: [], projects: [],
   globalApplications: [
-    { key: "codex-user", agentId: "agents", agentName: "共享", name: "用户技能目录", path: "/test/home/.agents/skills", description: "Codex 与 Cursor 共用的本机用户技能目录，适用于所有项目。", target: null },
+    { key: "codex-user", agentId: "agents", agentName: "Agent Skills", name: "共享技能目录", path: "/test/home/.agents/skills", description: "Agent Skills 共享技能目录，供兼容此路径的 Agent 读取，适用于所有项目。", target: null },
     { key: "codex-legacy", agentId: "codex", agentName: "Codex", name: "兼容技能目录", path: "/test/home/.codex/skills", description: "保留已有 Codex 技能配置，遵循 CODEX_HOME；新配置建议使用 ~/.agents/skills。", target: null },
     { key: "claude-user", agentId: "claude", agentName: "Claude Code", name: "用户技能目录", path: "/test/home/.claude/skills", description: "Claude Code 的本机用户技能目录，Cursor 也可兼容读取。", target: null },
     { key: "cursor-user", agentId: "cursor", agentName: "Cursor", name: "用户技能目录", path: "/test/home/.cursor/skills", description: "Cursor 的本机用户技能目录，适用于所有项目。", target: null },
@@ -61,7 +61,7 @@ if (visualReview && testParameters.has("native-mac")) document.body.classList.ad
 if (visualReview) {
   state.dataDir = "/test/home/Library/Application Support/Racomi/workspaces/product-design-team";
   state.directoryOptions = [
-    { id: "agents", name: "共享技能目录", path: ".agents/skills", kind: "project", description: "Codex 与 Cursor 共用的项目技能目录。" },
+    { id: "agents", name: "Agent Skills", path: ".agents/skills", kind: "project", description: "Agent Skills 共享技能目录，供兼容此路径的 Agent 读取，适用于当前项目。" },
     { id: "claude", name: "Claude Code", path: ".claude/skills", kind: "project", description: "Claude Code 的项目技能目录，Cursor 也可兼容读取。" },
     { id: "codex", name: "Codex（兼容）", path: ".codex/skills", kind: "project", description: "保留已有 .codex/skills 配置；新项目建议使用 .agents/skills。" },
     { id: "cursor", name: "Cursor", path: ".cursor/skills", kind: "project", description: "Cursor 的项目技能目录。" },
@@ -312,6 +312,36 @@ const apply = (targets: Target[], force = false, reviewed?: ApplyPlan) => {
   return copy();
 };
 let nextGlobalID = 1;
+if (testParameters.has("missing-project") && state.projects[0]) {
+  state.projectDirectoryErrors = { [state.projects[0].id]: `project root directory does not exist: ${state.projects[0].projectRoot}` };
+}
+if (testParameters.has("optional-skills")) {
+  const source = state.state.sources[0];
+  source.revision = "latest";
+  source.lastError = "";
+  source.warnings = [];
+  const skill = state.state.skills.find((item) => item.sourceId === source.id)!;
+  state.state.skills = state.state.skills.filter((item) => item.sourceId !== source.id || item.id === skill.id);
+  source.catalog = [{ name: skill.name, description: skill.description, subpath: skill.subpath, revision: "latest", contentHash: skill.contentHash, removed: false, new: false }, { name: "Optional Skill", description: "Install this skill only if you need it.", subpath: "optional", revision: "latest", contentHash: "optional", removed: false, new: true }];
+}
+
+if (testParameters.has("source-list-review")) {
+  const original = state.state.skills[0];
+  const cases = [
+    ["updates", "example/team-skills"], ["removed", "example/retired-skills"],
+    ["empty", "showheyotaki/motion-prompt"], ["subscription", "example/subscribed-skills"],
+    ["skipped", "example/partial-catalog"],
+    ...Array.from({ length: 10 }, (_, i) => ["synced", `example/skills-collection-${i + 1}`]),
+  ];
+  cases.forEach(([kind, name], index) => {
+    const id = `review-source-${index}`;
+    const installed = kind !== "empty" && kind !== "subscription";
+    const skill = { ...original, id: `review-skill-${index}`, sourceId: id, name: `Review skill ${index}`, subpath: "skills/review", contentHash: `review-${index}`, upstreamRemoved: kind === "removed" };
+    if (installed) state.state.skills.push(skill);
+    state.state.sources.push({ id, name, repository: `https://example.com/${name}`, ref: "main", subpath: "skills", mode: kind === "subscription" ? "all" : "selected", revision: "latest", refreshedAt: "2026-10-17T00:00:00Z", lastError: "", catalog: [{ name: skill.name, description: "Source status review fixture", subpath: skill.subpath, revision: "latest", contentHash: kind === "updates" ? "new-version" : skill.contentHash, removed: kind === "removed", new: false, ...(kind === "skipped" ? { skipReason: "unsafe content" } : {}) }] });
+  });
+}
+
 const resolvePath = (root: string, path: string) => {
   const parts: string[] = [];
   for (const part of (path.startsWith("/") ? path : `${root}/${path}`).split("/")) {
@@ -456,6 +486,8 @@ Object.assign(api, {
   saveProject: async (project: AppState["projects"][number]) => {
     const previous = state.projects.find((target) => target.id === project.id);
     const root = project.path.replace(/\/+$/, "");
+    if (testParameters.has("missing-project") && (root.includes("/missing") || root === previous?.projectRoot)) throw new Error(`project root directory does not exist: ${root}`);
+    if (state.projectDirectoryErrors && project.id) delete state.projectDirectoryErrors[project.id];
     const defaults = state.state.settings.defaultProjectDirectories;
     const directories = project.directoryIds || defaults.filter((id) => ["agents", "claude", "codex", "cursor"].includes(id));
     const customPaths = project.customPaths || previous?.customPaths || state.state.settings.customProjectDirectories.filter((directory) => defaults.includes(directory.id)).map((directory) => directory.path);
@@ -463,7 +495,7 @@ Object.assign(api, {
     if (!paths.length) throw new Error("select at least one project skill directory");
     if (new Set(paths).size !== paths.length) throw new Error("duplicate target paths");
     const destinationsChanged = !!previous && JSON.stringify([...(previous.paths || [previous.path])].sort()) !== JSON.stringify([...paths].sort());
-    const target = { ...project, customPaths, id: project.id || "project-test", projectRoot: root, paths, path: paths[0], pending: project.pending || !!previous?.deployments.length && destinationsChanged };
+    const target = { ...project, deployments: testParameters.has("missing-project") ? [] : project.deployments, customPaths, id: project.id || "project-test", projectRoot: root, paths, path: paths[0], pending: project.pending || !!previous?.deployments.length && destinationsChanged };
     state.projects = [...state.projects.filter((item) => item.id !== target.id), target];
     state.state.targets = [...state.state.targets.filter((item) => item.id !== target.id), target];
     return copy();

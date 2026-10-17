@@ -2,11 +2,31 @@ package skills
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 )
+
+// ValidateProjectRoot is checked when saving or applying, never while typing.
+// A missing project must not be silently recreated by deployment.
+func ValidateProjectRoot(root string) error {
+	if err := noSymlinks(root); err != nil {
+		return err
+	}
+	info, err := os.Stat(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("project root directory does not exist: %s", root)
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return errors.New("repository must be a directory")
+	}
+	return nil
+}
 
 func expandedTargetPath(path string) (string, error) {
 	path = strings.TrimSpace(path)
@@ -50,6 +70,7 @@ func (l *Store) prepareTarget(state State, target Target) (Target, error) {
 	if index >= 0 {
 		previous = &state.Targets[index]
 	}
+	relocatingMissingProject := false
 	if target.ID == "" {
 		target.ID = id("target")
 	}
@@ -75,7 +96,12 @@ func (l *Store) prepareTarget(state State, target Target) (Target, error) {
 			root = legacyRoot
 		}
 		if previous != nil && previous.Kind == "project" && len(previous.Deployments) > 0 && root != previous.ProjectRoot {
-			return Target{}, errors.New("clear and apply the target before changing its directory")
+			// Existing destinations remain tracked for the next preview/apply.
+			// Only discard vanished destinations when the old root is truly gone.
+			if noSymlinks(previous.ProjectRoot) == nil {
+				_, err := os.Stat(previous.ProjectRoot)
+				relocatingMissingProject = errors.Is(err, os.ErrNotExist)
+			}
 		}
 		if err = noSymlinks(root); err != nil {
 			return Target{}, err
@@ -83,12 +109,8 @@ func (l *Store) prepareTarget(state State, target Target) (Target, error) {
 		// Existing legacy skills directories could be saved before the repository
 		// exists. New root selection still requires a real repository directory.
 		if !legacy || previous != nil {
-			info, statErr := os.Stat(root)
-			if statErr != nil {
-				return Target{}, statErr
-			}
-			if !info.IsDir() {
-				return Target{}, errors.New("repository must be a directory")
+			if err := ValidateProjectRoot(root); err != nil {
+				return Target{}, err
 			}
 		}
 		customPaths := target.CustomPaths
@@ -169,6 +191,16 @@ func (l *Store) prepareTarget(state State, target Target) (Target, error) {
 	}
 	if previous != nil {
 		target.Deployments = previous.Deployments
+		if relocatingMissingProject {
+			// Forget only vanished destinations. External custom directories still
+			// exist independently of the root and retain their deployment ownership.
+			target.Deployments = []Deployment{}
+			for _, deployment := range previous.Deployments {
+				if _, err := os.Lstat(deploymentPath(*previous, deployment)); !errors.Is(err, os.ErrNotExist) {
+					target.Deployments = append(target.Deployments, deployment)
+				}
+			}
+		}
 		if target.EnabledSkillIDs == nil {
 			target.EnabledSkillIDs = previous.EnabledSkillIDs
 		}

@@ -63,6 +63,7 @@ export interface AppState {
   dataDir: string;
   homeDir?: string;
   projects: Target[];
+  projectDirectoryErrors?: Record<string, string>;
   globalApplications: GlobalApplication[];
   state: { settings: AppSettings; schema: number; skills: Skill[]; sources: Source[]; presets: Preset[]; targets: Target[] };
   snapshots: Snapshot[];

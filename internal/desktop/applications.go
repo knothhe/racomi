@@ -32,7 +32,7 @@ func globalApplications(state skillstore.State) ([]GlobalApplication, error) {
 	applications := []GlobalApplication{
 		// Retain the historical key so saved defaults and deployment ownership
 		// survive the correction from a Codex-only label to a shared directory.
-		{Key: "codex-user", AgentID: "agents", AgentName: "共享", Name: "用户技能目录", Path: directories[0].Path, Description: directories[0].Description},
+		{Key: "codex-user", AgentID: "agents", AgentName: "Agent Skills", Name: "共享技能目录", Path: directories[0].Path, Description: directories[0].Description},
 		{Key: "codex-legacy", AgentID: "codex", AgentName: "Codex", Name: "兼容技能目录", Path: directories[1].Path, Description: directories[1].Description},
 		{Key: "claude-user", AgentID: "claude", AgentName: "Claude Code", Name: "用户技能目录", Path: filepath.Join(home, ".claude", "skills"), Description: "Claude Code 的本机用户技能目录，Cursor 也可兼容读取。"},
 		{Key: "cursor-user", AgentID: "cursor", AgentName: "Cursor", Name: "用户技能目录", Path: filepath.Join(home, ".cursor", "skills"), Description: "Cursor 的本机用户技能目录，适用于所有项目。"},
@@ -186,8 +186,19 @@ func (s *Service) SaveProject(target skillstore.Target) (AppState, error) {
 				return err
 			}
 		}
+		root := target.ProjectRoot
+		if root == "" {
+			root = target.Path
+		}
+		root, err := expandPath(root)
+		if err != nil {
+			return err
+		}
+		if err := skillstore.ValidateProjectRoot(root); err != nil {
+			return err
+		}
 		target.Kind = "project"
-		_, err := s.store.SaveTarget(target)
+		_, err = s.store.SaveTarget(target)
 		return err
 	})
 }

@@ -96,6 +96,7 @@ markdown.renderer.rules.image = (tokens, index, options, env, renderer) => {
 
 export type MarkdownDocumentOptions = {
   frontmatterLabel?: string;
+  frontmatterWrap?: { label: string; enabled: boolean };
 };
 
 /**
@@ -113,5 +114,7 @@ export function renderMarkdownDocument(content: string, options: MarkdownDocumen
 
   const metadata = remainder.slice(0, closing.index).replace(/\r?\n$/, "");
   const label = markdown.utils.escapeHtml(options.frontmatterLabel ?? "Metadata");
-  return `<details class="markdown-frontmatter"><summary>${label}</summary><pre><code>${markdown.utils.escapeHtml(metadata)}</code></pre></details>\n${markdown.render(remainder.slice(closing.index! + closing[0].length))}`;
+  const wrap = options.frontmatterWrap;
+  const toggle = wrap ? `<button type="button" class="icon-button metadata-wrap" data-action="toggle-metadata-wrap" aria-label="${markdown.utils.escapeHtml(wrap.label)}" title="${markdown.utils.escapeHtml(wrap.label)}" aria-pressed="${wrap.enabled}"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M3 11h14a4 4 0 0 1 0 8h-4m3-3-3 3 3 3M3 16h4"/></svg></button>` : "";
+  return `<details class="markdown-frontmatter"${wrap ? ` data-wrap="${wrap.enabled}"` : ""}><summary>${label}${toggle}</summary><pre><code>${markdown.utils.escapeHtml(metadata)}</code></pre></details>\n${markdown.render(remainder.slice(closing.index! + closing[0].length))}`;
 }

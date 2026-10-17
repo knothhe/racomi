@@ -20,15 +20,16 @@ import (
 )
 
 type AppState struct {
-	DesktopPreferences DesktopPreferences        `json:"desktopPreferences"`
-	DataDir            string                    `json:"dataDir"`
-	HomeDir            string                    `json:"homeDir"`
-	State              skillstore.State          `json:"state"`
-	Snapshots          []skillstore.SnapshotInfo `json:"snapshots"`
-	DirectoryOptions   []DirectoryOption         `json:"directoryOptions"`
-	Projects           []skillstore.Target       `json:"projects"`
-	GlobalApplications []GlobalApplication       `json:"globalApplications"`
-	CloudSync          CloudSyncStatus           `json:"cloudSync"`
+	DesktopPreferences     DesktopPreferences        `json:"desktopPreferences"`
+	DataDir                string                    `json:"dataDir"`
+	HomeDir                string                    `json:"homeDir"`
+	State                  skillstore.State          `json:"state"`
+	Snapshots              []skillstore.SnapshotInfo `json:"snapshots"`
+	DirectoryOptions       []DirectoryOption         `json:"directoryOptions"`
+	Projects               []skillstore.Target       `json:"projects"`
+	ProjectDirectoryErrors map[string]string         `json:"projectDirectoryErrors"`
+	GlobalApplications     []GlobalApplication       `json:"globalApplications"`
+	CloudSync              CloudSyncStatus           `json:"cloudSync"`
 }
 
 type Service struct {
@@ -252,12 +253,16 @@ func (s *Service) GetState() (AppState, error) {
 		return AppState{}, err
 	}
 	projects := []skillstore.Target{}
+	projectDirectoryErrors := map[string]string{}
 	for _, target := range state.Targets {
 		if target.Kind == "project" {
 			projects = append(projects, target)
+			if err := skillstore.ValidateProjectRoot(target.ProjectRoot); err != nil {
+				projectDirectoryErrors[target.ID] = err.Error()
+			}
 		}
 	}
-	return AppState{DesktopPreferences: s.desktopPreferences(), DataDir: s.store.Root(), HomeDir: applicationPath(home), State: state, Snapshots: snapshots, DirectoryOptions: directories, Projects: projects, GlobalApplications: globals, CloudSync: cloud}, nil
+	return AppState{DesktopPreferences: s.desktopPreferences(), DataDir: s.store.Root(), HomeDir: applicationPath(home), State: state, Snapshots: snapshots, DirectoryOptions: directories, Projects: projects, ProjectDirectoryErrors: projectDirectoryErrors, GlobalApplications: globals, CloudSync: cloud}, nil
 }
 
 func (s *Service) Search(ctx context.Context, query string) ([]sources.SearchResult, error) {

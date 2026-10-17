@@ -84,6 +84,11 @@ func aggregatePlan(plan *ApplyPlan) {
 
 func (l *Store) plan(state State, target Target) (ApplyPlan, error) {
 	plan := emptyPlan(target.ID)
+	if target.Kind == "project" {
+		if err := ValidateProjectRoot(target.ProjectRoot); err != nil {
+			return plan, err
+		}
+	}
 	for _, path := range allTargetPaths(target) {
 		directory, err := l.planDirectory(state, target, path)
 		if err != nil {
