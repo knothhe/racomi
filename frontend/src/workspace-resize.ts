@@ -1,6 +1,6 @@
 const layouts = [
   { key: "skills", selector: ".skills-layout", minLeft: 260, minRight: 300 },
-  { key: "sources", selector: ".sources-layout", minLeft: 260, minRight: 300 },
+  { key: "sources", selector: ".sources-layout.has-detail", minLeft: 260, minRight: 300 },
   { key: "presets", selector: ".presets-layout", minLeft: 220, minRight: 300 },
   { key: "projects", selector: ".projects-layout", minLeft: 180, minRight: 320 },
   { key: "discover", selector: ".discover-content.has-preview", minLeft: 300, minRight: 300 },

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="board.css">
+<script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script>
+<title>来源 · 卡片列表</title>
+<style>
+.layout.sources{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:16px;min-height:0}
+.layout.sources.has-detail{grid-template-columns:minmax(0,1.2fr) minmax(300px,1fr)}
+.source-heading{position:relative;padding-right:50px}.source-close{position:absolute;top:14px;right:14px}
+.sources-browser{display:flex;flex-direction:column;min-height:0;background:transparent;border:0}
+.sources-browser .list-toolbar{padding:0 1px 16px;border:0;gap:10px;flex:none}
+.source-search{display:flex;align-items:center;flex:1;gap:8px;min-height:36px;padding:0 10px;border:1px solid var(--line);border-radius:9px;background:var(--card);font-size:12px}
+.source-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(230px,100%),1fr));align-content:start;gap:10px;padding:1px 2px 12px;overflow:auto}
+.source-card{display:flex;flex-direction:column;gap:16px;min-height:116px;min-width:0;padding:14px 13px 10px;border:1px solid var(--line);border-radius:11px;background:var(--card);text-align:left;box-shadow:0 1px 1px #00000005;color:var(--fg);font:inherit;cursor:pointer}
+.source-card:hover{border-color:var(--muted)}.source-card[aria-pressed=true]{background:var(--sel);border-color:var(--accent)}
+.source-top{display:flex;align-items:center;gap:10px;min-width:0}.source-icon{display:grid;place-items:center;flex:none;width:34px;height:34px;border-radius:9px;background:var(--pill);color:var(--fg-2);font-size:20px}.source-copy{min-width:0;flex:1}.source-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:550}.source-copy small{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font:10.5px var(--code)}
+.source-footer{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:auto;font-size:11px;color:var(--muted)}.source-footer .list-status{font-size:10px;white-space:nowrap}.source-footer .list-status.warning,.source-footer .list-status.error{padding:2px 6px;border-radius:4px}
+.source-grid-empty{grid-column:1/-1;padding:30px;color:var(--muted);text-align:center}
+@media(max-width:760px){.layout.sources.has-detail{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(180px,1fr) minmax(200px,1fr)}.sources-browser{overflow:auto}.source-grid{flex:none;overflow:visible}.sources-browser .list-toolbar{position:sticky;top:0;z-index:1;background:var(--bg);padding-bottom:10px}}
+</style>
+</head>
+<body>
+<header class="header">
+<span class="brand">◈ Racomi</span>
+<nav class="nav">
+<span class="">技能</span>
+<span class="">项目</span>
+<span class="">全局</span>
+<span class="active">来源</span>
+<span class="">发现</span>
+<span class="">预设</span>
+</nav>
+<span class="theme">☀︎　◐</span>
+</header>
+<main class="page">
+<div class="page-heading">
+<div>
+<h1>来源</h1>
+<p>刷新来源目录，选择要同步到本地的技能。</p>
+</div>
+<button class="button primary">＋ 添加来源</button>
+</div>
+<div class="layout sources">
+<section class="panel sources-browser"><div class="list-toolbar"><span class="source-search">⌕ 搜索来源</span><span>6 个</span></div><div class="source-grid"><button class="source-card" aria-pressed="false" title="example/team-design&#10;https://github.com/example/team-design.git"><span class="source-top"><span class="source-icon" aria-hidden="true">↻</span><span class="source-copy"><strong>example/team-design</strong><small>https://github.com/example/team-design.git</small></span></span><span class="source-footer"><span>▣ 1 个已安装技能</span><span class="list-status synced">✓ 已同步</span></span></button><button class="source-card" aria-pressed="false" title="emilkowalski/skills&#10;https://github.com/emilkowalski/skills.git"><span class="source-top"><span class="source-icon" aria-hidden="true">↻</span><span class="source-copy"><strong>emilkowalski/skills</strong><small>https://github.com/emilkowalski/skills.git</small></span></span><span class="source-footer"><span>▣ 2 个已安装技能</span><span class="list-status synced">✓ 已同步</span></span></button><button class="source-card" aria-pressed="false" title="example/team-skills · 团队开发工作流&#10;git@github.com:example/team-skills.git"><span class="source-top"><span class="source-icon" aria-hidden="true">↻</span><span class="source-copy"><strong>example/team-skills · 团队开发工作流</strong><small>git@github.com:example/team-skills.git</small></span></span><span class="source-footer"><span>▣ 3 个已安装技能</span><span class="list-status warning">↑ 2 个可更新</span></span></button><button class="source-card" aria-pressed="false" title="showheyotaki/motion-prompt&#10;https://github.com/showheyotaki/motion-prompt.git"><span class="source-top"><span class="source-icon" aria-hidden="true">↻</span><span class="source-copy"><strong>showheyotaki/motion-prompt</strong><small>https://github.com/showheyotaki/motion-prompt.git</small></span></span><span class="source-footer"><span>▣ 0 个已安装技能</span><span class="list-status neutral">未安装</span></span></button><button class="source-card" aria-pressed="false" title="example/retired-skills&#10;https://github.com/example/retired-skills.git"><span class="source-top"><span class="source-icon" aria-hidden="true">↻</span><span class="source-copy"><strong>example/retired-skills</strong><small>https://github.com/example/retired-skills.git</small></span></span><span class="source-footer"><span>▣ 1 个已安装技能</span><span class="list-status warning">! 1 个上游移除</span></span></button><button class="source-card" aria-pressed="false" title="example/unavailable&#10;https://github.com/example/unavailable.git"><span class="source-top"><span class="source-icon" aria-hidden="true">↻</span><span class="source-copy"><strong>example/unavailable</strong><small>https://github.com/example/unavailable.git</small></span></span><span class="source-footer"><span>▣ 2 个已安装技能</span><span class="list-status error">! 刷新失败</span></span></button></div></section>
+
+</div>
+</main>
+<footer class="statusbar">
+<span>✓ 就绪</span>
+<span>6 个技能　·　6 个来源</span>
+</footer>
+</body>
+</html>

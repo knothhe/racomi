@@ -5,26 +5,36 @@ import vm from "node:vm";
 import ts from "typescript";
 
 const source = ts.createSourceFile("main.ts", readFileSync(new URL("../src/main.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
-const names = new Set(["doPreview", "task", "previewRequestPanel", "previewWaitHint", "updatePreviewWait"]);
+const names = new Set(["doPreview", "task", "previewRequestPanel", "previewWaitHint", "updatePreviewWait", "closePreview", "iconButton", "restoreListScroll", "renderPreview"]);
 const production = source.statements.filter((node) => ts.isFunctionDeclaration(node) && node.name && names.has(node.name.text)).map((node) => node.getText(source)).join("\n");
 
-function harness() {
+function harness(options: { previewOpen?: boolean } = {}) {
   let now = 1000;
   const timers = new Map<number, () => void>();
   const elapsed = { textContent: "" }, hint = { textContent: "" };
   const calls: unknown[][] = [];
+  const focused: { selector: string; preventScroll: boolean }[] = [];
+  let renders = 0;
+  const panel = { outerHTML: "existing preview", querySelector: () => null };
   const pending: { resolve: (value: unknown) => void; reject: (error: Error) => void }[] = [];
   const api = Object.fromEntries(["preview", "previewLocal"].map((name) => [name, (...args: unknown[]) => {
     calls.push([name, ...args]);
     return new Promise((resolve, reject) => pending.push({ resolve, reject }));
   }]));
   const context = vm.createContext({
-    api, Date: { now: () => now },
+    api, Date: { now: () => now }, recordRender: () => { renders++; },
     window: { setInterval: (callback: () => void) => { timers.set(1, callback); return 1; }, clearInterval: (id: number) => timers.delete(id) },
-    document: { querySelector: (selector: string) => selector === "#preview-elapsed" ? elapsed : selector === "#preview-wait-hint" ? hint : null },
+    document: {
+      querySelectorAll: () => [],
+      querySelector: (selector: string) => options.previewOpen && [".discover-content > .preview-panel", ".preview-panel"].includes(selector) ? panel : selector === "#preview-elapsed" ? elapsed : selector === "#preview-wait-hint" ? hint
+        : selector.includes('data-action="hub-preview"') || selector.includes('data-page-search="discover"')
+          ? { focus: (options: { preventScroll: boolean }) => focused.push({ selector, preventScroll: options.preventScroll }), closest: () => ({ focus: (options: { preventScroll: boolean }) => focused.push({ selector, preventScroll: options.preventScroll }) }) } : null,
+    },
   });
   vm.runInContext(ts.transpileModule(`
-    let preview = null, previewRequest = null, currentPage = "discover";
+    let preview = null, previewRequest = null, previewReturnTo = null, currentPage = "discover";
+    let discoverTab = "hub", searchResults = [];
+    const preservedScroll = new Map();
     let sourceDraft = "", refDraft = "", subpathDraft = "", localSourceDraft = "";
     let selectedCandidates = new Set();
     const activeTasks = new Set(), taskMessages = new Map(), stateChangingTasks = new Set();
@@ -36,14 +46,20 @@ function harness() {
     const button = (label) => '<button>' + label + '</button>', icon = () => '';
     const modalRoot = { children: [] };
     let html = "";
-    const render = () => { html = preview ? "candidates" : previewRequest ? previewRequestPanel() : ""; };
+    const previewPanel = () => "candidates";
+    const render = () => { recordRender(); html = preview ? "candidates" : previewRequest ? previewRequestPanel() : ""; };
     ${production}
     globalThis.run = doPreview;
+    globalThis.close = closePreview;
+    globalThis.setResults = (results) => { searchResults = results; };
     globalThis.snapshot = () => ({ html, preview, request: previewRequest, selected: [...selectedCandidates], busy: activeTasks.size });
     globalThis.leave = () => { currentPage = "skills"; };
     globalThis.returnToDiscover = () => { currentPage = "discover"; render(); };
   `, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText, context);
   return {
+    close: context.close as () => void,
+    setResults: context.setResults as (results: { source: string; slug: string; name: string }[]) => void,
+    focused, panel, renders: () => renders,
     run: context.run as (...args: unknown[]) => Promise<void>,
     snapshot: context.snapshot as () => { html: string; preview: unknown; request: { loading: boolean; error: string } | null; selected: string[]; busy: number },
     leave: context.leave as () => void, returnToDiscover: context.returnToDiscover as () => void,
@@ -97,4 +113,76 @@ test("local preview errors stay readable after navigating away and do not inject
   assert.match(h.snapshot().html, /目录是否存在且可读取/);
   assert.match(h.snapshot().html, /&lt;script>/);
   assert.doesNotMatch(h.snapshot().html, /<script>|检查网络/);
+});
+
+test("closing a pending preview ignores its late success or failure", async () => {
+  for (const succeeds of [true, false]) {
+    const h = harness();
+    const work = h.run("team/repo", "", "");
+    assert.match(h.snapshot().html, /data-action="close-preview"/);
+    h.close();
+    assert.equal(h.snapshot().html, "");
+    assert.equal(h.snapshot().request, null);
+    if (succeeds) h.pending[0].resolve({ id: "dismissed", candidates: [{ name: "review", subpath: "skills/review" }] });
+    else h.pending[0].reject(new Error("late failure"));
+    await work;
+    h.returnToDiscover();
+    assert.equal(h.snapshot().html, "");
+    assert.equal(h.snapshot().preview, null);
+    assert.equal(h.snapshot().request, null);
+    assert.deepEqual([...h.snapshot().selected], []);
+    assert.equal(h.snapshot().busy, 0);
+    assert.equal(h.timers.size, 0);
+  }
+});
+
+test("closing completed or failed previews clears choices and allows a new preview", async () => {
+  for (const succeeds of [true, false]) {
+    const h = harness();
+    const first = h.run("team/first", "", "");
+    if (succeeds) h.pending[0].resolve({ id: "first", candidates: [{ name: "review", subpath: "skills/review" }] });
+    else h.pending[0].reject(new Error("preview failed"));
+    await first;
+    h.close();
+    assert.equal(h.snapshot().preview, null);
+    assert.equal(h.snapshot().request, null);
+    assert.deepEqual([...h.snapshot().selected], []);
+    const next = h.run("team/next", "", "");
+    h.pending[1].resolve({ id: "next", candidates: [{ name: "next", subpath: "skills/next" }] });
+    await next;
+    assert.equal(h.snapshot().html, "candidates");
+    assert.deepEqual([...h.snapshot().selected], ["skills/next"]);
+  }
+});
+
+test("closing returns focus to the originating card after results reorder, or search if it disappeared", async () => {
+  const origin = { source: "team/repo", slug: "review", name: "Review" };
+  const other = { source: "other/repo", slug: "review", name: "Review" };
+  for (const remains of [true, false]) {
+    const h = harness();
+    const work = h.run("team/repo", "", "", "", "git", { key: JSON.stringify([origin.source, origin.slug]), scroll: [] });
+    h.pending[0].resolve({ id: "ready", candidates: [{ name: "Review", subpath: "skills/review" }] });
+    await work;
+    h.setResults(remains ? [other, origin] : [other]);
+    h.close();
+    assert.deepEqual(h.focused.at(-1), {
+      selector: remains ? '[data-action="hub-preview"][data-index="1"]' : '[data-page-search="discover"]',
+      preventScroll: true,
+    });
+  }
+});
+
+test("switching previews updates only the inspector during loading and completion", async () => {
+  for (const succeeds of [true, false]) {
+    const h = harness({ previewOpen: true });
+    const work = h.run("team/next", "", "");
+    assert.match(h.panel.outerHTML, /正在准备预览/);
+    assert.equal(h.renders(), 0, "opening another card keeps the existing list mounted");
+    if (succeeds) h.pending[0].resolve({ id: "next", candidates: [{ name: "next", subpath: "skills/next" }] });
+    else h.pending[0].reject(new Error("next preview failed"));
+    await work;
+    if (succeeds) assert.equal(h.panel.outerHTML, "candidates");
+    else assert.match(h.panel.outerHTML, /未能完成预览/);
+    assert.equal(h.renders(), 0, "finishing a preview also keeps the list mounted");
+  }
 });

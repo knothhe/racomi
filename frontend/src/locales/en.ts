@@ -1,5 +1,6 @@
 // Authored source strings are keys, matching Magpie's small dictionary API.
 export const en = {
+  "{0} 个已安装技能": "{0} installed skills",
   "元信息": "Metadata",
   "原文": "Raw text",
   "显示原文": "Show raw text",
