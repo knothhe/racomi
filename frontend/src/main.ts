@@ -21,14 +21,13 @@ import { enableNativeLocaleSync, getLocale, getLocalePreference, setLocale, t, t
 import "./style.css";
 import "./source-filter.css";
 import "./markdown.css";
-import { defaultSkillFilters, filterSkills, pendingSkills, skillSource, type SkillFilters } from "./skill-filters";
+import { defaultSkillFilters, filterSkills, pendingSkills, skillSource, skillStatusIDs, type SkillFilters, type SkillStatusFilter } from "./skill-filters";
 import { catalogEntries, sourceStatus, sourceStatusDetails, sourceSyncPaths, summarizeSource, type SourceEntry } from "./source-catalog";
 import { defaultSettings, projectDirectories, settingsPage } from "./settings";
 import { enableNativeThemeSync, getThemePreference, setThemePreference, type ThemePreference } from "./theme";
 import { api, type AppSettings, type AppState, type ApplyPlan, type CloudBackup, type SyncConflict, type Source, type ImportResult, type Preset, type Preview, type SearchResult, type SkillListPage, type Skill, type SkillsManagerPreview, type Target, type Update } from "./api";
 
 type Page = "skills" | "sources" | "discover" | "presets" | "projects" | "global" | "settings" | "guide";
-type SkillsFilter = "all" | "updates" | "pending";
 const nav: { id: Page; title: string; icon: string }[] = [
   { id: "discover", title: "发现", icon: "compass" },
   { id: "sources", title: "来源", icon: "refresh" },
@@ -62,7 +61,7 @@ let selectedPreset = "";
 let sourceCatalogFilter: "changes" | "all" = "changes";
 const sourceSelections = new Map<string, Set<string>>();
 let skillsQuery = "";
-let skillsFilter: SkillsFilter = "all";
+let skillsFilter: SkillStatusFilter = "all";
 let skillsSort: "asc" | "desc" = "asc";
 let skillsSourceFilter = "all";
 let presetFilters = defaultSkillFilters();
@@ -558,10 +557,13 @@ function pendingSkillIDs() {
   return pendingSkills(skills(), presets(), managedApplications(), data?.state.settings.deploymentMode || "copy");
 }
 function updatedSkillIDs() {
-  return new Set(arr(updates).filter((update) => update.available && !update.removed && !update.error).map((update) => update.skillId));
+  return skillStatuses().updates;
+}
+function skillStatuses() {
+  return skillStatusIDs(skills(), updates, pendingSkillIDs());
 }
 function filteredSkills(filters: SkillFilters = { query: skillsQuery, source: skillsSourceFilter, status: skillsFilter, sort: skillsSort }) {
-  return filterSkills(skills(), sources(), filters, updatedSkillIDs(), pendingSkillIDs(), getLocale());
+  return filterSkills(skills(), sources(), filters, skillStatuses(), getLocale());
 }
 function sourceFilter(name: "skills-source" | "preset-source", selected: string) {
   return renderSourceFilter({ name, selected, label: t("按来源筛选技能"), searchLabel: t("输入来源名称或仓库过滤"), emptyLabel: t("没有匹配的来源"), locale: getLocale(), options: [
@@ -577,9 +579,8 @@ function skillsPage() {
   const list = filteredSkills();
   if (!list.some((skill) => skill.id === selectedSkill)) selectedSkill = list[0]?.id || "";
   const selected = skills().find((skill) => skill.id === selectedSkill);
-  const updateCount = updates?.filter((update) => skills().some((skill) => skill.id === update.skillId) && update.available && !update.removed && !update.error).length || 0;
-  const pending = pendingSkillIDs();
-  return `${heading(t("技能"), "", button(t("检查更新"), "check-updates", "", "", "refresh") + button(t("导入技能"), "go-discover", "primary", "", "plus"))}<div class="skills-controls"><label class="sort-control"><span>${t("状态")}</span><select class="sort-select" name="skills-status" aria-label="${t("技能状态筛选")}">${([["all", t("全部"), skills().length], ["updates", t("有更新"), updateCount], ["pending", t("待应用"), pending.size]] as const).map(([id, label, count]) => `<option value="${id}" ${skillsFilter === id ? "selected" : ""}>${label} · ${count}</option>`).join("")}</select></label><div class="sort-control source-filter-control"><span>${t("来源")}</span>${sourceFilter("skills-source", skillsSourceFilter)}</div><label class="sort-control"><span>${t("排序")}</span><select class="sort-select" name="skills-sort" aria-label="${t("技能排序")}"><option value="asc" ${skillsSort === "asc" ? "selected" : ""}>${t("名称 A → Z")}</option><option value="desc" ${skillsSort === "desc" ? "selected" : ""}>${t("名称 Z → A")}</option></select></label></div><div class="skills-layout"><section class="panel skill-browser" data-preserve-scroll="skills-browser">${skillsSelectionToolbar()}<div id="skill-list" data-preserve-scroll="skills-list" tabindex="0" role="region" aria-label="${t("技能")}">${skillList()}</div></section><aside class="panel skill-detail" aria-label="${t("技能详情")}">${selected ? skillDetail(selected) : `<div class="skill-overview" tabindex="0" role="region" aria-label="${t("技能详情")}">${!skills().length ? empty(t("开始管理你的技能"), "", button(t("发现技能"), "go-discover", "primary", "", "plus")) : empty(t("没有匹配的技能"), skillsFilter === "updates" && updates === null ? t("先检查更新，再查看可更新的技能。") : t("试试其他筛选条件或关键词。"))}</div>`}</aside></div>`;
+  const statuses = skillStatuses();
+  return `${heading(t("技能"), "", button(t("检查更新"), "check-updates", "", "", "refresh") + button(t("导入技能"), "go-discover", "primary", "", "plus"))}<div class="skills-controls"><label class="sort-control"><span>${t("状态")}</span><select class="sort-select" name="skills-status" aria-label="${t("技能状态筛选")}">${([["all", t("全部"), skills().length], ["installed", t("已安装"), statuses.installed.size], ["updates", t("有更新"), statuses.updates.size], ["pending", t("待应用"), statuses.pending.size], ["removed", t("上游已移除"), statuses.removed.size], ["error", t("检查失败"), statuses.error.size]] as const).map(([id, label, count]) => `<option value="${id}" ${skillsFilter === id ? "selected" : ""}>${label} · ${count}</option>`).join("")}</select></label><div class="sort-control source-filter-control"><span>${t("来源")}</span>${sourceFilter("skills-source", skillsSourceFilter)}</div><label class="sort-control"><span>${t("排序")}</span><select class="sort-select" name="skills-sort" aria-label="${t("技能排序")}"><option value="asc" ${skillsSort === "asc" ? "selected" : ""}>${t("名称 A → Z")}</option><option value="desc" ${skillsSort === "desc" ? "selected" : ""}>${t("名称 Z → A")}</option></select></label></div><div class="skills-layout"><section class="panel skill-browser" data-preserve-scroll="skills-browser">${skillsSelectionToolbar()}<div id="skill-list" data-preserve-scroll="skills-list" tabindex="0" role="region" aria-label="${t("技能")}">${skillList()}</div></section><aside class="panel skill-detail" aria-label="${t("技能详情")}">${selected ? skillDetail(selected) : `<div class="skill-overview" tabindex="0" role="region" aria-label="${t("技能详情")}">${!skills().length ? empty(t("开始管理你的技能"), "", button(t("发现技能"), "go-discover", "primary", "", "plus")) : empty(t("没有匹配的技能"), skillsFilter === "updates" && updates === null ? t("先检查更新，再查看可更新的技能。") : t("试试其他筛选条件或关键词。"))}</div>`}</aside></div>`;
 }
 function skillsSelectionToolbar() {
   const list = filteredSkills();
@@ -590,14 +591,12 @@ function skillsSelectionToolbar() {
 }
 function skillList() {
   const list = filteredSkills();
-  const pending = pendingSkillIDs();
+  const statuses = skillStatuses();
   return list.length ? list.map((skill) => {
     const origin = originLabel(skill);
     const current = selectedSkill === skill.id;
     const checked = bulkSkillSelection.has(skill.id);
-    const removed = skill.upstreamRemoved || updates?.some((update) => update.skillId === skill.id && update.removed);
-    const hasUpdate = updates?.some((update) => update.skillId === skill.id && update.available && !update.removed && !update.error);
-    const badges = `${removed ? `<span class="badge amber">${t("上游移除")}</span>` : ""}${hasUpdate ? `<span class="badge amber">${t("有更新")}</span>` : ""}${pending.has(skill.id) ? `<span class="badge">${t("待应用")}</span>` : ""}`;
+    const badges = `${statuses.removed.has(skill.id) ? `<span class="badge amber">${t("上游移除")}</span>` : ""}${statuses.error.has(skill.id) ? `<span class="badge amber">${t("检查失败")}</span>` : ""}${statuses.updates.has(skill.id) ? `<span class="badge amber">${t("有更新")}</span>` : ""}${statuses.pending.has(skill.id) ? `<span class="badge">${t("待应用")}</span>` : ""}`;
     return `<div class="skill-list-item ${current ? "current" : ""} ${checked ? "checked" : ""}"><label class="skill-row-selector"><input type="checkbox" name="bulk-skill" value="${e(skill.id)}" aria-label="${e(t("选择技能 {0}", { 0: skill.name }))}" ${checked ? "checked" : ""}></label><button type="button" class="skill-row" data-action="select-skill" data-id="${e(skill.id)}" ${current ? 'aria-current="true"' : ""}><span class="skill-symbol">${icon("box")}</span><strong class="skill-name" title="${e(skill.name)}">${e(skill.name)}</strong><span class="skill-row-origin" title="${e(origin)}">${e(origin)}</span><span class="row-badges">${badges || `<span class="badge">${t("已安装")}</span>`}</span></button></div>`;
   }).join("") : `<div class="small-empty">${!skills().length ? t("尚未安装技能") : t("没有匹配的技能")}</div>`;
 }
@@ -1271,7 +1270,7 @@ app.addEventListener("change", async (ev) => {
     app.querySelector<HTMLInputElement>('[name="bulk-skills-all"]')?.focus({ preventScroll: true });
   }
   if (input.name === "skills-status") {
-    skillsFilter = input.value as SkillsFilter;
+    skillsFilter = input.value as SkillStatusFilter;
     render();
     if (detailTab === "document" && selectedSkill) void loadSkillDocument(selectedSkill);
   }

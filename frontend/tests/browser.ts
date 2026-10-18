@@ -230,6 +230,15 @@ if (testParameters.has("blocking-conflict")) {
 if (testParameters.has("force-conflict") || testParameters.has("blocking-conflict")) {
   for (const target of state.state.targets) target.pending = true;
 }
+if (testParameters.has("skill-statuses")) {
+  const template = state.state.skills[0];
+  state.state.skills.push(
+    { ...template, id: "removed-saved", name: "Saved Removal", upstreamRemoved: true },
+    { ...template, id: "removed-fresh", name: "Fresh Removal" },
+    { ...template, id: "pending", name: "Pending Skill" },
+  );
+  state.state.targets.push({ id: "status-target", name: "Status fixture", kind: "global", path: "/test/status/skills", enabledSkillIds: ["removed-saved", "pending"], enabledPresetIds: [], deployments: [], pending: true });
+}
 const copy = () => structuredClone(state);
 const checkedSkills = (ids: string[]) => [...new Set(ids)].map((id) => {
   const skill = state.state.skills.find((item) => item.id === id);
@@ -426,7 +435,11 @@ Object.assign(api, {
     const results = await api.search("");
     return { skills: results.slice(page * 200, (page + 1) * 200), total: results.length, hasMore: (page + 1) * 200 < results.length, page };
   },
-  checkUpdates: async () => state.state.skills.filter((skill) => ["design", "code"].includes(skill.id)).map((skill) => ({
+  checkUpdates: async () => testParameters.has("skill-statuses") ? [
+    { skillId: "design", revision: "updated-design", summary: "Design update", available: true, removed: false, error: "" },
+    { skillId: "code", revision: "", summary: "", available: false, removed: false, error: "无法读取来源" },
+    { skillId: "removed-fresh", revision: "next", summary: "上游已移除，已保留本地版本。", available: false, removed: true, error: "" },
+  ] : state.state.skills.filter((skill) => ["design", "code"].includes(skill.id)).map((skill) => ({
     skillId: skill.id, revision: `updated-${skill.id}`, summary: `Update ${skill.name}`,
     available: skill.revision !== `updated-${skill.id}`, removed: false, error: "",
   })),

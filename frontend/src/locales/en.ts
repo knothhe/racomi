@@ -45,6 +45,7 @@ export const en = {
   "{0}本地工作空间": "{0}Local workspace",
   "{0}选择已保存，预览后应用才会生效。": "{0} selection saved. Preview and apply it to update the files.",
   "上次刷新": "Last refreshed",
+  "上游已移除": "Removed upstream",
   "上游已移除此技能": "This skill was removed upstream",
   "上游移除": "Removed upstream",
   "上游移除 ": "Removed upstream ",
