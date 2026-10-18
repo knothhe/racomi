@@ -592,6 +592,15 @@ func (l *Store) prepareShared(shared SharedState, current State) (State, error) 
 			next.Sources = append(next.Sources, source)
 		}
 	}
+	sourceMap := map[string]string{}
+	for _, old := range current.Sources {
+		for _, source := range next.Sources {
+			if source.ID == old.ID || sourceIdentity(source) == sourceIdentity(old) {
+				sourceMap[old.ID] = source.ID
+				break
+			}
+		}
+	}
 	skillMap := map[string]string{}
 	for _, old := range current.Skills {
 		for i := range next.Skills {
@@ -614,6 +623,13 @@ func (l *Store) prepareShared(shared SharedState, current State) (State, error) 
 			}
 		}
 		target.EnabledSkillIDs = unique(members)
+		sources := []string{}
+		for _, id := range target.EnabledSourceIDs {
+			if mapped := sourceMap[id]; mapped != "" {
+				sources = append(sources, mapped)
+			}
+		}
+		target.EnabledSourceIDs = unique(sources)
 		target.EnabledPresetIDs = slices.DeleteFunc(target.EnabledPresetIDs, func(id string) bool {
 			return !slices.ContainsFunc(next.Presets, func(p Preset) bool { return p.ID == id })
 		})

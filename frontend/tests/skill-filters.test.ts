@@ -78,3 +78,15 @@ test("pending skills account for every path, mode, name and retired deployment",
   assert.deepEqual(pending({ paths: ["/a", "/b"], deployments: [deployment, { ...deployment, path: "/b" }] }), []);
   assert.deepEqual(pending({ deployments: [{ ...deployment, path: undefined, mode: undefined }] }), []);
 });
+
+test("source selections report unapplied skills and keep current deployments out of pending", () => {
+  const library = skills.map((skill: Skill) => ({ ...skill, contentHash: "hash" }));
+  const target = { path: "/a", enabledSkillIds: [], enabledPresetIds: [], enabledSourceIds: ["a"], deployments: [] } as any;
+  assert.deepEqual([...pendingSkills(library, [], [target], "copy")], ["1"]);
+  target.deployments = [{ skillId: "1", name: library[0].name, contentHash: "hash", path: "/a", mode: "copy" }];
+  assert.deepEqual([...pendingSkills(library, [], [target], "copy")], []);
+  target.enabledSourceIds = ["b"];
+  assert.deepEqual([...pendingSkills(library, [], [target], "copy")], ["1", "2"]);
+  target.enabledSourceIds = [];
+  assert.deepEqual([...pendingSkills(library, [], [target], "copy")], ["1"]);
+});

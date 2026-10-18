@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { hostedSourceDomain, hubResultInstalled, repositoryName, sourceDisplayName } from "../src/source-names.ts";
+import { applicationSourceDisplayName, hostedSourceDomain, hubResultInstalled, repositoryName, sourceDisplayName } from "../src/source-names.ts";
 
 test("repository labels distinguish owners across shorthand, HTTPS and SSH addresses", () => {
   for (const repository of ["team/skills", "team/skills.git", "https://github.com/team/skills.git", "git@github.com:team/skills.git", "ssh://git@example.com:2222/team/skills.git/"]) {
@@ -17,6 +17,18 @@ test("custom source names remain visible without changing saved metadata", () =>
   assert.deepEqual(source, { name: "团队技能", repository: "https://github.com/team/skills.git" });
   assert.equal(sourceDisplayName({ ...source, name: "team/skills" }), "team/skills");
   assert.equal(sourceDisplayName({ ...source, name: "" }), "team/skills");
+});
+
+test("application source choices qualify generic skills names and retain custom labels", () => {
+  const sources = [
+    { name: "skills", repository: "https://github.com/team/skills.git" },
+    { name: " SKILLS ", repository: "git@github.com:other/skills.git" },
+    { name: "团队设计", repository: "https://github.com/team/design.git" },
+    { name: "skills", repository: "/Users/team/skills" },
+  ];
+  const original = structuredClone(sources);
+  assert.deepEqual(sources.map(applicationSourceDisplayName), ["team/skills", "other/skills", "团队设计", "skills"]);
+  assert.deepEqual(sources, original);
 });
 
 test("local paths and invalid addresses retain their source name", () => {

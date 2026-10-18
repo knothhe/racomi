@@ -1,6 +1,18 @@
 // Authored source strings are keys, matching Magpie's small dictionary API.
 export const en = {
+  "项目与全局的技能、预设和来源选择会自动保存。预览各目录的新增、更新和移除，确认后点击应用，此时才会写入技能目录。": "Skill, preset, and source selections for projects and global directories save automatically. Preview additions, updates, and removals for each directory, then apply to write the skill files.",
+  "同时选择技能、预设和来源会怎样？": "What happens when I select skills, presets, and sources together?",
+  "最终使用直接选择、所有预设和所选来源已安装技能的并集，相同技能只保留一份。取消一项选择时，其他选择仍需要的技能会保留。来源后续安装的新技能也会纳入，仍需预览并手动应用。": "The result is the union of direct selections, all selected presets, and installed skills from selected sources, with duplicates removed. Removing a selection keeps skills needed by other selections. Newly installed source skills join the selection and still require a preview and manual apply.",
+  "确定删除“{0}”？已安装技能及其预设引用会保留，并解除与此来源的关联。项目与全局会取消此来源选择，预览并应用后移除不再需要的技能。": "Delete “{0}”? Installed skills and preset references are retained and detached from this source. Projects and global configurations will deselect it; preview and apply to remove skills no longer needed.",
+
+  "包含所选来源在技能库中已安装的全部技能；后续安装的新技能也会纳入，预览并应用后生效。": "Includes all installed skills from the selected sources. Newly installed skills join the selection and take effect after you preview and apply.",
   "{0} 个已安装技能": "{0} installed skills",
+  "尚未添加来源，请先在“来源”中添加并安装技能。": "No sources yet. Add a source and install skills in Sources.",
+  "来源已包含": "Included by source",
+  "来自来源：{0}": "From source: {0}",
+  "选择预设或来源，或展开下方直接选择技能。": "Choose presets or sources, or expand the section below to select skills directly.",
+  "勾选一个或多个目录，然后选择技能、预设或来源。": "Select one or more directories, then choose skills, presets, or sources.",
+
   "元信息": "Metadata",
   "原文": "Raw text",
   "显示原文": "Show raw text",

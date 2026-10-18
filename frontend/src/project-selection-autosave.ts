@@ -1,6 +1,7 @@
 export interface ProjectSelection {
   skillIds: string[];
   presetIds: string[];
+  sourceIds?: string[];
 }
 
 export interface ProjectSelectionSaveState {
@@ -39,12 +40,13 @@ interface Entry {
 }
 
 function clone(selection: ProjectSelection): ProjectSelection {
-  return { skillIds: [...selection.skillIds], presetIds: [...selection.presetIds] };
+  return { skillIds: [...selection.skillIds], presetIds: [...selection.presetIds], ...(selection.sourceIds ? { sourceIds: [...selection.sourceIds] } : {}) };
 }
 
 function same(left: ProjectSelection, right: ProjectSelection): boolean {
   return JSON.stringify([...left.skillIds].sort()) === JSON.stringify([...right.skillIds].sort())
-    && JSON.stringify([...left.presetIds].sort()) === JSON.stringify([...right.presetIds].sort());
+    && JSON.stringify([...left.presetIds].sort()) === JSON.stringify([...right.presetIds].sort())
+    && JSON.stringify([...(left.sourceIds || [])].sort()) === JSON.stringify([...(right.sourceIds || [])].sort());
 }
 
 // Keys may identify projects or global targets. Writes share one queue because

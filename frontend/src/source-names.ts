@@ -63,3 +63,9 @@ export function sourceDisplayName(source: Pick<Source, "name" | "repository">): 
     ? repository
     : `${repository} · ${name}`;
 }
+
+export function applicationSourceDisplayName(source: Pick<Source, "name" | "repository">): string {
+  return source.name.trim().toLowerCase() === "skills"
+    ? repositoryName(source.repository) || source.name
+    : source.name;
+}

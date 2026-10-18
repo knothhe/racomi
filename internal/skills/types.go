@@ -90,6 +90,7 @@ type Target struct {
 	Path             string       `json:"path"`
 	EnabledSkillIDs  []string     `json:"enabledSkillIds"`
 	EnabledPresetIDs []string     `json:"enabledPresetIds"`
+	EnabledSourceIDs []string     `json:"enabledSourceIds"`
 	Deployments      []Deployment `json:"deployments"`
 	Pending          bool         `json:"pending"`
 }

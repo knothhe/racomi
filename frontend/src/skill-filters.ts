@@ -51,6 +51,9 @@ export function pendingSkills(skills: Skill[], presets: Preset[], targets: Targe
   for (const target of targets) {
     const paths = target.paths?.length ? target.paths : [target.path];
     const desired = new Set([...(target.enabledSkillIds || []), ...presets.filter((preset) => (target.enabledPresetIds || []).includes(preset.id)).flatMap((preset) => preset.skillIds || [])]);
+    for (const skill of skills) {
+      if (skill.sourceId && target.enabledSourceIds?.includes(skill.sourceId)) desired.add(skill.id);
+    }
     const deployments = new Map<string, Target["deployments"]>();
     for (const deployment of target.deployments || []) deployments.set(deployment.skillId, [...(deployments.get(deployment.skillId) || []), deployment]);
     for (const skill of skills) {

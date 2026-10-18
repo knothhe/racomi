@@ -114,17 +114,11 @@ func emptyApplicationPlan(key string) skillstore.ApplyPlan {
 }
 
 func (s *Service) SetGlobalSelection(key string, skillIDs, presetIDs []string) (AppState, error) {
-	return s.mutate(func() error {
-		application, err := s.globalApplication(key)
-		if err != nil {
-			return err
-		}
-		if application.Target != nil {
-			return s.store.SetTargetSelection(application.Target.ID, skillIDs, presetIDs)
-		}
-		_, err = s.store.SaveTarget(skillstore.Target{Name: application.AgentName + " · " + application.Name, Kind: "global", Path: application.Path, EnabledSkillIDs: skillIDs, EnabledPresetIDs: presetIDs})
-		return err
-	})
+	return s.setGlobalSelections([]string{key}, skillIDs, presetIDs, nil)
+}
+
+func (s *Service) SetGlobalSelectionWithSources(key string, skillIDs, presetIDs, sourceIDs []string) (AppState, error) {
+	return s.SetGlobalSelectionsWithSources([]string{key}, skillIDs, presetIDs, sourceIDs)
 }
 
 func (s *Service) PlanGlobal(key string) (skillstore.ApplyPlan, error) {
@@ -212,6 +206,15 @@ func (s *Service) DeleteProject(id string) (AppState, error) {
 	})
 }
 
+func (s *Service) SetProjectSelectionWithSources(id string, skillIDs, presetIDs, sourceIDs []string) (AppState, error) {
+	return s.mutate(func() error {
+		if _, err := s.project(id); err != nil {
+			return err
+		}
+		return s.store.SetTargetSelectionWithSources(id, skillIDs, presetIDs, sourceIDs)
+	})
+}
+
 func (s *Service) SetProjectSelection(id string, skillIDs, presetIDs []string) (AppState, error) {
 	return s.mutate(func() error {
 		if _, err := s.project(id); err != nil {
@@ -284,6 +287,14 @@ func (s *Service) globalBatch(keys []string) ([]GlobalApplication, error) {
 }
 
 func (s *Service) SetGlobalSelections(keys, skillIDs, presetIDs []string) (AppState, error) {
+	return s.setGlobalSelections(keys, skillIDs, presetIDs, nil)
+}
+
+func (s *Service) SetGlobalSelectionsWithSources(keys, skillIDs, presetIDs, sourceIDs []string) (AppState, error) {
+	return s.setGlobalSelections(keys, skillIDs, presetIDs, append([]string{}, sourceIDs...))
+}
+
+func (s *Service) setGlobalSelections(keys, skillIDs, presetIDs, sourceIDs []string) (AppState, error) {
 	return s.mutate(func() error {
 		applications, err := s.globalBatch(keys)
 		if err != nil {
@@ -296,6 +307,9 @@ func (s *Service) SetGlobalSelections(keys, skillIDs, presetIDs []string) (AppSt
 				target = *application.Target
 			}
 			target.EnabledSkillIDs, target.EnabledPresetIDs = append([]string{}, skillIDs...), append([]string{}, presetIDs...)
+			if sourceIDs != nil {
+				target.EnabledSourceIDs = append([]string{}, sourceIDs...)
+			}
 			targets = append(targets, target)
 		}
 		return s.store.SaveTargets(targets)

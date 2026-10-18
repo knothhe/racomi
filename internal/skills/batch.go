@@ -33,8 +33,8 @@ func (l *Store) RemoveSkills(skillIDs []string) error {
 		}
 	}
 	for _, target := range s.Targets {
-		for _, skillID := range target.EnabledSkillIDs {
-			if wanted[skillID] {
+		for _, skill := range desiredSkills(s, target) {
+			if wanted[skill.ID] {
 				return fmt.Errorf("skill is still selected for %q", target.Name)
 			}
 		}

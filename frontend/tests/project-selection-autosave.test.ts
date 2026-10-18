@@ -337,3 +337,41 @@ test("an identical queued choice moves behind a newer overlapping key", async ()
   h.requests[1].resolve(2);
   await h.autosave.idle();
 });
+
+test("source-only changes coalesce and snapshot source arrays before saving", async () => {
+  const h = harness();
+  const sourceIds = ["first"];
+  h.autosave.save("project:one", { skillIds: [], presetIds: [], sourceIds });
+  sourceIds.push("outside-mutation");
+  assert.deepEqual(h.autosave.state("project:one").draft?.sourceIds, ["first"]);
+  h.autosave.save("project:one", { skillIds: [], presetIds: [], sourceIds: ["second"] });
+  const saved = h.autosave.flush("project:one");
+  await nextTurn();
+  assert.deepEqual(h.writes[0].selection.sourceIds, ["second"]);
+  h.requests[0].resolve(1);
+  await saved;
+  h.autosave.save("project:one", { skillIds: [], presetIds: [], sourceIds: [] });
+  const cleared = h.autosave.flush("project:one");
+  await nextTurn();
+  assert.deepEqual(h.writes[1].selection.sourceIds, []);
+  h.requests[1].resolve(2);
+  await cleared;
+});
+
+test("source selections survive a save failure and retry", async () => {
+  const h = harness();
+  const draft = { skillIds: ["direct"], presetIds: ["preset"], sourceIds: ["source"] };
+  h.autosave.save("global:A", draft);
+  const failed = assert.rejects(h.autosave.flush("global:A"), /disk unavailable/);
+  await nextTurn();
+  h.requests[0].reject(new Error("disk unavailable"));
+  await failed;
+  assert.deepEqual(h.autosave.state("global:A").draft, draft);
+  h.autosave.retry("global:A");
+  const retried = h.autosave.flush("global:A");
+  await nextTurn();
+  assert.deepEqual(h.writes[1].selection, draft);
+  h.requests[1].resolve(1);
+  await retried;
+  assert.deepEqual(h.saved[0].selection, draft);
+});

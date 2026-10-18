@@ -1266,3 +1266,16 @@ input.settings-toggle:checked::after { transform: translateX(12px); }
 .project-directory-error p { margin: 5px 0 8px; }
 .field .field-error { color: var(--red); }
 .field input[aria-invalid="true"] { border-color: var(--red); }
+
+.project-source-section { margin-top: 18px; }
+.application-source-help { margin-top: 8px; font-size: 11px; line-height: 1.6; color: var(--muted); }
+
+.application-choice-heading { gap: 12px; }
+.application-choice-heading > h3, .application-choice-heading > .muted { flex: none; white-space: nowrap; }
+.application-choice-search { flex: 1; width: auto; min-width: 100px; max-width: 260px; margin-left: auto; }
+.application-choice-search input { width: 100%; min-width: 0; }
+@media (max-width: 760px) {
+  .application-choice-heading { flex-wrap: wrap; gap: 8px; }
+  .application-choice-heading > .muted { margin-left: auto; }
+  .application-choice-search { order: 3; flex-basis: 100%; max-width: none; }
+}

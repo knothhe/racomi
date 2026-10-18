@@ -4,7 +4,7 @@ import { applyInterfaceSettings, defaultFontStyle, loadInterfaceFonts, textSizes
 import { renderSourceFilter, installSourceFilters } from "./source-filter";
 import { syncNavigationMarkup } from "./navigation-render";
 import { installWorkspaceResize, syncWorkspaceResize } from "./workspace-resize";
-import { hostedSourceDomain, hubResultInstalled, sourceDisplayName } from "./source-names";
+import { applicationSourceDisplayName, hostedSourceDomain, hubResultInstalled, sourceDisplayName } from "./source-names";
 import { changeSelection } from "./skill-selection";
 import { matchesProject, matchesProjectSkill, projectSkillApplied } from "./project-browser";
 import { applicationPlanDisposition, hasApplicationChanges } from "./application-plan";
@@ -79,6 +79,7 @@ let projectsFilter: "all" | "pending" = "all";
 let globalFilter: "all" | "pending" = "all";
 const projectSkillFilters = new Map<string, { query: string; selectedOnly: boolean }>();
 const projectDetailsOpen = new Map<string, Set<string>>();
+const applicationChoiceQueries = new Map<string, string>();
 const preservedScroll = new Map<string, number>();
 let selectedGlobalKey = "";
 let selectedGlobalKeys = new Set<string>();
@@ -119,7 +120,7 @@ let selectedCandidates = new Set<string>();
 let updates: Update[] | null = null;
 let plans = new Map<string, ApplyPlan>();
 type ApplicationScope = "project" | "global";
-type ApplicationSelection = { skillIds: string[]; presetIds: string[] };
+type ApplicationSelection = { skillIds: string[]; presetIds: string[]; sourceIds?: string[] };
 const projectDrafts = new Map<string, ApplicationSelection>();
 const globalDrafts = new Map<string, ApplicationSelection>();
 let activeTasks = new Set<string>();
@@ -200,7 +201,7 @@ const selectionAutosave = createProjectSelectionAutosave<AppState>({
     const separator = key.indexOf(":");
     const scope = key.slice(0, separator) as ApplicationScope;
     const id = key.slice(separator + 1);
-    return scope === "project" ? api.setProjectSelection(id, selection.skillIds, selection.presetIds) : api.setGlobalSelections(globalBatchKeys(id), selection.skillIds, selection.presetIds);
+    return scope === "project" ? api.setProjectSelection(id, selection.skillIds, selection.presetIds, arr(selection.sourceIds)) : api.setGlobalSelections(globalBatchKeys(id), selection.skillIds, selection.presetIds, arr(selection.sourceIds));
   },
   saved: (_key, next) => accept(next),
   changed: () => { if (data) render(); },
@@ -278,7 +279,7 @@ function accept(next: AppState, preserveUpdates = false) {
   for (const [scope, drafts] of [["project", projectDrafts], ["global", globalDrafts]] as const) {
     for (const [id, selection] of drafts) {
       const application = findApplication(scope, id);
-      const valid = { skillIds: selection.skillIds.filter((skillID) => skills().some((skill) => skill.id === skillID)), presetIds: selection.presetIds.filter((presetID) => presets().some((preset) => preset.id === presetID)) };
+      const valid = { skillIds: selection.skillIds.filter((skillID) => skills().some((skill) => skill.id === skillID)), presetIds: selection.presetIds.filter((presetID) => presets().some((preset) => preset.id === presetID)), sourceIds: arr(selection.sourceIds).filter((sourceID) => sources().some((source) => source.id === sourceID)) };
       const matchesSaved = application && (scope === "global" && id.startsWith("batch:") ? globalApplications().filter((item) => globalBatchKeys(id).includes(item.key)).every((item) => sameSelection(valid, savedSelection(item.target))) : sameSelection(valid, savedSelection(application.target)));
       const key = applicationKey(scope, id);
       const save = selectionAutosave.state(key);
@@ -488,6 +489,7 @@ function render() {
   const scrollFocus = activeElement instanceof HTMLElement && oldContent?.dataset.view === view ? activeElement.dataset.preserveScroll : undefined;
   const selectionFocus = activeElement instanceof HTMLInputElement && activeElement.form?.classList.contains("application-selection") && activeElement.type === "checkbox" ? { scope: activeElement.form.dataset.scope, id: activeElement.form.dataset.id, name: activeElement.name, value: activeElement.value } : null;
   const disclosureFocus = activeElement instanceof HTMLElement && activeElement.tagName === "SUMMARY" && activeElement.parentElement?.dataset.projectDisclosure ? { id: activeElement.parentElement.dataset.id, section: activeElement.parentElement.dataset.projectDisclosure } : null;
+  const applicationChoiceSearchFocus = activeElement instanceof HTMLInputElement && activeElement.dataset.applicationChoiceSearch ? { key: activeElement.dataset.applicationChoiceSearch, start: activeElement.selectionStart, end: activeElement.selectionEnd } : null;
   const projectSearchFocus = activeElement instanceof HTMLInputElement && activeElement.dataset.projectSkillSearch ? { id: activeElement.dataset.projectSkillSearch, start: activeElement.selectionStart, end: activeElement.selectionEnd } : null;
   const pageSearchFocus = activeElement instanceof HTMLInputElement && activeElement.dataset.pageSearch && oldContent?.dataset.page === currentPage ? { page: activeElement.dataset.pageSearch, start: activeElement.selectionStart, end: activeElement.selectionEnd } : null;
   for (const element of app.querySelectorAll<HTMLElement>("[data-preserve-scroll]")) preservedScroll.set(element.dataset.preserveScroll!, element.scrollTop);
@@ -532,6 +534,11 @@ function render() {
     const input = document.querySelector<HTMLInputElement>(`input[data-page-search="${focused.page}"]`);
     input?.focus({ preventScroll: true });
     if (focused.start !== null && focused.end !== null) input?.setSelectionRange(focused.start, focused.end);
+  }
+  if (applicationChoiceSearchFocus) {
+    const input = [...app.querySelectorAll<HTMLInputElement>("[data-application-choice-search]")].find((item) => item.dataset.applicationChoiceSearch === applicationChoiceSearchFocus.key);
+    input?.focus({ preventScroll: true });
+    if (applicationChoiceSearchFocus.start !== null && applicationChoiceSearchFocus.end !== null) input?.setSelectionRange(applicationChoiceSearchFocus.start, applicationChoiceSearchFocus.end);
   }
   if (projectSearchFocus) {
     const input = [...app.querySelectorAll<HTMLInputElement>("[data-project-skill-search]")].find((item) => item.dataset.projectSkillSearch === projectSearchFocus.id);
@@ -911,13 +918,13 @@ function globalPage() {
       <div class="global-directory-toolbar">${pageSearch("global", t("搜索目录、路径或技能"))}<div class="global-directory-filters" role="group" aria-label="${e(t("全局目录筛选"))}">${([["all", t("全部"), applications.length], ["pending", t("待应用"), applications.filter((directory) => directory.target?.pending).length]] as const).map(([filter, label, count]) => `<button type="button" class="filter-chip ${globalFilter === filter ? "active" : ""}" data-action="filter-global-directories" data-filter="${filter}" aria-pressed="${globalFilter === filter}">${label}<span class="filter-count">${count}</span></button>`).join("")}</div><div class="global-directory-tools">${button(t(allSelected ? "取消全选" : "全选目录"), "select-global-directories", "quiet small")}${button(t("使用默认目录"), "default-global-directories", "quiet small")}</div></div>
       <div class="global-directory-list" data-preserve-scroll="global-directory-list" tabindex="0" role="region" aria-label="${e(t("全局目录列表"))}">${list.map((directory) => `<label class="global-directory-row ${selectedGlobalKeys.has(directory.key) ? "selected" : ""}" title="${e(t(directory.description))}"><input type="checkbox" name="global-directory-selection" value="${e(directory.key)}" ${selectedGlobalKeys.has(directory.key) ? "checked" : ""}>${agentIcon(directory.agentId)}<span class="global-directory-copy"><span class="global-directory-title"><strong title="${e(`${directory.agentName} · ${directory.name}`)}">${e(directory.agentName)}<span> · ${e(directory.name)}</span></strong>${applicationStatus(directory.target)}</span><code title="${e(directory.path)}">${e(globalPath(directory.path))}</code></span></label>`).join("") || `<div class="small-empty">${t("没有匹配的全局目录")}${button(t("清除筛选"), "clear-global-filters", "quiet small", "", "close")}</div>`}</div>
     </section>
-    ${selected.length && application ? `<article class="panel application-card project-detail global-detail" data-scope="global" data-id="${e(selectedGlobalKey)}"><div class="global-configuration-heading"><h2>${t("技能配置")}</h2>${differing ? `<span class="badge amber">${t("配置不同")}</span>` : applicationStatus(application.target)}<span class="global-deployment-mode">${data?.state.settings.deploymentMode === "symlink" ? t("软链接") : t("复制")}</span></div>${differing ? `<div class="global-selection-note">${icon("info")}<span>${t("所选目录的技能配置不同，当前显示合并结果。修改选择或预览应用时会统一配置。")}</span></div>` : ""}${applicationBody("global", selectedGlobalKey, application.target, selected.map((directory) => directory.path))}</article>` : `<section class="panel project-detail project-detail-empty global-detail">${empty(t("选择全局目录"), t("勾选一个或多个目录，然后选择技能或预设。"), button(t("使用默认目录"), "default-global-directories", "small"), "monitor")}</section>`}
+    ${selected.length && application ? `<article class="panel application-card project-detail global-detail" data-scope="global" data-id="${e(selectedGlobalKey)}"><div class="global-configuration-heading"><h2>${t("技能配置")}</h2>${differing ? `<span class="badge amber">${t("配置不同")}</span>` : applicationStatus(application.target)}<span class="global-deployment-mode">${data?.state.settings.deploymentMode === "symlink" ? t("软链接") : t("复制")}</span></div>${differing ? `<div class="global-selection-note">${icon("info")}<span>${t("所选目录的技能配置不同，当前显示合并结果。修改选择或预览应用时会统一配置。")}</span></div>` : ""}${applicationBody("global", selectedGlobalKey, application.target, selected.map((directory) => directory.path))}</article>` : `<section class="panel project-detail project-detail-empty global-detail">${empty(t("选择全局目录"), t("勾选一个或多个目录，然后选择技能、预设或来源。"), button(t("使用默认目录"), "default-global-directories", "small"), "monitor")}</section>`}
   </div>`;
 }
 
 function sameIDs(a: string[], b: string[]) { return JSON.stringify([...a].sort()) === JSON.stringify([...b].sort()); }
-function sameSelection(a: ApplicationSelection, b: ApplicationSelection) { return sameIDs(a.skillIds, b.skillIds) && sameIDs(a.presetIds, b.presetIds); }
-function savedSelection(target: Target | null): ApplicationSelection { return { skillIds: arr(target?.enabledSkillIds), presetIds: arr(target?.enabledPresetIds) }; }
+function sameSelection(a: ApplicationSelection, b: ApplicationSelection) { return sameIDs(a.skillIds, b.skillIds) && sameIDs(a.presetIds, b.presetIds) && sameIDs(arr(a.sourceIds), arr(b.sourceIds)); }
+function savedSelection(target: Target | null): ApplicationSelection { return { skillIds: arr(target?.enabledSkillIds), presetIds: arr(target?.enabledPresetIds), sourceIds: arr(target?.enabledSourceIds) }; }
 function selectionDrafts(scope: ApplicationScope) { return scope === "project" ? projectDrafts : globalDrafts; }
 function applicationKey(scope: ApplicationScope, id: string) { return `${scope}:${id}`; }
 function applicationSelection(scope: ApplicationScope, id: string, target: Target | null) { return selectionDrafts(scope).get(id) || savedSelection(target); }
@@ -928,7 +935,7 @@ function applicationDirty(scope: ApplicationScope, id: string, target: Target | 
 }
 function effectiveSkillIDs(selection: ApplicationSelection) {
   const validSkills = new Set(skills().map((skill) => skill.id));
-  return new Set([...selection.skillIds, ...presets().filter((preset) => selection.presetIds.includes(preset.id)).flatMap((preset) => arr(preset.skillIds))].filter((id) => validSkills.has(id)));
+  return new Set([...selection.skillIds, ...skills().filter((skill) => !!skill.sourceId && arr(selection.sourceIds).includes(skill.sourceId)).map((skill) => skill.id), ...presets().filter((preset) => selection.presetIds.includes(preset.id)).flatMap((preset) => arr(preset.skillIds))].filter((id) => validSkills.has(id)));
 }
 function findApplication(scope: ApplicationScope, id: string): { name: string; path: string; target: Target | null } | undefined {
   if (scope === "project") {
@@ -941,7 +948,7 @@ function findApplication(scope: ApplicationScope, id: string): { name: string; p
     const targets = directories.flatMap((item) => item.target ? [item.target] : []);
     const name = t("{0} 个全局目录", { 0: directories.length });
     const path = directories.map((item) => item.path).join("\n");
-    const target: Target | null = targets.length ? { id, name, kind: "global", path, paths: directories.map((item) => item.path), enabledSkillIds: [...new Set(targets.flatMap((item) => arr(item.enabledSkillIds)))], enabledPresetIds: [...new Set(targets.flatMap((item) => arr(item.enabledPresetIds)))], deployments: targets.flatMap((item) => arr(item.deployments).map((deployment) => ({ ...deployment, path: deployment.path || item.path }))), pending: targets.some((item) => item.pending) } : null;
+    const target: Target | null = targets.length ? { id, name, kind: "global", path, paths: directories.map((item) => item.path), enabledSkillIds: [...new Set(targets.flatMap((item) => arr(item.enabledSkillIds)))], enabledPresetIds: [...new Set(targets.flatMap((item) => arr(item.enabledPresetIds)))], enabledSourceIds: [...new Set(targets.flatMap((item) => arr(item.enabledSourceIds)))], deployments: targets.flatMap((item) => arr(item.deployments).map((deployment) => ({ ...deployment, path: deployment.path || item.path }))), pending: targets.some((item) => item.pending) } : null;
     return { name, path, target };
   }
   const application = globalApplications().find((item) => item.key === id);
@@ -972,18 +979,41 @@ function selectionSaveFooter(scope: ApplicationScope, id: string) {
   const state = selectionAutosave.state(applicationKey(scope, id));
   return `<span class="selection-save-status ${state.error ? "save-error" : ""}" role="status" title="${e(state.error instanceof Error ? tMessage(state.error.message) : "")}">${icon(state.error ? "alert" : state.pending ? "refresh" : "check")}<span>${selectionSaveStatus(scope, id)}<small>${t("应用后才会更新技能文件。")}</small></span>${state.error ? button(t("重试"), "retry-selection", "quiet small", `data-scope="${scope}" data-id="${e(id)}"`, "refresh") : ""}</span>`;
 }
+function applicationChoiceMatches(text: string, query: string) {
+  return text.toLocaleLowerCase(getLocale()).includes(query.trim().toLocaleLowerCase(getLocale()));
+}
+function applicationChoiceSearch(key: string, kind: "preset" | "source") {
+  const queryKey = `${key}:${kind}`;
+  const label = t(kind === "preset" ? "搜索预设" : "搜索来源");
+  return `<label class="search-field application-choice-search">${icon("search")}<input type="search" name="application-${kind}-search" data-application-choice-search="${e(queryKey)}" aria-label="${e(label)}" placeholder="${e(label)}" value="${e(applicationChoiceQueries.get(queryKey) || "")}"></label>`;
+}
 function presetChoices(selection: ApplicationSelection, key: string) {
+  const query = applicationChoiceQueries.get(`${key}:preset`) || "";
+  const matches = (preset: Preset) => applicationChoiceMatches(`${preset.name} ${preset.description}`, query);
+  // Keep filtered checkboxes in the form so changing a visible choice preserves
+  // every checked value, including choices hidden by either search field.
   return `<div class="preset-options" data-preserve-scroll="presets:${e(key)}">${presets().map((preset) => {
     const count = t("{0} 个技能", { 0: arr(preset.skillIds).length });
     const title = [preset.name, preset.description, count].filter(Boolean).join("\n");
-    return `<label class="preset-option" title="${e(title)}"><input type="checkbox" name="application-preset" value="${e(preset.id)}" aria-label="${e(`${preset.name} · ${count}`)}" ${selection.presetIds.includes(preset.id) ? "checked" : ""}>${icon(presetIconName(preset.icon))}<span class="preset-option-name">${e(preset.name)}</span><small class="preset-option-count" title="${e(count)}" aria-hidden="true">${arr(preset.skillIds).length}</small></label>`;
-  }).join("") || `<p class="muted">${t("还没有预设，也可以直接选择技能。")}</p>`}</div>`;
+    return `<label class="preset-option" title="${e(title)}" ${matches(preset) ? "" : "hidden"}><input type="checkbox" name="application-preset" value="${e(preset.id)}" aria-label="${e(`${preset.name} · ${count}`)}" ${selection.presetIds.includes(preset.id) ? "checked" : ""}>${icon(presetIconName(preset.icon))}<span class="preset-option-name">${e(preset.name)}</span><small class="preset-option-count" title="${e(count)}" aria-hidden="true">${arr(preset.skillIds).length}</small></label>`;
+  }).join("")}${!presets().length ? `<p class="muted">${t("还没有预设，也可以直接选择技能。")}</p>` : !presets().some(matches) ? `<p class="muted" role="status">${t("没有匹配的预设")}</p>` : ""}</div>`;
+}
+function applicationSourceChoices(selection: ApplicationSelection, key: string) {
+  const query = applicationChoiceQueries.get(`${key}:source`) || "";
+  const matches = (source: Source) => applicationChoiceMatches(`${applicationSourceDisplayName(source)} ${source.repository}`, query);
+  return `<div class="preset-options application-source-options" data-preserve-scroll="application-sources:${e(key)}">${sources().map((source) => {
+    const name = applicationSourceDisplayName(source);
+    const count = skills().filter((skill) => skill.sourceId === source.id).length;
+    const label = t("{0} 个已安装技能", { 0: count });
+    return `<label class="preset-option" title="${e([name, source.repository, label].join("\n"))}" ${matches(source) ? "" : "hidden"}><input type="checkbox" name="application-source" value="${e(source.id)}" aria-label="${e(`${name} · ${label}`)}" ${arr(selection.sourceIds).includes(source.id) ? "checked" : ""}>${icon("refresh")}<span class="preset-option-name">${e(name)}</span><small class="preset-option-count" aria-hidden="true">${count}</small></label>`;
+  }).join("")}${!sources().length ? `<p class="muted">${t("尚未添加来源，请先在“来源”中添加并安装技能。")}</p>` : !sources().some(matches) ? `<p class="muted" role="status">${t("没有匹配的来源")}</p>` : ""}</div>`;
 }
 function applicationBody(scope: ApplicationScope, id: string, target: Target | null, paths = targetPaths(target)) {
   const uiKey = scope === "project" ? id : applicationKey(scope, id);
   const selection = applicationSelection(scope, id, target);
   const effective = effectiveSkillIDs(selection);
   const fromPresets = effectiveSkillIDs({ skillIds: [], presetIds: selection.presetIds });
+  const fromSources = effectiveSkillIDs({ skillIds: [], presetIds: [], sourceIds: selection.sourceIds });
   const filters = projectSkillFilters.get(uiKey) || { query: "", selectedOnly: false };
   const visible = new Set(skills().filter((skill) => matchesProjectSkill(skill, filters.query, filters.selectedOnly, effective)).map((skill) => skill.id));
   const plan = plans.get(applicationKey(scope, id));
@@ -993,13 +1023,17 @@ function applicationBody(scope: ApplicationScope, id: string, target: Target | n
   const removing = [...new Map(arr(target?.deployments).filter((item) => !effective.has(item.skillId)).map((item) => [item.skillId, item.name])).values()];
   return `<form class="application-selection project-selection" data-scope="${scope}" data-id="${e(id)}">
     <div class="project-selection-scroll" data-preserve-scroll="application-detail:${e(scope)}:${e(id)}">
-      <section class="project-preset-section"><div class="project-skills-heading"><h3>${icon("layers")}${t("预设")}</h3><span class="muted">${t("已选 {0} 个", { 0: selection.presetIds.length })}</span></div>${presetChoices(selection, applicationKey(scope, id))}</section>
-      <section class="project-enabled-section" aria-label="${e(t("已启用技能"))}"><div class="project-skills-heading"><h3>${t("已启用技能")}</h3><span class="muted">${t("{0} 个技能", { 0: effective.size })}</span>${effective.size ? iconButton(t("清空选择"), "clear-application", "close", `data-scope="${scope}" data-id="${e(id)}"`) : ""}</div><div class="project-enabled-skills">${enabled.map((skill) => {
+      <section class="project-preset-section"><div class="project-skills-heading application-choice-heading"><h3>${icon("layers")}${t("预设")}</h3>${applicationChoiceSearch(applicationKey(scope, id), "preset")}<span class="muted">${t("已选 {0} 个", { 0: selection.presetIds.length })}</span></div>${presetChoices(selection, applicationKey(scope, id))}</section>
+      <section class="project-source-section"><div class="project-skills-heading application-choice-heading"><h3>${icon("refresh")}${t("来源")}</h3>${applicationChoiceSearch(applicationKey(scope, id), "source")}<span class="muted">${t("已选 {0} 个", { 0: arr(selection.sourceIds).length })}</span></div>${applicationSourceChoices(selection, applicationKey(scope, id))}<p class="application-source-help">${t("包含所选来源在技能库中已安装的全部技能；后续安装的新技能也会纳入，预览并应用后生效。")}</p></section>
+      <section class="project-enabled-section" aria-label="${e(t("已启用技能"))}"><div class="project-skills-heading"><h3>${t("已启用技能")}</h3><span class="muted">${t("{0} 个技能", { 0: effective.size })}</span>${effective.size || selection.presetIds.length || arr(selection.sourceIds).length ? iconButton(t("清空选择"), "clear-application", "close", `data-scope="${scope}" data-id="${e(id)}"`) : ""}</div><div class="project-enabled-skills">${enabled.map((skill) => {
         const applied = projectSkillApplied(skill, paths, arr(target?.deployments), data!.state.settings.deploymentMode);
-        const origin = presets().filter((preset) => selection.presetIds.includes(preset.id) && arr(preset.skillIds).includes(skill.id)).map((preset) => preset.name);
-        return `<span class="project-enabled-skill ${applied ? "applied" : "pending"}" title="${e(origin.length ? t("来自预设：{0}", { 0: origin.join("、") }) : t("直接选择技能"))}"><span>${e(skill.name)}</span>${!applied ? `<small>${t("待应用")}</small>` : `<span class="sr-only">${t("已应用")}</span>`}</span>`;
-      }).join("") || `<p class="muted">${t("选择预设，或展开下方直接选择技能。")}</p>`}</div>${removing.length ? `<p class="project-removing">${t("待移除：{0}", { 0: removing.join("、") })}</p>` : ""}</section>
-      <details class="project-direct-skills" data-project-disclosure="skills" data-id="${e(uiKey)}" ${projectDisclosure(uiKey, "skills")}><summary>${icon("skills")}<span>${t("直接选择技能")}</span><small>${t("已选 {0} 个", { 0: selection.skillIds.length })}</small>${icon("chevron-down")}</summary><div class="project-skill-controls"><label class="search-field">${icon("search")}<input name="project-skill-search" data-project-skill-search="${e(uiKey)}" placeholder="${e(t("搜索名称或描述"))}" aria-label="${e(t(scope === "project" ? "搜索项目可用技能" : "搜索全局可用技能"))}" value="${e(filters.query)}"></label><button type="button" class="filter-chip ${filters.selectedOnly ? "active" : ""}" data-action="filter-project-skills" data-id="${e(uiKey)}" aria-pressed="${filters.selectedOnly}">${t("仅已选")}</button></div><div class="application-skills project-skills" data-preserve-scroll="application-skills:${e(scope)}:${e(id)}">${skills().map((skill) => `<label class="application-skill" ${visible.has(skill.id) ? "" : "hidden"}><input type="checkbox" name="application-skill" value="${e(skill.id)}" ${selection.skillIds.includes(skill.id) ? "checked" : ""}><span><strong>${e(skill.name)}</strong>${skill.description ? `<small title="${e(skill.description)}">${e(skill.description)}</small>` : ""}</span>${fromPresets.has(skill.id) ? `<span class="badge">${t("预设已包含")}</span>` : ""}</label>`).join("")}${!skills().length ? `<p class="muted padded">${t("尚未安装技能，请先从“发现”导入。")}</p>` : !visible.size ? `<p class="muted padded">${t("没有匹配的技能，试试其他筛选条件。")}</p>` : ""}</div></details>
+        const origin = presets().filter((preset) => selection.presetIds.includes(preset.id) && arr(preset.skillIds).includes(skill.id)).map((preset) => t("来自预设：{0}", { 0: preset.name }));
+        const source = sources().find((source) => source.id === skill.sourceId && arr(selection.sourceIds).includes(source.id));
+        if (source) origin.push(t("来自来源：{0}", { 0: applicationSourceDisplayName(source) }));
+        if (selection.skillIds.includes(skill.id)) origin.push(t("直接选择技能"));
+        return `<span class="project-enabled-skill ${applied ? "applied" : "pending"}" title="${e(origin.join("\n"))}"><span>${e(skill.name)}</span>${!applied ? `<small>${t("待应用")}</small>` : `<span class="sr-only">${t("已应用")}</span>`}</span>`;
+      }).join("") || `<p class="muted">${t("选择预设或来源，或展开下方直接选择技能。")}</p>`}</div>${removing.length ? `<p class="project-removing">${t("待移除：{0}", { 0: removing.join("、") })}</p>` : ""}</section>
+      <details class="project-direct-skills" data-project-disclosure="skills" data-id="${e(uiKey)}" ${projectDisclosure(uiKey, "skills")}><summary>${icon("skills")}<span>${t("直接选择技能")}</span><small>${t("已选 {0} 个", { 0: selection.skillIds.length })}</small>${icon("chevron-down")}</summary><div class="project-skill-controls"><label class="search-field">${icon("search")}<input name="project-skill-search" data-project-skill-search="${e(uiKey)}" placeholder="${e(t("搜索名称或描述"))}" aria-label="${e(t(scope === "project" ? "搜索项目可用技能" : "搜索全局可用技能"))}" value="${e(filters.query)}"></label><button type="button" class="filter-chip ${filters.selectedOnly ? "active" : ""}" data-action="filter-project-skills" data-id="${e(uiKey)}" aria-pressed="${filters.selectedOnly}">${t("仅已选")}</button></div><div class="application-skills project-skills" data-preserve-scroll="application-skills:${e(scope)}:${e(id)}">${skills().map((skill) => `<label class="application-skill" ${visible.has(skill.id) ? "" : "hidden"}><input type="checkbox" name="application-skill" value="${e(skill.id)}" ${selection.skillIds.includes(skill.id) ? "checked" : ""}><span><strong>${e(skill.name)}</strong>${skill.description ? `<small title="${e(skill.description)}">${e(skill.description)}</small>` : ""}</span>${fromPresets.has(skill.id) ? `<span class="badge">${t("预设已包含")}</span>` : fromSources.has(skill.id) ? `<span class="badge">${t("来源已包含")}</span>` : ""}</label>`).join("")}${!skills().length ? `<p class="muted padded">${t("尚未安装技能，请先从“发现”导入。")}</p>` : !visible.size ? `<p class="muted padded">${t("没有匹配的技能，试试其他筛选条件。")}</p>` : ""}</div></details>
       ${plan ? planView(plan, scope) : ""}
     </div><div class="application-bottom project-application-bottom">${selectionSaveFooter(scope, id)}<div>${button(t("预览变化"), `plan-${scope}`, "small", `data-id="${e(id)}" ${directoryUnavailable || !target && !effective.size ? "disabled" : ""}`, "eye")}${button(force ? t("强制覆盖…") : t(scope === "project" ? "应用到项目" : "应用到全局"), `apply-${scope}`, force ? "danger small" : "primary small", `data-id="${e(id)}" ${directoryUnavailable || !target && !effective.size ? "disabled" : ""}`, "arrow")}</div></div></form>`;
 }
@@ -1284,6 +1318,11 @@ async function doPreview(source: string, ref: string, subpath: string, matchName
 app.addEventListener("input", (ev) => {
   if ((ev as InputEvent).isComposing) return;
   const input = ev.target as HTMLInputElement;
+  if (input.dataset.applicationChoiceSearch) {
+    applicationChoiceQueries.set(input.dataset.applicationChoiceSearch, input.value);
+    render();
+    return;
+  }
   if (input.dataset.projectSkillSearch) {
     const id = input.dataset.projectSkillSearch;
     const filters = projectSkillFilters.get(id) || { query: "", selectedOnly: false };
@@ -1314,10 +1353,10 @@ app.addEventListener("input", (ev) => {
 });
 app.addEventListener("compositionend", (ev) => {
   const input = ev.target;
-  if (input instanceof HTMLInputElement && (input.dataset.projectSkillSearch || input.dataset.pageSearch)) input.dispatchEvent(new Event("input", { bubbles: true }));
+  if (input instanceof HTMLInputElement && (input.dataset.projectSkillSearch || input.dataset.pageSearch || input.dataset.applicationChoiceSearch)) input.dispatchEvent(new Event("input", { bubbles: true }));
 });
 app.addEventListener("keydown", (ev) => {
-  if (ev.key === "Enter" && !ev.isComposing && ev.keyCode !== 229 && (ev.target as HTMLInputElement).dataset.projectSkillSearch) ev.preventDefault();
+  if (ev.key === "Enter" && !ev.isComposing && ev.keyCode !== 229 && ((ev.target as HTMLInputElement).dataset.projectSkillSearch || (ev.target as HTMLInputElement).dataset.applicationChoiceSearch)) ev.preventDefault();
 });
 app.addEventListener("change", async (ev) => {
   const input = ev.target as HTMLInputElement;
@@ -1388,12 +1427,12 @@ app.addEventListener("change", async (ev) => {
     render();
     [...document.querySelectorAll<HTMLInputElement>('[name="global-directory-selection"]')].find((item) => item.value === input.value)?.focus({ preventScroll: true });
   }
-  if (input.form?.classList.contains("application-selection") && ["application-skill", "application-preset"].includes(input.name)) {
+  if (input.form?.classList.contains("application-selection") && ["application-skill", "application-preset", "application-source"].includes(input.name)) {
     const form = input.form;
     const scope = form.dataset.scope as ApplicationScope;
     const id = form.dataset.id!;
     if (applicationBusy()) { render(); return; }
-    saveApplicationSelection(scope, id, { skillIds: selectedIDs(form, "application-skill"), presetIds: selectedIDs(form, "application-preset") });
+    saveApplicationSelection(scope, id, { skillIds: selectedIDs(form, "application-skill"), presetIds: selectedIDs(form, "application-preset"), sourceIds: selectedIDs(form, "application-source") });
     const name = input.name, value = input.value;
     render();
     const replacement = [...document.querySelectorAll<HTMLInputElement>(".application-selection input")].find((item) => item.form?.dataset.scope === scope && item.form?.dataset.id === id && item.name === name && item.value === value);
@@ -1515,7 +1554,7 @@ document.addEventListener("submit", async (ev) => {
       const directoryIds = selectedIDs(form, "project-directory");
       const customPaths = [...new Set(selectedIDs(form, "project-custom-path"))];
       if (!directoryIds.length && !customPaths.length) { toast(t("请至少选择一个项目技能目录。"), true); return; }
-      const project: Target = { id: field(form, "entityId"), name, icon: field(form, "icon"), kind: "project", path, directoryIds, customPaths, enabledSkillIds: arr(existing?.enabledSkillIds), enabledPresetIds: arr(existing?.enabledPresetIds), deployments: arr(existing?.deployments), pending: existing?.pending || false };
+      const project: Target = { id: field(form, "entityId"), name, icon: field(form, "icon"), kind: "project", path, directoryIds, customPaths, enabledSkillIds: arr(existing?.enabledSkillIds), enabledPresetIds: arr(existing?.enabledPresetIds), enabledSourceIds: arr(existing?.enabledSourceIds), deployments: arr(existing?.deployments), pending: existing?.pending || false };
       const previousIDs = new Set(projects().map((item) => item.id));
       const next = await task("正在保存项目…", async () => {
         try { return await api.saveProject(project); }
@@ -1556,7 +1595,7 @@ document.addEventListener("submit", async (ev) => {
       await selectionAutosave.idle();
       const id = field(form, "entityId");
       const existing = globalApplications().find((item) => item.key === id && item.agentId === "custom")?.target;
-      const target: Target = { id, name: field(form, "name"), kind: "global", path: field(form, "path"), enabledSkillIds: arr(existing?.enabledSkillIds), enabledPresetIds: arr(existing?.enabledPresetIds), deployments: arr(existing?.deployments), pending: existing?.pending || false };
+      const target: Target = { id, name: field(form, "name"), kind: "global", path: field(form, "path"), enabledSkillIds: arr(existing?.enabledSkillIds), enabledPresetIds: arr(existing?.enabledPresetIds), enabledSourceIds: arr(existing?.enabledSourceIds), deployments: arr(existing?.deployments), pending: existing?.pending || false };
       if (await mutate("正在保存全局目录…", () => api.saveGlobalDirectory(target), t("全局目录已保存。"))) closeSubmittedModal(form);
     } else if (formID === "skills-manager-import") {
       if (skillsManagerBusy()) return;
@@ -1761,7 +1800,7 @@ document.addEventListener("click", async (ev) => {
   if (action === "clear-application") {
     const scope = target.dataset.scope as ApplicationScope;
     if (applicationBusy()) return;
-    saveApplicationSelection(scope, id, { skillIds: [], presetIds: [] });
+    saveApplicationSelection(scope, id, { skillIds: [], presetIds: [], sourceIds: [] });
     return;
   }
   if (action === "close-modal") { closeModal(); return; }
@@ -1798,7 +1837,7 @@ document.addEventListener("click", async (ev) => {
       }
     } else if (action === "delete-source") {
       const source = sources().find((item) => item.id === id);
-      if (source && await confirm(t("删除来源"), t("确定删除“{0}”？已安装技能及其预设引用会保留，并解除与此来源的关联。", { 0: sourceDisplayName(source) }), "", t("删除来源"), true)) {
+      if (source && await confirm(t("删除来源"), t("确定删除“{0}”？已安装技能及其预设引用会保留，并解除与此来源的关联。项目与全局会取消此来源选择，预览并应用后移除不再需要的技能。", { 0: sourceDisplayName(source) }), "", t("删除来源"), true)) {
         updates = null;
         await mutate("正在删除来源…", () => api.deleteSource(id), t("来源已删除，已安装技能已保留。"));
       }
@@ -1834,7 +1873,7 @@ document.addEventListener("click", async (ev) => {
     } else if (action === "update-selected-skills" || action === "remove-selected-skills") await operateSelectedSkills(action === "update-selected-skills" ? "update" : "remove");
     else if (action === "remove-skill") {
       const s = skills().find((s) => s.id === id);
-      if (presets().some((preset) => arr(preset.skillIds).includes(id)) || managedApplications().some((application) => arr(application.enabledSkillIds).includes(id))) {
+      if (presets().some((preset) => arr(preset.skillIds).includes(id)) || managedApplications().some((application) => effectiveSkillIDs(savedSelection(application)).has(id))) {
         toast(t("此技能仍在使用。请先从相关预设、项目或全局选择中取消它，再从本地移除。"), true); return;
       }
       if (s && await confirm(t("移除技能"), t("确定移除本地技能“{0}”？已应用的旧版本将在下次应用时移除。", { 0: s.name }), "", t("移除技能"), true)) await mutate("正在移除技能…", () => api.removeSkill(id), t("技能已移除。"));
@@ -1958,7 +1997,7 @@ async function operateSelectedSkills(operation: "update" | "remove") {
   const list = skills().filter((skill) => bulkSkillSelection.has(skill.id) && (operation === "remove" || updateIDs.has(skill.id)));
   if (!list.length) return;
   if (operation === "remove") {
-    const used = list.filter((skill) => presets().some((preset) => arr(preset.skillIds).includes(skill.id)) || managedApplications().some((application) => arr(application.enabledSkillIds).includes(skill.id)));
+    const used = list.filter((skill) => presets().some((preset) => arr(preset.skillIds).includes(skill.id)) || managedApplications().some((application) => effectiveSkillIDs(savedSelection(application)).has(skill.id)));
     if (used.length) { toast(t("以下技能仍在使用，请先从预设、项目或全局选择中取消：{0}", { 0: used.map((skill) => skill.name).join("、") }), true); return; }
   }
   const revision = stateRevision;

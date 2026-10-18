@@ -50,17 +50,17 @@ function deferred() {
 function harness() {
   const settings = { deploymentMode: "copy", defaultProjectDirectories: ["agents"], defaultGlobalDirectories: ["A"], customProjectDirectories: [] };
   const backend = {
-    state: { settings, skills: [{ id: "X" }, { id: "Y" }], sources: [], presets: [], targets: [] }, projects: [], snapshots: [],
+    state: { settings, skills: [{ id: "X" }, { id: "Y" }], sources: [{ id: "source-first" }, { id: "source-second" }], presets: [], targets: [] }, projects: [], snapshots: [],
     globalApplications: ["A", "B"].map((key) => ({
       key, agentName: key, name: key, path: `/test/${key}`,
-      target: { id: key, name: key, kind: "global", path: `/test/${key}`, enabledSkillIds: [] as string[], enabledPresetIds: [] as string[], deployments: [], pending: false },
+      target: { id: key, name: key, kind: "global", path: `/test/${key}`, enabledSkillIds: [] as string[], enabledPresetIds: [] as string[], enabledSourceIds: [] as string[], deployments: [], pending: false },
     })),
   };
   const controls = ["A", "B"].map((key) => Object.assign(new Input(), { name: "global-directory-selection", value: key }));
   const all = Object.assign(new Button(), { dataset: { action: "select-global-directories" } });
   const defaults = Object.assign(new Button(), { dataset: { action: "default-global-directories" } });
   const requests: ReturnType<typeof deferred>[] = [];
-  const writes: { keys: string[]; skillIds: string[] }[] = [];
+  const writes: { keys: string[]; skillIds: string[]; sourceIds: string[] }[] = [];
   const listeners = new Map<string, (event: { target: Control }) => void | Promise<void>>();
   const setup = `
     const projectDrafts = new Map(), globalDrafts = new Map(), plans = new Map();
@@ -93,12 +93,12 @@ function harness() {
       addEventListener: (type: string, listener: (event: { target: Control }) => Promise<void>) => listeners.set(`document:${type}`, listener),
       querySelectorAll: (selector: string) => selector === "button,input,select" ? [...controls, all, defaults] : controls,
     },
-    write: async (keys: string[], skillIds: string[], presetIds: string[]) => {
-      writes.push({ keys, skillIds });
+    write: async (keys: string[], skillIds: string[], presetIds: string[], sourceIds: string[] = []) => {
+      writes.push({ keys, skillIds, sourceIds });
       const request = deferred(); requests.push(request);
       await request.promise;
       for (const application of backend.globalApplications) if (keys.includes(application.key)) {
-        application.target.enabledSkillIds = skillIds; application.target.enabledPresetIds = presetIds;
+        application.target.enabledSkillIds = skillIds; application.target.enabledPresetIds = presetIds; application.target.enabledSourceIds = sourceIds;
       }
       return structuredClone(backend);
     },
@@ -107,10 +107,10 @@ function harness() {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const runtime = vm.runInNewContext(compiled, context) as {
-    saveApplicationSelection: (scope: string, id: string, selection: { skillIds: string[]; presetIds: string[] }) => void;
+    saveApplicationSelection: (scope: string, id: string, selection: { skillIds: string[]; presetIds: string[]; sourceIds?: string[] }) => void;
     selectionAutosave: ProjectSelectionAutosave;
     selection: () => string[];
-    displayed: () => { skillIds: string[] };
+    displayed: () => { skillIds: string[]; sourceIds: string[] };
   };
   return {
     runtime, controls, all, defaults, requests, writes, backend,
@@ -162,4 +162,21 @@ test("failed global autosave keeps its batch and draft visible until retry succe
   assert.deepEqual([...h.runtime.selection()], ["A"]);
   await h.click("select-global-directories");
   assert.deepEqual([...h.runtime.selection()], ["A", "B"]);
+});
+
+test("source-only global selections save to every directory and survive batch switching", async () => {
+  const h = harness();
+  h.runtime.saveApplicationSelection("global", "batch:A,B", { skillIds: [], presetIds: [], sourceIds: ["source-first"] });
+  const saved = h.runtime.selectionAutosave.flush("global:batch:A,B");
+  await nextTurn();
+  assert.deepEqual([...h.writes[0].sourceIds], ["source-first"]);
+  h.requests[0].resolve(); await saved;
+  for (const application of h.backend.globalApplications) assert.deepEqual([...application.target.enabledSourceIds], ["source-first"]);
+  h.uncheckB();
+  assert.deepEqual([...h.runtime.displayed().sourceIds], ["source-first"]);
+  h.runtime.saveApplicationSelection("global", "batch:A", { skillIds: [], presetIds: [], sourceIds: ["source-second"] });
+  const changed = h.runtime.selectionAutosave.flush("global:batch:A");
+  await nextTurn(); h.requests[1].resolve(); await changed;
+  await h.click("select-global-directories");
+  assert.deepEqual([...h.runtime.displayed().sourceIds].sort(), ["source-first", "source-second"]);
 });

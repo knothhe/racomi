@@ -201,13 +201,16 @@ func (l *Store) prepareTarget(state State, target Target) (Target, error) {
 				}
 			}
 		}
+		if target.EnabledSourceIDs == nil {
+			target.EnabledSourceIDs = previous.EnabledSourceIDs
+		}
 		if target.EnabledSkillIDs == nil {
 			target.EnabledSkillIDs = previous.EnabledSkillIDs
 		}
 	} else {
 		target.Deployments = []Deployment{}
 	}
-	target.EnabledSkillIDs, target.EnabledPresetIDs = unique(target.EnabledSkillIDs), unique(target.EnabledPresetIDs)
+	target.EnabledSkillIDs, target.EnabledPresetIDs, target.EnabledSourceIDs = unique(target.EnabledSkillIDs), unique(target.EnabledPresetIDs), unique(target.EnabledSourceIDs)
 	return normalizeTarget(target), nil
 }
 

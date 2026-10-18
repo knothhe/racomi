@@ -116,6 +116,7 @@ func cloneState(s State) State {
 	for i := range s.Targets {
 		s.Targets[i].EnabledSkillIDs = append([]string{}, s.Targets[i].EnabledSkillIDs...)
 		s.Targets[i].EnabledPresetIDs = append([]string{}, s.Targets[i].EnabledPresetIDs...)
+		s.Targets[i].EnabledSourceIDs = append([]string{}, s.Targets[i].EnabledSourceIDs...)
 		s.Targets[i].Deployments = append([]Deployment{}, s.Targets[i].Deployments...)
 		s.Targets[i] = normalizeTarget(s.Targets[i])
 	}
@@ -323,6 +324,14 @@ func (l *Store) validate(s State) error {
 		for _, presetID := range target.EnabledPresetIDs {
 			if !presetIDs[presetID] {
 				return fmt.Errorf("target %q refers to missing preset %q", target.ID, presetID)
+			}
+		}
+		if len(unique(target.EnabledSourceIDs)) != len(target.EnabledSourceIDs) {
+			return fmt.Errorf("duplicate enabled sources for %q", target.ID)
+		}
+		for _, sourceID := range target.EnabledSourceIDs {
+			if !slices.ContainsFunc(s.Sources, func(source Source) bool { return source.ID == sourceID }) {
+				return fmt.Errorf("target %q refers to missing source %q", target.ID, sourceID)
 			}
 		}
 		names, members := map[string]bool{}, map[string]bool{}
@@ -558,6 +567,7 @@ func (l *Store) SaveTarget(target Target) (Target, error) {
 	}
 	target.EnabledSkillIDs = unique(target.EnabledSkillIDs)
 	target.EnabledPresetIDs = unique(target.EnabledPresetIDs)
+	target.EnabledSourceIDs = unique(target.EnabledSourceIDs)
 	s.Targets[slices.IndexFunc(s.Targets, func(t Target) bool { return t.ID == target.ID })] = target
 	recomputePending(&s)
 	if err = l.validate(s); err != nil {
@@ -606,11 +616,10 @@ func (l *Store) SetTargetPresets(targetID string, presetIDs []string) error {
 	if index < 0 {
 		return errors.New("target not found")
 	}
-	return l.setTargetSelection(s, index, s.Targets[index].EnabledSkillIDs, presetIDs)
+	return l.setTargetSelection(s, index, s.Targets[index].EnabledSkillIDs, presetIDs, s.Targets[index].EnabledSourceIDs)
 }
 
-// SetTargetSelection saves direct skills and Presets together without changing
-// any deployed files. Both lists are validated before the index is replaced.
+// SetTargetSelection preserves source selections for callers using the original API.
 func (l *Store) SetTargetSelection(targetID string, skillIDs, presetIDs []string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -622,13 +631,30 @@ func (l *Store) SetTargetSelection(targetID string, skillIDs, presetIDs []string
 	if index < 0 {
 		return errors.New("target not found")
 	}
-	return l.setTargetSelection(s, index, skillIDs, presetIDs)
+	return l.setTargetSelection(s, index, skillIDs, presetIDs, s.Targets[index].EnabledSourceIDs)
 }
 
-func (l *Store) setTargetSelection(s State, index int, skillIDs, presetIDs []string) error {
+// SetTargetSelectionWithSources saves all three selection lists atomically,
+// without changing deployed files. Sources resolve to their installed skills.
+func (l *Store) SetTargetSelectionWithSources(targetID string, skillIDs, presetIDs, sourceIDs []string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	s, err := l.readState()
+	if err != nil {
+		return err
+	}
+	index := slices.IndexFunc(s.Targets, func(t Target) bool { return t.ID == targetID })
+	if index < 0 {
+		return errors.New("target not found")
+	}
+	return l.setTargetSelection(s, index, skillIDs, presetIDs, sourceIDs)
+}
+
+func (l *Store) setTargetSelection(s State, index int, skillIDs, presetIDs, sourceIDs []string) error {
 	before := cloneState(s)
 	s.Targets[index].EnabledSkillIDs = unique(skillIDs)
 	s.Targets[index].EnabledPresetIDs = unique(presetIDs)
+	s.Targets[index].EnabledSourceIDs = unique(sourceIDs)
 	if err := l.validate(s); err != nil {
 		return err
 	}
@@ -652,7 +678,7 @@ func desiredSkills(s State, target Target) []Skill {
 	}
 	result := []Skill{}
 	for _, skill := range s.Skills {
-		if ids[skill.ID] {
+		if ids[skill.ID] || slices.Contains(target.EnabledSourceIDs, skill.SourceID) {
 			result = append(result, skill)
 		}
 	}
@@ -749,6 +775,7 @@ func (l *Store) restore(imported State) error {
 	for i := range imported.Targets {
 		imported.Targets[i].EnabledSkillIDs = []string{}
 		imported.Targets[i].EnabledPresetIDs = []string{}
+		imported.Targets[i].EnabledSourceIDs = []string{}
 	}
 	if err = l.validate(imported); err != nil {
 		return err

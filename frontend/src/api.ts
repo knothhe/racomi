@@ -16,7 +16,7 @@ export interface Source {
 }
 export interface Preset { id: string; name: string; description: string; skillIds: string[]; icon?: string }
 export interface Target {
-  id: string; name: string; kind: string; path: string; enabledSkillIds: string[]; enabledPresetIds: string[];
+  id: string; name: string; kind: string; path: string; enabledSkillIds: string[]; enabledPresetIds: string[]; enabledSourceIds?: string[];
   icon?: string;
   paths?: string[]; projectRoot?: string; directoryIds?: string[]; customPaths?: string[];
   deployments: { skillId: string; name: string; contentHash: string; path?: string; mode?: "copy" | "symlink" }[]; pending: boolean;
@@ -136,12 +136,12 @@ export const api = {
   deleteProject: (id: string) => invoke<AppState>("DeleteProject", id),
   saveGlobalDirectory: (target: Target) => invoke<AppState>("SaveGlobalDirectory", target),
   deleteGlobalDirectory: (id: string) => invoke<AppState>("DeleteGlobalDirectory", id),
-  setProjectSelection: (id: string, skillIDs: string[], presetIDs: string[]) => invoke<AppState>("SetProjectSelection", id, skillIDs, presetIDs),
+  setProjectSelection: (id: string, skillIDs: string[], presetIDs: string[], sourceIDs: string[] = []) => invoke<AppState>("SetProjectSelectionWithSources", id, skillIDs, presetIDs, sourceIDs),
   planProject: (id: string) => invoke<ApplyPlan>("PlanProject", id),
   applyProject: (id: string) => invoke<AppState>("ApplyProject", id),
   forceApplyProject: (id: string, plan: ApplyPlan) => invoke<AppState>("ForceApplyProject", id, plan),
-  setGlobalSelection: (key: string, skillIDs: string[], presetIDs: string[]) => invoke<AppState>("SetGlobalSelection", key, skillIDs, presetIDs),
-  setGlobalSelections: (keys: string[], skillIDs: string[], presetIDs: string[]) => invoke<AppState>("SetGlobalSelections", keys, skillIDs, presetIDs),
+  setGlobalSelection: (key: string, skillIDs: string[], presetIDs: string[], sourceIDs: string[] = []) => invoke<AppState>("SetGlobalSelectionWithSources", key, skillIDs, presetIDs, sourceIDs),
+  setGlobalSelections: (keys: string[], skillIDs: string[], presetIDs: string[], sourceIDs: string[] = []) => invoke<AppState>("SetGlobalSelectionsWithSources", keys, skillIDs, presetIDs, sourceIDs),
   planGlobals: (keys: string[]) => invoke<ApplyPlan>("PlanGlobals", keys),
   applyGlobals: (keys: string[]) => invoke<AppState>("ApplyGlobals", keys),
   forceApplyGlobals: (keys: string[], plan: ApplyPlan) => invoke<AppState>("ForceApplyGlobals", keys, plan),

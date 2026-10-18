@@ -200,6 +200,9 @@ func (l *Store) DeleteSource(sourceID string) error {
 		return err
 	}
 	s.Sources = slices.Delete(s.Sources, index, index+1)
+	for i := range s.Targets {
+		s.Targets[i].EnabledSourceIDs = slices.DeleteFunc(s.Targets[i].EnabledSourceIDs, func(id string) bool { return id == sourceID })
+	}
 	for i := range s.Skills {
 		if s.Skills[i].SourceID == sourceID {
 			s.Skills[i].SourceID, s.Skills[i].UpstreamRemoved = "", false

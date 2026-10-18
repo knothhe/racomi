@@ -264,7 +264,7 @@ const removeSkills = async (ids: string[]) => {
   document.documentElement.dataset.removedSkillIds = [...removed].join(",");
   return copy();
 };
-const selectedSkills = (target: Target) => new Set([...target.enabledSkillIds, ...state.state.presets.filter((preset) => target.enabledPresetIds.includes(preset.id)).flatMap((preset) => preset.skillIds)]);
+const selectedSkills = (target: Target) => new Set([...target.enabledSkillIds, ...state.state.skills.filter((skill) => (target.enabledSourceIds || []).includes(skill.sourceId)).map((skill) => skill.id), ...state.state.presets.filter((preset) => target.enabledPresetIds.includes(preset.id)).flatMap((preset) => preset.skillIds)]);
 const forcedDirectories = new Set<string>();
 const directoryKey = (target: Target, path: string) => `${target.id}:${path}`;
 const recordApplyCall = (method: string) => {
@@ -540,7 +540,7 @@ Object.assign(api, {
     state.state.targets = state.state.targets.filter((item) => item.id !== id);
     return copy();
   },
-  setProjectSelection: async (id: string, skillIds: string[], presetIds: string[]) => {
+  setProjectSelection: async (id: string, skillIds: string[], presetIds: string[], sourceIds: string[] = []) => {
     const target = state.projects.find((project) => project.id === id)!;
     if (!target) throw new Error("project not found");
     if (testParameters.has("project-selection-delay")) await new Promise((resolve) => setTimeout(resolve, Math.min(2000, Math.max(0, Number(testParameters.get("project-selection-delay")) || 300))));
@@ -548,20 +548,22 @@ Object.assign(api, {
     document.documentElement.dataset.savedProjectID = id;
     document.documentElement.dataset.savedProjectSkills = skillIds.join(",");
     document.documentElement.dataset.savedProjectPresets = presetIds.join(",");
+    document.documentElement.dataset.savedProjectSources = sourceIds.join(",");
     document.documentElement.dataset.projectSelectionSaves = String(Number(document.documentElement.dataset.projectSelectionSaves || 0) + 1);
-    target.enabledSkillIds = skillIds; target.enabledPresetIds = presetIds; target.pending = true; return copy();
+    target.enabledSkillIds = skillIds; target.enabledPresetIds = presetIds; target.enabledSourceIds = sourceIds; target.pending = true; return copy();
   },
-  setGlobalSelections: async (keys: string[], skillIds: string[], presetIds: string[]) => {
+  setGlobalSelections: async (keys: string[], skillIds: string[], presetIds: string[], sourceIds: string[] = []) => {
     if (testParameters.has("project-selection-delay")) await new Promise((resolve) => setTimeout(resolve, Math.min(2000, Math.max(0, Number(testParameters.get("project-selection-delay")) || 300))));
     document.documentElement.dataset.savedGlobalKeys = keys.join(",");
     document.documentElement.dataset.savedGlobalSkills = skillIds.join(",");
     document.documentElement.dataset.savedGlobalPresets = presetIds.join(",");
+    document.documentElement.dataset.savedGlobalSources = sourceIds.join(",");
     for (const application of state.globalApplications.filter((item) => keys.includes(item.key))) {
       if (!application.target) {
         application.target = { id: application.key, name: application.agentName, kind: "global", path: application.path, paths: [application.path], enabledSkillIds: [], enabledPresetIds: [], deployments: [], pending: false };
         state.state.targets.push(application.target);
       }
-      application.target.enabledSkillIds = skillIds; application.target.enabledPresetIds = presetIds; application.target.pending = true;
+      application.target.enabledSkillIds = skillIds; application.target.enabledPresetIds = presetIds; application.target.enabledSourceIds = sourceIds; application.target.pending = true;
     }
     return copy();
   },
@@ -681,7 +683,7 @@ if (visualReview) {
       }
       return copy();
     },
-    setGlobalSelection: async (key: string, skillIds: string[], presetIds: string[]) => api.setGlobalSelections([key], skillIds, presetIds),
+    setGlobalSelection: async (key: string, skillIds: string[], presetIds: string[], sourceIds: string[] = []) => api.setGlobalSelections([key], skillIds, presetIds, sourceIds),
     createSnapshot: async () => {
       const id = `snapshot-visual-created-${nextVisualID++}`;
       snapshotStates.set(id, structuredClone(state.state));
