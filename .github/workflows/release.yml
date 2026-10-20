@@ -41,7 +41,9 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
           BUILD_ARCH: ${{ matrix.arch }}
         run: |
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]
+          test "${RELEASE_TAG:0:1}" = v
+          node --input-type=module -e 'import { parse } from "./scripts/release.mjs"; parse(process.env.RELEASE_TAG.slice(1));'
+          test "$(node -p "require('./frontend/package.json').version")" = "${RELEASE_TAG#v}"
           test "$(go env GOARCH)" = "$BUILD_ARCH"
           xcrun --find clang
       - name: Install dependencies and verify
@@ -52,7 +54,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           BUILD_ARCH: ${{ matrix.arch }}
-        run: make release VERSION="${RELEASE_TAG#v}" BUILD_NUMBER="$GITHUB_RUN_NUMBER" GOARCH="$BUILD_ARCH"
+        run: make dist VERSION="${RELEASE_TAG#v}" BUILD_NUMBER="$GITHUB_RUN_NUMBER" GOARCH="$BUILD_ARCH"
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: racomi-macos-${{ matrix.arch }}
@@ -89,7 +91,7 @@ jobs:
           test -f "racomi-${RELEASE_TAG#v}-x86_64-macos.zip.sha256"
           sha256sum --check ./*.sha256
           args=()
-          if [[ "$RELEASE_TAG" == *-* ]]; then args+=(--prerelease); fi
+          if [[ "${RELEASE_TAG%%+*}" == *-* ]]; then args+=(--prerelease); fi
           gh release create "$RELEASE_TAG" ./*.zip ./*.sha256 \
             --verify-tag --title "racomi $RELEASE_TAG" \
             --generate-notes --notes-file ../build/macos/RELEASE_NOTES.md "${args[@]}"

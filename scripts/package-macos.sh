@@ -10,13 +10,13 @@ build_number=$3
 minimum_macos=$4
 architecture=$5
 case "$action" in package|release) ;; *) fail "unknown action: $action" ;; esac
-printf '%s\n' "$version" | /usr/bin/grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$' || fail 'VERSION must be X.Y.Z or X.Y.Z-prerelease'
+printf '%s\n' "$version" | /usr/bin/grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?(\+[0-9A-Za-z][0-9A-Za-z.-]*)?$' || fail 'VERSION must be X.Y.Z with optional prerelease and build metadata'
 printf '%s\n' "$build_number" | /usr/bin/grep -Eq '^[1-9][0-9]*$' || fail 'BUILD_NUMBER must be a positive integer'
 printf '%s\n' "$minimum_macos" | /usr/bin/grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$' || fail 'invalid MACOSX_DEPLOYMENT_TARGET'
 case "$architecture" in arm64) archive_arch=aarch64 ;; amd64) archive_arch=x86_64 ;; *) fail "unsupported macOS GOARCH: $architecture" ;; esac
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 app_path="$project_dir/bin/racomi.app"
-[ -x "$project_dir/bin/racomi" ] || fail 'build bin/racomi first (make package or make release)'
+[ -x "$project_dir/bin/racomi" ] || fail 'build bin/racomi first (make package or make dist)'
 actual_arch=$(/usr/bin/lipo -archs "$project_dir/bin/racomi")
 [ "$actual_arch" = "$archive_arch" ] || [ "$actual_arch" = "$architecture" ] || fail "binary architecture $actual_arch does not match GOARCH=$architecture"
 stage=$(mktemp -d "$project_dir/bin/.racomi-package.XXXXXX")
@@ -41,7 +41,7 @@ if [ "$action" = package ]; then
   cp "$project_dir/build/macos/racomi.icns" "$bundle/Contents/Resources/racomi.icns"
   cp "$project_dir/build/macos/Assets.car" "$bundle/Contents/Resources/Assets.car"
   cp "$project_dir/build/appicon.png" "$bundle/Contents/Resources/NSApplicationIcon.png"
-  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${version%%-*}" "$bundle/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${version%%[-+]*}" "$bundle/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" "$bundle/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $minimum_macos" "$bundle/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :RacomiReleaseVersion string $version" "$bundle/Contents/Info.plist"
@@ -69,7 +69,7 @@ fi
 
 [ -d "$app_path" ] || fail 'build bin/racomi.app first'
 packaged_version=$(/usr/libexec/PlistBuddy -c 'Print :RacomiReleaseVersion' "$app_path/Contents/Info.plist")
-[ "$packaged_version" = "$version" ] || fail 'app version differs from release version; rebuild with make release'
+[ "$packaged_version" = "$version" ] || fail 'app version differs from release version; rebuild with make dist'
 /usr/bin/codesign --verify --strict "$app_path"
 /usr/bin/ditto "$app_path" "$stage/racomi.app"
 cp "$project_dir/build/macos/INSTALL.txt" "$stage/INSTALL.txt"

@@ -63,12 +63,7 @@ make check       # 前端构建、类型检查、Go vet 和测试
 
 浏览器验证入口为 [内存测试工作空间](http://127.0.0.1:9245/tests/browser.html?projects=40)，包含 40 个项目，不访问本机技能或部署目录，刷新即可重置。实际管理功能需要桌面后端。
 
-```sh
-make package                         # bin/racomi.app，本机架构
-make release VERSION=0.2.0 BUILD_NUMBER=2
-```
-
-`make release` 在 `bin/releases/` 生成本机架构 ZIP、SHA-256 和安装说明。推送 `vX.Y.Z` 标签后，[Release workflow](.github/workflows/release.yml) 自动检查并发布 Apple Silicon、Intel 两种架构；带版本后缀的标签发布为预发布版。更多命令见 `make help`。
+本地打包、首次发版、版本升级及失败续推见 [发布指南](docs/release/README.md)。
 
 目前仅支持 macOS，没有自动升级。云同步使用用户自己的 S3 兼容存储，无需 racomi 账号。
 
