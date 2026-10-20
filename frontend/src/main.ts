@@ -35,8 +35,8 @@ const nav: { id: Page; title: string; icon: string }[] = [
   { id: "presets", title: "预设", icon: "layers" },
   { id: "global", title: "全局", icon: "monitor" },
   { id: "projects", title: "项目", icon: "folder" },
-  { id: "settings", title: "设置", icon: "settings" },
   { id: "guide", title: "指南", icon: "book" },
+  { id: "settings", title: "设置", icon: "settings" },
 ];
 
 const e = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
