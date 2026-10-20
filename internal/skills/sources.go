@@ -201,7 +201,10 @@ func (l *Store) DeleteSource(sourceID string) error {
 	}
 	s.Sources = slices.Delete(s.Sources, index, index+1)
 	for i := range s.Targets {
+		previous := s.Targets[i]
+		previous.EnabledSourceIDs = append([]string{}, previous.EnabledSourceIDs...)
 		s.Targets[i].EnabledSourceIDs = slices.DeleteFunc(s.Targets[i].EnabledSourceIDs, func(id string) bool { return id == sourceID })
+		stampTarget(&s.Targets[i], &previous)
 	}
 	for i := range s.Skills {
 		if s.Skills[i].SourceID == sourceID {

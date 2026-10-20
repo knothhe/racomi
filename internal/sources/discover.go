@@ -399,8 +399,8 @@ func metadata(body []byte) (string, string, error) {
 	if end < 0 {
 		return "", "", errors.New("YAML frontmatter is not closed")
 	}
-	var document yaml.Node
-	if err := yaml.Unmarshal(bytes.Join(lines[1:end], []byte("\n")), &document); err != nil {
+	document, err := parseFrontmatter(bytes.Join(lines[1:end], []byte("\n")))
+	if err != nil {
 		return "", "", fmt.Errorf("invalid YAML frontmatter: %w", err)
 	}
 	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {

@@ -1,5 +1,5 @@
 window.H2_DESIGN_CANVAS = {
-  "title": "Racomi · 来源同步与 Markdown 阅读",
+  "title": "Racomi · 项目批量应用与同步冲突",
   "boards": [
     {
       "file": "source-ready.html?theme=light",
@@ -344,6 +344,70 @@ window.H2_DESIGN_CANVAS = {
       "y": 13200,
       "w": 1280,
       "h": 760
+    },
+    {
+      "file": "projects-batch.html",
+      "title": "项目 · 多选与手动排序",
+      "x": 0,
+      "y": 14200,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "projects-batch.html?state=preview",
+      "title": "项目 · 批量应用预览",
+      "x": 1320,
+      "y": 14200,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "projects-batch.html?state=error",
+      "title": "项目 · 应用失败与恢复",
+      "x": 0,
+      "y": 15140,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "projects-batch.html?theme=dark",
+      "title": "项目 · 深色",
+      "x": 1320,
+      "y": 15140,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "cloud-conflicts.html?state=banner",
+      "title": "全局 · 同步冲突提示",
+      "x": 0,
+      "y": 16080,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "cloud-conflicts.html?state=review",
+      "title": "同步冲突 · 逐项与全部保留",
+      "x": 1320,
+      "y": 16080,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "cloud-conflicts.html?state=error",
+      "title": "同步冲突 · 失败后保留选择",
+      "x": 0,
+      "y": 17020,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "cloud-conflicts.html?state=review&theme=dark",
+      "title": "同步冲突 · 深色",
+      "x": 1320,
+      "y": 17020,
+      "w": 1280,
+      "h": 760
     }
   ],
   "notes": [
@@ -399,6 +463,12 @@ window.H2_DESIGN_CANVAS = {
       "text": "发现页的成功、加载中和失败预览共用右上角关闭入口，并支持 Esc 关闭；弹窗或下拉菜单优先处理 Esc。关闭只收起预览并清除候选选择，保留卡片列表和搜索，恢复打开前的列表滚动位置，并把焦点还给原卡片本身（加载时预览按钮可能暂时禁用）；正在读取的请求稍后完成也不重新打开预览。切换技能卡片只更新右侧预览（含加载和失败状态），保留列表当前位置，不自动滚动到预览。导入执行中禁用关闭。",
       "x": 0,
       "y": 12120,
+      "w": 1280
+    },
+    {
+      "text": "项目复选框与详情浏览独立；搜索和排序保留隐藏选中项。批量应用使用每个项目已保存的技能与目录配置，统一预览后确认。筛选、全选与排序在空间允许时同一行展示，不足时按内容宽度自然换行，保留完整标签。手动排序持久化，另可按名称、最近更新或最近添加排序。同步冲突提示在任意页面可见，全部保留只填写选择，仍可逐项调整，应用选择并同步后生效。目录统一仅显示 Agent 名称与路径。",
+      "x": 0,
+      "y": 14060,
       "w": 1280
     }
   ]

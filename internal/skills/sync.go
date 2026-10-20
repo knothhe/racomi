@@ -633,6 +633,7 @@ func (l *Store) prepareShared(shared SharedState, current State) (State, error) 
 		target.EnabledPresetIDs = slices.DeleteFunc(target.EnabledPresetIDs, func(id string) bool {
 			return !slices.ContainsFunc(next.Presets, func(p Preset) bool { return p.ID == id })
 		})
+		stampTarget(target, &current.Targets[i])
 	}
 	if err := l.validate(next); err != nil {
 		return State{}, err

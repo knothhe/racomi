@@ -161,6 +161,28 @@ func (l *Store) readState() (State, error) {
 	if migrated {
 		s = migrateState(s)
 	}
+	// Older indexes did not record project dates. Their last saved time is a
+	// stable approximation; persist it once so sorting never changes on reads.
+	for i := range s.Targets {
+		target := &s.Targets[i]
+		if target.Kind != "project" || (target.CreatedAt != "" && target.UpdatedAt != "") {
+			continue
+		}
+		info, err := os.Stat(filepath.Join(l.root, "state.json"))
+		if err != nil {
+			return State{}, err
+		}
+		if target.CreatedAt == "" {
+			target.CreatedAt = target.UpdatedAt
+			if target.CreatedAt == "" {
+				target.CreatedAt = info.ModTime().UTC().Format(time.RFC3339Nano)
+			}
+		}
+		if target.UpdatedAt == "" {
+			target.UpdatedAt = target.CreatedAt
+		}
+		migrated = true
+	}
 	if err := l.validate(s); err != nil {
 		return State{}, fmt.Errorf("invalid store state: %w", err)
 	}
@@ -259,6 +281,13 @@ func (l *Store) validate(s State) error {
 			return fmt.Errorf("invalid or duplicate target %q", target.ID)
 		}
 		targetIDs[target.ID] = true
+		for _, timestamp := range []string{target.CreatedAt, target.UpdatedAt} {
+			if timestamp != "" {
+				if _, err := time.Parse(time.RFC3339Nano, timestamp); err != nil {
+					return errors.New("invalid target timestamp")
+				}
+			}
+		}
 		if target.Kind != "global" && target.Kind != "project" {
 			return fmt.Errorf("invalid target kind %q", target.Kind)
 		}
@@ -543,7 +572,10 @@ func (l *Store) DeletePreset(presetID string) error {
 	}
 	s.Presets = slices.Delete(s.Presets, index, index+1)
 	for i := range s.Targets {
+		previous := s.Targets[i]
+		previous.EnabledPresetIDs = append([]string{}, previous.EnabledPresetIDs...)
 		s.Targets[i].EnabledPresetIDs = slices.DeleteFunc(s.Targets[i].EnabledPresetIDs, func(v string) bool { return v == presetID })
+		stampTarget(&s.Targets[i], &previous)
 	}
 	return l.writeState(s)
 }
@@ -655,6 +687,7 @@ func (l *Store) setTargetSelection(s State, index int, skillIDs, presetIDs, sour
 	s.Targets[index].EnabledSkillIDs = unique(skillIDs)
 	s.Targets[index].EnabledPresetIDs = unique(presetIDs)
 	s.Targets[index].EnabledSourceIDs = unique(sourceIDs)
+	stampTarget(&s.Targets[index], &before.Targets[index])
 	if err := l.validate(s); err != nil {
 		return err
 	}
@@ -771,11 +804,12 @@ func (l *Store) restore(imported State) error {
 		return errors.New("unsupported backup schema")
 	}
 	imported.Settings = current.Settings
-	imported.Targets = current.Targets
+	imported.Targets = cloneState(current).Targets
 	for i := range imported.Targets {
 		imported.Targets[i].EnabledSkillIDs = []string{}
 		imported.Targets[i].EnabledPresetIDs = []string{}
 		imported.Targets[i].EnabledSourceIDs = []string{}
+		stampTarget(&imported.Targets[i], &current.Targets[i])
 	}
 	if err = l.validate(imported); err != nil {
 		return err

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
-import type { CloudSyncConfig, SyncConflict } from "../src/api.ts";
+import type { CloudSyncConfig, CloudSyncStatus, SyncConflict } from "../src/api.ts";
 
 function module() {
   const exports: Record<string, (...args: any[]) => any> = {};
@@ -70,11 +70,54 @@ test("conflict review labels deletions and requires an explicit choice for every
   const html = ui.cloudConflictFields(conflicts);
   assert.match(html, /Keep local deletion/);
   assert.match(html, /Keep cloud deletion/);
+  assert.match(html, /type="button" class="button small" data-action="choose-all-cloud-local"/);
+  assert.match(html, /type="button" class="button small" data-action="choose-all-cloud-remote"/);
   assert.match(html, /&lt;script&gt;bad&lt;\/script&gt;/);
   assert.doesNotMatch(html, /<script>/);
   assert.equal(ui.readCloudResolutions({ "resolution:skill/a": "local" }, conflicts), null);
   assert.equal(ui.readCloudResolutions({ "resolution:skill/a": "local", "resolution:preset/b": "unexpected" }, conflicts), null);
   assert.deepEqual(ui.readCloudResolutions({ "resolution:skill/a": "local", "resolution:preset/b": "remote" }, conflicts), { "skill/a": "local", "preset/b": "remote" });
+});
+
+test("the global banner remains visible for conflicts outside settings and hides after resolution", () => {
+  const ui = module();
+  const status: CloudSyncStatus = { configured: true, syncing: false, config: ui.defaultCloudSyncConfig(), lastSyncAt: "", lastError: "", conflicts: [
+    { key: "skill/a", kind: "skill", name: "Skill", local: null, remote: {} },
+    { key: "preset/b", kind: "preset", name: "Preset", local: {}, remote: null },
+  ] };
+  assert.equal(ui.cloudConflictBanner(), "");
+  assert.equal(ui.cloudConflictBanner({ ...status, conflicts: [] }), "");
+  const html = ui.cloudConflictBanner(status);
+  assert.match(html, /role="status" aria-live="polite"/);
+  assert.match(html, /2 sync conflicts/);
+  assert.match(html, /data-action="cloud-conflicts"/);
+  assert.doesNotMatch(html, /disabled/);
+  assert.match(ui.cloudConflictBanner({ ...status, syncing: true }), /data-action="cloud-conflicts" disabled/);
+});
+
+test("bulk conflict choices fill every resolution without submitting and remain individually editable", () => {
+  const ui = module();
+  let changes = 0;
+  const changed = (event: Event) => { assert.equal(event.type, "change"); assert.equal(event.bubbles, true); changes++; };
+  const selects = [{ value: "", dispatchEvent: changed }, { value: "remote", dispatchEvent: changed }];
+  let submitted = false;
+  const form = {
+    querySelectorAll(selector: string) {
+      assert.equal(selector, 'select[name^="resolution:"]');
+      return selects;
+    },
+    submit() { submitted = true; },
+    requestSubmit() { submitted = true; },
+  };
+  ui.setCloudResolutionChoice(form, "local");
+  assert.deepEqual(selects.map((select) => select.value), ["local", "local"]);
+  selects[1].value = "remote";
+  assert.deepEqual(selects.map((select) => select.value), ["local", "remote"]);
+  ui.setCloudResolutionChoice(form, "remote");
+  assert.deepEqual(selects.map((select) => select.value), ["remote", "remote"]);
+  assert.equal(submitted, false);
+  assert.equal(changes, 4);
+  assert.doesNotMatch(ui.cloudConflictFields([]), /choose-all-cloud/);
 });
 
 test("cloud restore entries show the concrete version and counts for review", () => {

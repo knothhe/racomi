@@ -23,3 +23,23 @@ export function projectSkillApplied(
 ) {
   return paths.length > 0 && paths.every((path) => deployments.some((item) => item.skillId === skill.id && item.name === skill.name && item.contentHash === skill.contentHash && (item.path || paths[0]) === path && (item.mode || "copy") === mode));
 }
+
+export type ProjectSort = "manual" | "name-asc" | "name-desc" | "updated" | "created";
+
+export function sortProjects<T extends { name: string; createdAt?: string; updatedAt?: string }>(projects: T[], sort: ProjectSort, locale: string): T[] {
+  if (sort === "manual") return [...projects];
+  const timestamp = (value?: string) => value && Number.isFinite(Date.parse(value)) ? Date.parse(value) : 0;
+  return [...projects].sort((a, b) => {
+    if (sort === "created" || sort === "updated") return timestamp(sort === "created" ? b.createdAt : b.updatedAt) - timestamp(sort === "created" ? a.createdAt : a.updatedAt);
+    const byName = a.name.localeCompare(b.name, locale, { numeric: true, sensitivity: "base" });
+    return sort === "name-desc" ? -byName : byName;
+  });
+}
+
+// Move relative to a visible row while preserving projects hidden by filtering.
+export function moveProject(ids: string[], dragged: string, anchor: string, after = false): string[] {
+  if (dragged === anchor || !ids.includes(dragged) || !ids.includes(anchor)) return [...ids];
+  const result = ids.filter((id) => id !== dragged);
+  result.splice(result.indexOf(anchor) + (after ? 1 : 0), 0, dragged);
+  return result;
+}

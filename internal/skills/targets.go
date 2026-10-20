@@ -211,7 +211,9 @@ func (l *Store) prepareTarget(state State, target Target) (Target, error) {
 		target.Deployments = []Deployment{}
 	}
 	target.EnabledSkillIDs, target.EnabledPresetIDs, target.EnabledSourceIDs = unique(target.EnabledSkillIDs), unique(target.EnabledPresetIDs), unique(target.EnabledSourceIDs)
-	return normalizeTarget(target), nil
+	target = normalizeTarget(target)
+	stampTarget(&target, previous)
+	return target, nil
 }
 
 // SaveTargets commits a batch of selections together, without deploying files.

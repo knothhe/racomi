@@ -75,3 +75,28 @@ test("an empty directory selection or missing deployment cannot report an applie
   assert.equal(projectSkillApplied(skill, [], [{ skillId: skill.id, name: skill.name, contentHash: skill.contentHash }], "copy"), false);
   assert.equal(projectSkillApplied(skill, ["/project/.agents/skills"], [], "copy"), false);
 });
+
+test("project sort preserves manual order, sorts names naturally and uses newest timestamps first", async () => {
+  const { sortProjects } = await import("../src/project-browser.ts");
+  const projects = [
+    { name: "Project 10", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-20T00:00:00Z" },
+    { name: "Project 2", createdAt: "2026-10-02T00:00:00Z", updatedAt: "2026-10-19T00:00:00Z" },
+    { name: "Alpha", updatedAt: "invalid" },
+  ];
+  assert.deepEqual(sortProjects(projects, "manual", "en"), projects);
+  assert.deepEqual(sortProjects(projects, "name-asc", "en").map((item) => item.name), ["Alpha", "Project 2", "Project 10"]);
+  assert.deepEqual(sortProjects(projects, "name-desc", "en").map((item) => item.name), ["Project 10", "Project 2", "Alpha"]);
+  assert.deepEqual(sortProjects(projects, "created", "en").map((item) => item.name), ["Project 2", "Project 10", "Alpha"]);
+  assert.deepEqual(sortProjects(projects, "updated", "en"), projects);
+  assert.equal(projects[0].name, "Project 10");
+});
+
+test("moving a project retains hidden projects and ignores invalid drops", async () => {
+  const { moveProject } = await import("../src/project-browser.ts");
+  const order = ["a", "hidden", "b", "c"];
+  assert.deepEqual(moveProject(order, "c", "a"), ["c", "a", "hidden", "b"]);
+  assert.deepEqual(moveProject(order, "a", "b", true), ["hidden", "b", "a", "c"]);
+  assert.deepEqual(moveProject(order, "a", "missing"), order);
+  assert.deepEqual(moveProject(order, "a", "a"), order);
+  assert.deepEqual(order, ["a", "hidden", "b", "c"]);
+});

@@ -9,6 +9,15 @@ export function defaultCloudSyncConfig(): CloudSyncConfig {
   return { endpoint: "", region: "auto", bucket: "", prefix: "racomi", accessKeyId: "", secretAccessKey: "", sessionToken: "", passphrase: "", pathStyle: true, autoSync: false, intervalMinutes: 5, hasSecretAccessKey: false, hasSessionToken: false, hasPassphrase: false };
 }
 
+export function cloudConflictBanner(status?: CloudSyncStatus): string {
+  const count = status?.conflicts?.length || 0;
+  if (!count) return "";
+  return `<aside class="cloud-conflict-banner" role="status" aria-live="polite">
+    ${icon("alert")}<div class="cloud-conflict-banner-copy"><strong>${e(t("{0} sync conflicts", { 0: count }))}</strong><p>${e(t("Choose which versions to keep to continue syncing."))}</p></div>
+    <button type="button" class="button small" data-action="cloud-conflicts" ${status?.syncing ? "disabled" : ""}>${e(t("Review conflicts"))}</button>
+  </aside>`;
+}
+
 export function cloudSyncSection(status?: CloudSyncStatus): string {
   const conflicts = status?.conflicts?.length || 0;
   const ready = !!status?.configured;
@@ -50,7 +59,14 @@ export function readCloudSyncConfig(form: HTMLFormElement, saved?: CloudSyncConf
 
 export function cloudConflictFields(conflicts: SyncConflict[]): string {
   const record = (value: unknown) => value == null ? `<p class="cloud-sync-deleted">${e(t("Deleted"))}</p>` : `<pre>${e(JSON.stringify(value, null, 2))}</pre>`;
-  return `<div class="cloud-conflict-list">${conflicts.map((conflict, index) => `<section class="cloud-conflict"><h3>${e(conflict.name || conflict.key)}</h3><div class="cloud-conflict-versions"><details><summary>${e(t("Local version"))}</summary>${record(conflict.local)}</details><details><summary>${e(t("Cloud version"))}</summary>${record(conflict.remote)}</details></div><label class="field"><span>${e(t("Version to keep"))}</span><select name="resolution:${e(conflict.key)}" required aria-label="${e(t("Version to keep for {0}", { 0: conflict.name || String(index + 1) }))}"><option value="">${e(t("Choose a version"))}</option><option value="local">${e(t(conflict.local == null ? "Keep local deletion" : "Keep local version"))}</option><option value="remote">${e(t(conflict.remote == null ? "Keep cloud deletion" : "Keep cloud version"))}</option></select></label></section>`).join("")}</div>`;
+  return `${conflicts.length ? `<div class="cloud-conflict-bulk"><div class="cloud-conflict-bulk-actions"><button type="button" class="button small" data-action="choose-all-cloud-local">${e(t("Keep all local versions"))}</button><button type="button" class="button small" data-action="choose-all-cloud-remote">${e(t("Keep all cloud versions"))}</button></div><p>${e(t("You can adjust individual choices before applying. Choosing a deleted version deletes that item."))}</p></div>` : ""}<div class="cloud-conflict-list">${conflicts.map((conflict, index) => `<section class="cloud-conflict"><h3>${e(conflict.name || conflict.key)}</h3><div class="cloud-conflict-versions"><details><summary>${e(t("Local version"))}</summary>${record(conflict.local)}</details><details><summary>${e(t("Cloud version"))}</summary>${record(conflict.remote)}</details></div><label class="field"><span>${e(t("Version to keep"))}</span><select name="resolution:${e(conflict.key)}" required aria-label="${e(t("Version to keep for {0}", { 0: conflict.name || String(index + 1) }))}"><option value="">${e(t("Choose a version"))}</option><option value="local">${e(t(conflict.local == null ? "Keep local deletion" : "Keep local version"))}</option><option value="remote">${e(t(conflict.remote == null ? "Keep cloud deletion" : "Keep cloud version"))}</option></select></label></section>`).join("")}</div>`;
+}
+
+export function setCloudResolutionChoice(form: HTMLFormElement, side: "local" | "remote"): void {
+  form.querySelectorAll<HTMLSelectElement>('select[name^="resolution:"]').forEach((select) => {
+    select.value = side;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
 }
 
 export function readCloudResolutions(form: HTMLFormElement, conflicts: SyncConflict[]): Record<string, "local" | "remote"> | null {

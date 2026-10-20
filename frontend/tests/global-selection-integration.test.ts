@@ -66,7 +66,7 @@ function harness() {
     const projectDrafts = new Map(), globalDrafts = new Map(), plans = new Map();
     let selectedGlobalKeys = new Set(["A", "B"]), selectedGlobalKey = "batch:A,B";
     let data = initial, stateRevision = 0, updates = null, selectedSkill = "", selectedSource = "", loadedCloudSyncAt = "";
-    let bulkSkillSelection = new Set(), skillsSourceFilter = "all";
+    let bulkSkillSelection = new Set(), bulkProjectSelection = new Set(), skillsSourceFilter = "all";
     const documents = new Map(), sourceSelections = new Map(), detailTab = "overview";
     const arr = (value) => value || [], t = (value) => value;
     const defaultSettings = () => initial.state.settings;

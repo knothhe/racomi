@@ -33,14 +33,17 @@ const state: AppState = {
 };
 
 const testParameters = new URLSearchParams(location.search);
-if (testParameters.has("cloud-sync") || testParameters.has("cloud-conflicts")) {
+if (testParameters.has("cloud-sync") || testParameters.has("cloud-conflicts") || testParameters.has("cloud-conflicts-on-poll")) {
   state.cloudSync.config = { ...defaultCloudSyncConfig(), endpoint: "https://example.r2.cloudflarestorage.com", bucket: "racomi-test", accessKeyId: "test-access-id", hasSecretAccessKey: true, hasPassphrase: true };
   state.cloudSync.configured = true;
 }
-if (testParameters.has("cloud-conflicts")) state.cloudSync.conflicts = [
+const fixtureCloudConflicts: AppState["cloudSync"]["conflicts"] = [
   { key: "preset/preset-dev", kind: "preset", name: "Development", local: { name: "Development", skillIds: ["design", "code"] }, remote: { name: "Development on laptop", skillIds: ["code"] } },
   { key: "source/source-design", kind: "source", name: "Design source", local: null, remote: { repository: "https://example.com/team/design", ref: "main" } },
 ];
+if (testParameters.has("cloud-conflicts")) state.cloudSync.conflicts = structuredClone(fixtureCloudConflicts);
+let cloudPolls = 0;
+let cloudResolutionFailures = testParameters.has("cloud-resolution-fail-once") ? 1 : 0;
 let projectSelectionFailures = testParameters.has("project-selection-fail-once") ? 1 : 0;
 let documentFailures = testParameters.has("document-fail-once") ? 1 : 0;
 async function readFixtureDocument(content: string) {
@@ -166,7 +169,7 @@ if (testParameters.has("projects") || testParameters.has("many-projects")) {
     const presetIDs = index % 4 === 1 ? ["preset-dev"] : [];
     const effective = new Set([...skillIDs, ...state.state.presets.filter((preset) => presetIDs.includes(preset.id)).flatMap((preset) => preset.skillIds)]);
     const pending = index % 3 === 0;
-    const project: Target = { id: `project-fixture-${index + 1}`, name: `Project ${number} · ${index % 2 === 0 ? "客户服务" : "Developer Tools"}`, kind: "project", projectRoot: root, path: paths[0], paths, directoryIds: index % 3 === 0 ? ["agents", "claude"] : ["agents"], customPaths: [], enabledSkillIds: skillIDs, enabledPresetIds: presetIDs, pending, deployments: pending ? [] : paths.flatMap((path) => state.state.skills.filter((skill) => effective.has(skill.id)).map((skill) => ({ skillId: skill.id, name: skill.name, contentHash: skill.contentHash, path, mode: "copy" }))) };
+    const project: Target = { id: `project-fixture-${index + 1}`, name: `Project ${number} · ${index % 2 === 0 ? "客户服务" : "Developer Tools"}`, kind: "project", createdAt: new Date(Date.UTC(2026, 9, 1 + index)).toISOString(), updatedAt: new Date(Date.UTC(2026, 9, 20) - index * 3600000).toISOString(), projectRoot: root, path: paths[0], paths, directoryIds: index % 3 === 0 ? ["agents", "claude"] : ["agents"], customPaths: [], enabledSkillIds: skillIDs, enabledPresetIds: presetIDs, pending, deployments: pending ? [] : paths.flatMap((path) => state.state.skills.filter((skill) => effective.has(skill.id)).map((skill) => ({ skillId: skill.id, name: skill.name, contentHash: skill.contentHash, path, mode: "copy" }))) };
     state.projects.push(project); state.state.targets.push(project);
   }
 }
@@ -410,7 +413,10 @@ Object.assign(api, {
     const fields = onlyMissing ? Object.fromEntries(Object.entries(patch).filter(([key]) => !state.state.settings[key as keyof AppState["state"]["settings"]])) : patch;
     return api.saveSettings({ ...state.state.settings, ...fields });
   },
-  cloudSyncStatus: async () => structuredClone(state.cloudSync),
+  cloudSyncStatus: async () => {
+    if (testParameters.has("cloud-conflicts-on-poll") && cloudPolls++ === 0) state.cloudSync.conflicts = structuredClone(fixtureCloudConflicts);
+    return structuredClone(state.cloudSync);
+  },
   saveCloudSyncConfig: async (config: AppState["cloudSync"]["config"]) => {
     if (!config.endpoint || !config.bucket || !config.accessKeyId) throw new Error("Endpoint, bucket, and access key are required");
     if (!config.secretAccessKey && !state.cloudSync.config.hasSecretAccessKey) throw new Error("Secret access key is required");
@@ -422,6 +428,7 @@ Object.assign(api, {
   testCloudSyncConnection: async () => { document.documentElement.dataset.cloudConnectionTested = "true"; },
   syncCloud: async () => { state.cloudSync.lastSyncAt = new Date().toISOString(); document.documentElement.dataset.cloudSynced = "true"; return copy(); },
   resolveCloudSync: async (resolutions: Record<string, "local" | "remote">) => {
+    if (cloudResolutionFailures > 0) { cloudResolutionFailures--; throw new Error("cloud sync: connection interrupted"); }
     if (state.cloudSync.conflicts.some((conflict) => !resolutions[conflict.key])) throw new Error("Choose every conflict");
     document.documentElement.dataset.cloudResolutions = JSON.stringify(resolutions);
     state.cloudSync.conflicts = [];
@@ -566,6 +573,30 @@ Object.assign(api, {
       application.target.enabledSkillIds = skillIds; application.target.enabledPresetIds = presetIds; application.target.enabledSourceIds = sourceIds; application.target.pending = true;
     }
     return copy();
+  },
+  reorderProjects: async (ids: string[]) => {
+    if (ids.length !== state.projects.length || new Set(ids).size !== ids.length || ids.some((id) => !state.projects.some((target) => target.id === id))) throw new Error("invalid project order");
+    state.projects = ids.map((id) => state.projects.find((target) => target.id === id)!);
+    let index = 0;
+    state.state.targets = state.state.targets.map((target) => target.kind === "project" ? state.projects[index++] : target);
+    document.documentElement.dataset.projectOrder = ids.join(",");
+    return copy();
+  },
+  planProjects: async (ids: string[]) => {
+    document.documentElement.dataset.projectPlanIDs = ids.join(",");
+    return plan(state.projects.filter((target) => ids.includes(target.id)));
+  },
+  applyProjects: async (ids: string[]) => {
+    recordApplyCall("applyProjects");
+    const result = apply(state.projects.filter((target) => ids.includes(target.id)));
+    document.documentElement.dataset.projectAppliedIDs = ids.join(",");
+    return result;
+  },
+  forceApplyProjects: async (ids: string[], reviewed: ApplyPlan) => {
+    recordApplyCall("forceApplyProjects");
+    const result = apply(state.projects.filter((target) => ids.includes(target.id)), true, reviewed);
+    document.documentElement.dataset.projectAppliedIDs = ids.join(",");
+    return result;
   },
   planProject: async (id: string) => {
     if (testParameters.has("project-plan-delay")) await new Promise((resolve) => setTimeout(resolve, Math.min(2000, Math.max(0, Number(testParameters.get("project-plan-delay")) || 300))));

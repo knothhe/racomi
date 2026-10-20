@@ -86,6 +86,8 @@ type Target struct {
 	ID               string       `json:"id"`
 	Name             string       `json:"name"`
 	Icon             string       `json:"icon,omitempty"`
+	CreatedAt        string       `json:"createdAt"`
+	UpdatedAt        string       `json:"updatedAt"`
 	Kind             string       `json:"kind"`
 	Path             string       `json:"path"`
 	EnabledSkillIDs  []string     `json:"enabledSkillIds"`

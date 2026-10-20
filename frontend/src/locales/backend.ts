@@ -1,5 +1,8 @@
 // Explicit backend message templates. Placeholders preserve names, paths, and nested errors.
 const messages: ReadonlyArray<readonly [string, string, string, string]> = [
+  ["select at least one project", "Select at least one project", "请至少选择一个项目", "請至少選擇一個專案"],
+  ["project order must include every project exactly once", "The project list changed. Refresh it and reorder again.", "项目列表已变化，请刷新后重新排序。", "專案清單已變更，請重新整理後再次排序。"],
+  ["invalid target timestamp", "Invalid application configuration timestamp", "应用配置的时间格式无效", "套用設定的時間格式無效"],
   ["cannot clone repository: {0}", "Could not download the repository: {0}", "无法下载仓库：{0}", "無法下載儲存庫：{0}"],
   ["cannot refresh repository: {0}", "Could not refresh the repository: {0}", "无法刷新仓库：{0}", "無法重新整理儲存庫：{0}"],
   ["Git operation timed out: {0}", "Git operation exceeded the time limit. Retry later. Details: {0}", "Git 操作超过等待时限，请稍后重试。详情：{0}", "Git 操作超過等待時限，請稍後重試。詳情：{0}"],

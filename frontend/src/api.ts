@@ -17,7 +17,7 @@ export interface Source {
 export interface Preset { id: string; name: string; description: string; skillIds: string[]; icon?: string }
 export interface Target {
   id: string; name: string; kind: string; path: string; enabledSkillIds: string[]; enabledPresetIds: string[]; enabledSourceIds?: string[];
-  icon?: string;
+  icon?: string; createdAt?: string; updatedAt?: string;
   paths?: string[]; projectRoot?: string; directoryIds?: string[]; customPaths?: string[];
   deployments: { skillId: string; name: string; contentHash: string; path?: string; mode?: "copy" | "symlink" }[]; pending: boolean;
 }
@@ -137,6 +137,10 @@ export const api = {
   saveGlobalDirectory: (target: Target) => invoke<AppState>("SaveGlobalDirectory", target),
   deleteGlobalDirectory: (id: string) => invoke<AppState>("DeleteGlobalDirectory", id),
   setProjectSelection: (id: string, skillIDs: string[], presetIDs: string[], sourceIDs: string[] = []) => invoke<AppState>("SetProjectSelectionWithSources", id, skillIDs, presetIDs, sourceIDs),
+  reorderProjects: (ids: string[]) => invoke<AppState>("ReorderProjects", ids),
+  planProjects: (ids: string[]) => invoke<ApplyPlan>("PlanProjects", ids),
+  applyProjects: (ids: string[]) => invoke<AppState>("ApplyProjects", ids),
+  forceApplyProjects: (ids: string[], plan: ApplyPlan) => invoke<AppState>("ForceApplyProjects", ids, plan),
   planProject: (id: string) => invoke<ApplyPlan>("PlanProject", id),
   applyProject: (id: string) => invoke<AppState>("ApplyProject", id),
   forceApplyProject: (id: string, plan: ApplyPlan) => invoke<AppState>("ForceApplyProject", id, plan),
