@@ -59,7 +59,7 @@ func main() {
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
-		SingleInstance: &application.SingleInstanceOptions{UniqueID: "local.racomi.desktop", OnSecondInstanceLaunch: func(application.SecondInstanceData) { service.OpenWindow() }},
+		SingleInstance: &application.SingleInstanceOptions{UniqueID: "com.knothhe.racomi", OnSecondInstanceLaunch: func(application.SecondInstanceData) { service.OpenWindow() }},
 	})
 	desktop.Attach(service, app)
 

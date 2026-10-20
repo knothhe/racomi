@@ -4,9 +4,46 @@ import (
 	"bytes"
 	"encoding/xml"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestOpenAtLoginDisablesCurrentAndLegacyRecords(t *testing.T) {
+	for _, labels := range [][]string{{loginLabel}, {legacyLoginLabel}, {loginLabel, legacyLoginLabel}} {
+		t.Run(strings.Join(labels, "+"), func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			dir := filepath.Join(home, "Library", "LaunchAgents")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for _, label := range labels {
+				if err := os.WriteFile(filepath.Join(dir, label+".plist"), loginPlist("/Applications/racomi.app/Contents/MacOS/racomi"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if !openAtLoginEnabled() {
+				t.Fatal("existing login item should remain enabled after upgrading")
+			}
+			if err := setOpenAtLogin(false); err != nil {
+				t.Fatal(err)
+			}
+			for _, label := range labels {
+				if _, err := os.Stat(filepath.Join(dir, label+".plist")); !os.IsNotExist(err) {
+					t.Fatalf("login item %s was not removed: %v", label, err)
+				}
+			}
+			if openAtLoginEnabled() {
+				t.Fatal("login item should be disabled")
+			}
+			if err := setOpenAtLogin(false); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
 
 func TestLoginPlistEscapesExecutableAndRunsOnlyAtLogin(t *testing.T) {
 	exe := `/Applications/racomi & "tools".app/Contents/MacOS/racomi`

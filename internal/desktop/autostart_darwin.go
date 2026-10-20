@@ -9,7 +9,10 @@ import (
 	"strings"
 )
 
-const loginLabel = "local.racomi.desktop"
+const (
+	loginLabel       = "com.knothhe.racomi"
+	legacyLoginLabel = "local.racomi.desktop"
+)
 
 func loginRecord() (string, error) {
 	home, err := os.UserHomeDir()
@@ -23,8 +26,13 @@ func openAtLoginEnabled() bool {
 	if err != nil {
 		return false
 	}
-	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular()
+	for _, record := range []string{path, filepath.Join(filepath.Dir(path), legacyLoginLabel+".plist")} {
+		info, err := os.Stat(record)
+		if err == nil && info.Mode().IsRegular() {
+			return true
+		}
+	}
+	return false
 }
 func loginPlist(exe string) []byte {
 	var escaped strings.Builder
@@ -45,12 +53,9 @@ func setOpenAtLogin(on bool) error {
 	if err != nil {
 		return err
 	}
+	legacyPath := filepath.Join(filepath.Dir(path), legacyLoginLabel+".plist")
 	if !on {
-		err = os.Remove(path)
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
+		return errors.Join(removeLoginRecord(path), removeLoginRecord(legacyPath))
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -68,5 +73,16 @@ func setOpenAtLogin(on bool) error {
 	if err = os.WriteFile(path+".tmp", loginPlist(exe), 0o600); err != nil {
 		return err
 	}
-	return os.Rename(path+".tmp", path)
+	if err = os.Rename(path+".tmp", path); err != nil {
+		return err
+	}
+	return removeLoginRecord(legacyPath)
+}
+
+func removeLoginRecord(path string) error {
+	err := os.Remove(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
 }

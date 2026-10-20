@@ -20,7 +20,11 @@ check_app() {
   [ ! -L "$1" ] || fail "refusing to replace or remove a symlink: $1"
   [ -d "$1" ] && [ -x "$1/Contents/MacOS/racomi" ] || fail "not a racomi app bundle: $1"
   bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$1/Contents/Info.plist" 2>/dev/null) || fail "invalid app metadata: $1"
-  [ "$bundle_id" = local.racomi.desktop ] || fail "refusing to replace or remove a different app: $1"
+  # Recognize the previous identifier so existing installations can be upgraded.
+  case "$bundle_id" in
+    com.knothhe.racomi|local.racomi.desktop) ;;
+    *) fail "refusing to replace or remove a different app: $1" ;;
+  esac
 }
 
 if [ -e "$app_path" ] || [ -L "$app_path" ]; then check_app "$app_path"; fi

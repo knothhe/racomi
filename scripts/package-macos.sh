@@ -53,7 +53,10 @@ if [ "$action" = package ]; then
   [ ! -L "$app_path" ] || fail "refusing to replace a symlink: $app_path"
   if [ -e "$app_path" ]; then
     existing_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Contents/Info.plist" 2>/dev/null) || fail 'invalid existing bin/racomi.app'
-    [ "$existing_id" = local.racomi.desktop ] || fail 'refusing to replace an unrelated bin/racomi.app'
+    case "$existing_id" in
+      com.knothhe.racomi|local.racomi.desktop) ;;
+      *) fail 'refusing to replace an unrelated bin/racomi.app' ;;
+    esac
     mv "$app_path" "$stage/previous.app"
     old_app_moved=true
   fi

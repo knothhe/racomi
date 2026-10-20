@@ -34,10 +34,12 @@ test "$(sh "$test_dir/target.sh")" = "$app_dir/racomi.app"
 if sh "$bin_dir/racomi" --unexpected > "$test_dir/args.log" 2>&1; then echo 'launcher must reject arguments' >&2; exit 1; fi
 
 printf 'old build\n' > "$app_dir/racomi.app/Contents/old-file"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier local.racomi.desktop' "$app_dir/racomi.app/Contents/Info.plist"
 printf 'new build\n' > "$source_app/Contents/new-file"
 invoke install > "$test_dir/upgrade.log"
 test ! -e "$app_dir/racomi.app/Contents/old-file"
 test -f "$app_dir/racomi.app/Contents/new-file"
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_dir/racomi.app/Contents/Info.plist")" = com.knothhe.racomi
 
 # Fail the final launcher rename after moving the app. The previous complete
 # bundle and launcher must remain available when an installation cannot finish.
@@ -65,7 +67,7 @@ test -f "$app_dir/racomi.app/Contents/new-file"
 cp "$test_dir/launcher" "$bin_dir/racomi"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier example.unrelated' "$app_dir/racomi.app/Contents/Info.plist"
 expect_failure uninstall 'foreign bundle'
-/usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier local.racomi.desktop' "$app_dir/racomi.app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier com.knothhe.racomi' "$app_dir/racomi.app/Contents/Info.plist"
 
 invoke uninstall > "$test_dir/uninstall.log"
 test ! -e "$app_dir/racomi.app"

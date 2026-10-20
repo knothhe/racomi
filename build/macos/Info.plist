@@ -4,7 +4,7 @@
 <dict>
   <key>CFBundleName</key><string>racomi</string>
   <key>CFBundleDisplayName</key><string>racomi</string>
-  <key>CFBundleIdentifier</key><string>local.racomi.desktop</string>
+  <key>CFBundleIdentifier</key><string>com.knothhe.racomi</string>
   <key>CFBundleExecutable</key><string>racomi</string>
   <key>CFBundleIconFile</key><string>racomi.icns</string>
   <key>CFBundleIconName</key><string>AppIcon</string>
