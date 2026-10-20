@@ -223,7 +223,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; font: 10px var(--font);
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .toolbar-search { width: 210px; flex: 0 1 210px; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; font-size: 12px; min-width: 0; }
-.field > span { font-weight: 500; color: var(--fg-2); }
+.field > span, .field > label { font-weight: 500; color: var(--fg-2); }
 .field i { font-size: 11px; font-weight: 400; font-style: normal; color: var(--muted); margin-left: 5px; }
 .field input, .field textarea, .field select, .sort-select { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--card); color: var(--fg); outline: none; resize: vertical; }
 .field input, .field select { height: var(--control-height); padding: 5px 10px; }
