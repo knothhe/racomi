@@ -112,6 +112,8 @@ let searchResults: SearchResult[] | null = null;
 let searchQuery = "";
 let hubResultQuery = "";
 let hubListing: Pick<SkillListPage, "page" | "total" | "hasMore"> | null = null;
+let hubSearchGeneration = 0;
+let hubSearchRequest: ReturnType<typeof api.search> | ReturnType<typeof api.listSkills> | null = null;
 let preview: Preview | null = null;
 type PreviewReturn = { key: string; scroll: ListScroll };
 let previewReturnTo: PreviewReturn | null = null;
@@ -178,7 +180,7 @@ const actionTasks: Record<string, string> = {
   "sync-cloud": "Syncing with cloud…", "test-cloud-sync": "Testing cloud connection…", "cloud-backups": "Loading cloud backups…",
 };
 const formTasks: Record<string, string> = {
-  "hub-search": "正在搜索 skills.sh…", "source-preview": "正在读取来源并发现技能…",
+  "source-preview": "正在读取来源并发现技能…",
   "local-preview": "正在读取本地目录并发现技能…",
   "source-editor": "正在保存来源…", "source-relink": "正在重新关联技能…",
   "preset-editor": "正在保存预设…", "project-editor": "正在保存项目…", "global-directory-editor": "正在保存全局目录…", "project-directory-editor": "正在保存项目目录…",
@@ -802,25 +804,45 @@ function hubResults() {
   }).join("")}</div>${hubListing?.hasMore ? `<div class="hub-results-footer">${button(t("加载更多"), "load-more-hub", "small", "", "chevron-down")}</div>` : ""}`;
 }
 async function searchHub(query: string, loadMore = false) {
-  if (activeTasks.has("正在搜索 skills.sh…")) return;
-  if (loadMore && (!hubListing?.hasMore || hubResultQuery)) return;
+  if (loadMore && (activeTasks.has("正在搜索 skills.sh…") || !hubListing?.hasMore || hubResultQuery)) return;
   query = loadMore ? hubResultQuery : query.trim();
   const page = loadMore ? hubListing!.page + 1 : 0;
+  const generation = ++hubSearchGeneration;
+  void hubSearchRequest?.cancel?.();
+  hubSearchRequest = null;
   if (!loadMore) { searchQuery = query; hubResultQuery = query; searchResults = null; hubListing = null; }
-  const result = await task("正在搜索 skills.sh…", async (): Promise<SkillListPage> => {
-    if (currentPage === "discover") render();
-    if (!query) return api.listSkills(page);
-    const results = await api.search(query);
-    return { skills: results, total: results.length, hasMore: false, page: 0 };
-  });
-  if (result) {
+  activeTasks.add("正在搜索 skills.sh…"); status(); syncBusyControls();
+  if (currentPage === "discover") render();
+  try {
+    let result: SkillListPage;
+    if (query) {
+      const request = api.search(query);
+      hubSearchRequest = request;
+      const results = await request;
+      result = { skills: results, total: results.length, hasMore: false, page: 0 };
+    } else {
+      const request = api.listSkills(page);
+      hubSearchRequest = request;
+      result = await request;
+    }
+    if (generation !== hubSearchGeneration) return;
     searchResults = loadMore ? [...arr(searchResults), ...arr(result.skills)] : arr(result.skills);
     hubListing = query ? null : result;
+  } catch (err) {
+    if (generation === hubSearchGeneration) toast(err instanceof Error ? err.message : String(err), true);
+  } finally {
+    if (generation === hubSearchGeneration) {
+      hubSearchRequest = null;
+      activeTasks.delete("正在搜索 skills.sh…"); status();
+      const results = currentPage === "discover" && discoverTab === "hub" ? document.querySelector<HTMLElement>("#search-results") : null;
+      // Keep the search field mounted so completion cannot interrupt IME input.
+      if (results) results.innerHTML = hubResults();
+      syncBusyControls();
+    }
   }
-  if (currentPage === "discover") render();
 }
 function ensureHubResults() {
-  if (data && currentPage === "discover" && discoverTab === "hub" && searchResults === null) void searchHub(searchQuery);
+  if (data && currentPage === "discover" && discoverTab === "hub" && searchResults === null && !activeTasks.has("正在搜索 skills.sh…")) void searchHub(searchQuery);
 }
 function discoverPage() {
   const tabs = ([["hub", 'Skill Hub <span class="tab-note">skills.sh</span>'], ["git", e(t("Git 仓库"))], ["local", e(t("本地目录"))]] as const).map(([tab, label]) => `<button type="button" id="discover-tab-${tab}" class="tab-button ${discoverTab === tab ? "active" : ""}" data-action="discover-tab" data-tab="${tab}" role="tab" aria-controls="discover-tab-panel" aria-selected="${discoverTab === tab}" tabindex="${discoverTab === tab ? 0 : -1}">${label}</button>`).join("");
@@ -1607,7 +1629,7 @@ document.addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
   if (submit?.disabled) return;
-  if (submit) submit.disabled = true;
+  if (submit && formID !== "hub-search") submit.disabled = true;
   try {
     if (formID === "cloud-sync-editor") {
       const config = readCloudSyncConfig(form, data?.cloudSync?.config);

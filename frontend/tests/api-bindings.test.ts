@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import vm from "node:vm";
 import ts from "typescript";
 
 test("frontend desktop calls resolve to exported Service methods", () => {
@@ -25,4 +26,24 @@ test("frontend desktop calls resolve to exported Service methods", () => {
   visit(tree);
   assert.ok(calls.length > 0, "desktop calls were found");
   for (const method of calls) assert.ok(serviceMethods.has(method), `${method}: missing desktop Service method`);
+});
+
+test("Hub bindings preserve the desktop request cancellation method", async () => {
+  const source = ts.createSourceFile("api.ts", fs.readFileSync(new URL("../src/api.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+  const production = source.statements.filter((statement) => ts.isFunctionDeclaration(statement) && statement.name?.text === "invoke"
+    || ts.isVariableStatement(statement) && statement.declarationList.declarations.some((declaration) => declaration.name.getText(source) === "api"))
+    .map((statement) => statement.getText(source).replace(/^export /, "")).join("\n");
+  const calls: unknown[][] = [];
+  let cancellations = 0;
+  const request = Object.assign(Promise.resolve([]), { cancel: () => { cancellations++; } });
+  const api = vm.runInNewContext(ts.transpileModule(`${production}\napi;`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText, {
+    Call: { ByName: (...args: unknown[]) => { calls.push(args); return request; } },
+  }) as { search: (query: string) => typeof request; listSkills: (page: number) => typeof request };
+  for (const result of [api.search("design"), api.listSkills(1)]) {
+    assert.equal(result, request);
+    result.cancel();
+    await result;
+  }
+  assert.equal(cancellations, 2);
+  assert.deepEqual(calls, [["racomi/internal/desktop.Service.Search", "design"], ["racomi/internal/desktop.Service.ListSkills", 1]]);
 });

@@ -94,7 +94,8 @@ export interface ImportResult {
 }
 
 // Kept in one place so desktop bindings can evolve without touching the views.
-export async function invoke<T>(method: string, ...args: unknown[]): Promise<T> {
+export function invoke<T>(method: string, ...args: unknown[]): Promise<T> & { cancel?: () => Promise<void> } {
+  // Return the runtime promise directly to preserve request cancellation.
   return Call.ByName(`racomi/internal/desktop.Service.${method}`, ...args) as Promise<T>;
 }
 export const api = {
