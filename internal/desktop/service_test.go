@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"racomi/internal/testutil"
 	skillstore "racomi/internal/skills"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -202,7 +203,7 @@ func TestImportUsesCanonicalDataRootWhenConfiguredThroughSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	configuredRoot := filepath.Join(base, "configured-data")
-	if err := os.Symlink(physicalRoot, configuredRoot); err != nil {
+	if err := testutil.Symlink(t, physicalRoot, configuredRoot); err != nil {
 		t.Fatal(err)
 	}
 	repository := filepath.Join(base, "repository")
@@ -270,7 +271,7 @@ func TestReadSkillDocumentReadsIndexedDocumentSafely(t *testing.T) {
 			if err := os.Remove(filename); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Symlink("/etc/hosts", filename); err != nil {
+			if err := testutil.Symlink(t, "/etc/hosts", filename); err != nil {
 				t.Fatal(err)
 			}
 		}, wantErr: "普通文件"},
@@ -290,7 +291,7 @@ func TestReadSkillDocumentReadsIndexedDocumentSafely(t *testing.T) {
 			if err := os.Rename(object, moved); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Symlink(moved, object); err != nil {
+			if err := testutil.Symlink(t, moved, object); err != nil {
 				t.Fatal(err)
 			}
 		}, wantErr: "普通目录"},

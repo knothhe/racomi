@@ -50,6 +50,39 @@ make uninstall   # 卸载应用和启动命令，保留数据与部署
 
 默认安装到 `~/Applications/racomi.app`，启动命令为 `~/.local/bin/racomi`。更新时退出应用后重新运行 `make install`。可通过 `APP_DIR` 和 `BIN_DIR` 自定义位置，卸载时使用相同参数。
 
+## Windows 安装与构建
+
+支持 **Windows 10/11 x64**，运行需要 Microsoft Edge WebView2 Runtime；缺少时从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。导入和刷新 Git 来源仍需 Git。Windows 版暂不提供 macOS 专属的轻量模式与开机自启。
+
+发布包为 `racomi-*-x86_64-windows.zip`，解压后运行 `racomi.exe`。可用 PowerShell 的 `Get-FileHash <ZIP 文件路径> -Algorithm SHA256` 与同名 `.sha256` 文件比较。更新前退出应用并替换 EXE；删除便携版文件即可卸载，保留用户数据与已部署技能。当前 EXE 未做代码签名。
+
+从源码构建需要 **Go 1.26.8+、Node.js 22.12+、npm、Git、GNU Make、x86_64 MinGW-w64 GCC 和 windres**。例如在 PowerShell 中安装构建工具：
+
+```powershell
+winget install --id GoLang.Go -e
+winget install --id OpenJS.NodeJS.LTS -e
+winget install --id Git.Git -e
+winget install --id GnuWin32.Make -e
+winget install --id BrechtSanders.WinLibs.POSIX.UCRT -e
+```
+
+安装后重新打开终端，并确保这些工具已加入 `PATH`（GnuWin32 Make 通常位于 `C:\Program Files (x86)\GnuWin32\bin`）。也可以用 MinGW 自带的 `mingw32-make` 执行相同目标。在仓库根目录运行：
+
+```powershell
+make doctor      # 检查 Windows 构建环境
+make deps        # 首次构建安装依赖
+make build       # 生成 bin/racomi.exe
+make dist        # 生成 bin/releases 下的 ZIP 和 SHA-256
+make install     # 自动安装依赖、构建、安装并创建开始菜单快捷方式
+make uninstall   # 卸载已安装应用与快捷方式，保留数据和技能部署
+```
+
+`make` 根据当前操作系统自动选择 Windows 或 macOS 流程。Windows 默认安装路径为 `%LOCALAPPDATA%\Programs\racomi\racomi.exe`，可用 `make install APP_DIR="D:/Apps/racomi"` 自定义，卸载时使用相同参数。安装更新前请先退出应用。Windows 当前构建架构为 `amd64`，保留 CGO 以支持 SQLite 数据导入；EXE 已嵌入图标、版本信息和 DPI／长路径清单，无需附带 MinGW DLL。
+
+没有 Make 时也可直接执行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 -Action install`，其他目标通过 `-Action build`、`-Action dist` 等选择。软链接部署需要 Windows 开发者模式或相应权限，普通账号可使用默认的复制部署；`make check` 在无软链接权限时会跳过对应测试。
+
+Windows 的 `make check` 和 `make test` 显式使用 `-ldflags="-s=false -w=false"`，保留测试程序的符号表与 DWARF 调试信息。本机排查发现，Go 默认剥离调试信息的临时测试 EXE 会触发 Smart App Control 拦截，保留调试信息后可以通过检查。此设置仅用于测试构建，不修改系统安全策略或增加排除项；发布 EXE 仍使用原来的体积优化参数。其他设备若仍提示应用控制拦截，可检查事件查看器的 `Microsoft-Windows-CodeIntegrity/Operational` 日志（事件 3077）；这不是所有应用控制策略的通用放行保证，详见 [Microsoft 的说明](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/overview)。
+
 ## 开发与发布
 
 技术栈为 Go + Wails v3、TypeScript + Vite + CSS。开发环境要求同源码安装。
@@ -65,7 +98,7 @@ make check       # 前端构建、类型检查、Go vet 和测试
 
 本地打包、首次发版、版本升级及失败续推见 [发布指南](docs/release/README.md)。
 
-目前仅支持 macOS，没有自动升级。云同步使用用户自己的 S3 兼容存储，无需 racomi 账号。
+目前支持 macOS 和 Windows x64，没有自动升级。云同步使用用户自己的 S3 兼容存储，无需 racomi 账号。
 
 ## 更多资料
 

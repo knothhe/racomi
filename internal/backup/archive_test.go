@@ -10,9 +10,9 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 
+	"racomi/internal/testutil"
 	skillstore "racomi/internal/skills"
 )
 
@@ -86,8 +86,7 @@ func TestPortableRoundTripPreservesObjectsAndExcludesTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	previousMask := syscall.Umask(0077)
-	defer syscall.Umask(previousMask)
+	restrictUmask(t)
 	if err = Import(restored, filename); err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +358,7 @@ func TestTamperedObjectRejected(t *testing.T) {
 func TestExportCannotWriteIntoDataThroughSymlink(t *testing.T) {
 	store, state := fixture(t)
 	link := filepath.Join(t.TempDir(), "linked-data")
-	if err := os.Symlink(store.Root(), link); err != nil {
+	if err := testutil.Symlink(t, store.Root(), link); err != nil {
 		t.Fatal(err)
 	}
 	if err := Export(store.Root(), state, filepath.Join(link, "backup.zip")); err == nil {

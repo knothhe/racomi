@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+
+	"racomi/internal/testutil"
 )
 
 func importCandidate(t *testing.T, base, name, body, id string) Candidate {
@@ -136,7 +138,7 @@ func TestMergeImportFailuresLeaveIndexAndSnapshotsUntouched(t *testing.T) {
 			in.candidates = append(in.candidates, old)
 		}},
 		{"skipped-candidate-symlink", func(t *testing.T, in *input, old Candidate, _ Source, _ Preset) {
-			if err := os.Symlink(in.candidates[0].Path, filepath.Join(old.Path, "linked")); err != nil {
+			if err := testutil.Symlink(t, in.candidates[0].Path, filepath.Join(old.Path, "linked")); err != nil {
 				t.Skip(err)
 			}
 			in.candidates = append(in.candidates, old)

@@ -10,6 +10,8 @@ make dist                            # 本机架构 ZIP 和 SHA-256
 make dist VERSION=0.2.0 BUILD_NUMBER=2 # 指定本地打包版本，不提交或推送
 ```
 
+上述命令自动识别宿主操作系统：Windows x64 上 `make package` 生成 `bin/racomi.exe`，`make dist` 生成 `racomi-<版本>-x86_64-windows.zip` 及 `.sha256`，包含安装说明与第三方许可。Windows 的 `make install` 安装 EXE 并创建开始菜单快捷方式；构建依赖及安装路径见 [README](../../README.md#windows-安装与构建)。`BUILD_NUMBER` 用于 Windows 文件版本的第四段，须为 0–65535。
+
 `make dist` 保留原来的本地发版包构建流程，在 `bin/releases/` 生成 ZIP、SHA-256，ZIP 中包含安装说明。`make package`、`make dist` 和 `make install` 默认读取 `frontend/package.json` 中的版本。
 
 ## 版本发布
@@ -31,7 +33,7 @@ make release VERSION_BUMP=patch RELEASE_FLAGS=--apply   # 正式执行
 
 ## GitHub Actions
 
-推送 `vX.Y.Z`（也支持预发布及 build metadata）标签后，现有 [Release workflow](../../.github/workflows/release.yml) 校验标签与版本一致，继续检查、构建和发布 Apple Silicon、Intel 两种架构；带 `-` 预发布标识的标签发布为预发布版。`.release.json` 中 `github_release: false`，GitHub Release 与附件均由 Actions 创建，请保留此配置并避免使用本地 `--github-release` 覆盖它。`make install` 仍只构建并安装本机应用。
+推送 `vX.Y.Z`（也支持预发布及 build metadata）标签后，[Release workflow](../../.github/workflows/release.yml) 校验标签与版本一致，检查、构建并发布 macOS Apple Silicon、Intel 与 Windows x64 三种包；带 `-` 预发布标识的标签发布为预发布版。`.release.json` 中 `github_release: false`，GitHub Release 与附件均由 Actions 创建，请保留此配置并避免使用本地 `--github-release` 覆盖它。`make install` 仍只构建并安装本机应用。
 
 ## 失败后续推
 

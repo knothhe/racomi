@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"racomi/internal/testutil"
 	skillstore "racomi/internal/skills"
 )
 
@@ -35,7 +36,7 @@ func TestSourceRefreshSkipsUnrelatedSymlink(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(target, filename); err != nil {
+		if err := testutil.Symlink(t, target, filename); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -93,19 +94,19 @@ func TestPartialSourceRefreshRetainsSkippedSkillsAndRecovers(t *testing.T) {
 				writeLargeTestFile(t, filepath.Join(alphaDir, "large.bin"), maxRepositoryBytes+1)
 			case "skill-document-symlink":
 				if err = os.Remove(filepath.Join(alphaDir, "SKILL.md")); err == nil {
-					err = os.Symlink("../../nested/beta/SKILL.md", filepath.Join(alphaDir, "SKILL.md"))
+					err = testutil.Symlink(t, "../../nested/beta/SKILL.md", filepath.Join(alphaDir, "SKILL.md"))
 				}
 			case "skill-asset-symlink":
 				if err = os.MkdirAll(filepath.Join(alphaDir, "references"), 0755); err == nil {
-					err = os.Symlink("../../../nested/beta/SKILL.md", filepath.Join(alphaDir, "references", "alias.md"))
+					err = testutil.Symlink(t, "../../../nested/beta/SKILL.md", filepath.Join(alphaDir, "references", "alias.md"))
 				}
 			case "skill-directory-symlink":
 				if err = os.RemoveAll(alphaDir); err == nil {
-					err = os.Symlink("../../nested/beta", alphaDir)
+					err = testutil.Symlink(t, "../../nested/beta", alphaDir)
 				}
 			case "ancestor-directory-symlink":
 				if err = os.RemoveAll(filepath.Join(repo, "skills")); err == nil {
-					err = os.Symlink("nested", filepath.Join(repo, "skills"))
+					err = testutil.Symlink(t, "nested", filepath.Join(repo, "skills"))
 				}
 			}
 			if err != nil {

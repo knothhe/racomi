@@ -294,6 +294,7 @@ func TestDefaultSkillsManagerPathFollowsHome(t *testing.T) {
 	for _, name := range []string{"first-home", "second-home"} {
 		home := filepath.Join(t.TempDir(), name)
 		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
 		filename, err := service.DefaultSkillsManagerPath()
 		if err != nil || filename != filepath.Join(home, ".skills-manager", "skills-manager.db") {
 			t.Fatalf("default path did not follow HOME: %q, %v", filename, err)

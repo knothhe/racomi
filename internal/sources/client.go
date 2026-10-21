@@ -540,7 +540,7 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 }
 
 func gitExec(ctx context.Context, repo string, args ...string) *exec.Cmd {
-	base := []string{"-c", "core.hooksPath=/dev/null", "-c", "credential.interactive=never", "-c", "protocol.ext.allow=never", "-c", "core.sshCommand=ssh -oBatchMode=yes -oConnectTimeout=15"}
+	base := []string{"-c", "core.hooksPath=/dev/null", "-c", "core.longpaths=true", "-c", "credential.interactive=never", "-c", "protocol.ext.allow=never", "-c", "core.sshCommand=ssh -oBatchMode=yes -oConnectTimeout=15"}
 	if repo != "" {
 		base = append(base, "--git-dir", repo)
 	}

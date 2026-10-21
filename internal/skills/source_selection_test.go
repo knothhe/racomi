@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+
+	"racomi/internal/testutil"
 )
 
 func selectionSource(t *testing.T, store *Store, repository string) Source {
@@ -30,6 +32,9 @@ func TestSourceSelectionsUnionAndFollowInstalledSkills(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			store, base := newStore(t)
 			settings := state(t, store).Settings
+			if mode == DeploymentSymlink {
+				testutil.RequireSymlink(t)
+			}
 			settings.DeploymentMode = mode
 			if err := store.SaveSettings(settings); err != nil {
 				t.Fatal(err)

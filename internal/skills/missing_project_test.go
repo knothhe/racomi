@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"racomi/internal/testutil"
 )
 
 func TestDeletedProjectCanRelocateWithoutLosingSelectionsOrExternalOwnership(t *testing.T) {
@@ -13,6 +15,9 @@ func TestDeletedProjectCanRelocateWithoutLosingSelectionsOrExternalOwnership(t *
 		t.Run(mode, func(t *testing.T) {
 			store, base := newStore(t)
 			settings := state(t, store).Settings
+			if mode == DeploymentSymlink {
+				testutil.RequireSymlink(t)
+			}
 			settings.DeploymentMode = mode
 			if err := store.SaveSettings(settings); err != nil {
 				t.Fatal(err)

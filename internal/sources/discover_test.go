@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"racomi/internal/testutil"
 )
 
 func TestArchiveRecordsUnsupportedEntriesWithoutMaterializingThem(t *testing.T) {
@@ -94,7 +96,7 @@ func TestScanValidatesFullSkillTreeIncludingIgnoredDirectories(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "alpha", "node_modules"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("../../../beta/SKILL.md", filepath.Join(root, "alpha", "node_modules", "link")); err != nil {
+	if err := testutil.Symlink(t, "../../../beta/SKILL.md", filepath.Join(root, "alpha", "node_modules", "link")); err != nil {
 		t.Fatal(err)
 	}
 	items, skipped, _, err := scanSkills(root, ".", "revision", nil, false)
@@ -121,7 +123,7 @@ func TestScanMarksLinkedSkillDocumentAndAllowsAllSkippedCatalog(t *testing.T) {
 func TestScanDoesNotFollowSelectedScopeSymlinks(t *testing.T) {
 	root, external := t.TempDir(), t.TempDir()
 	writeTestSkill(t, external, "alpha", "alpha", "External skill", "Must not be read")
-	if err := os.Symlink(external, filepath.Join(root, "skills")); err != nil {
+	if err := testutil.Symlink(t, external, filepath.Join(root, "skills")); err != nil {
 		t.Fatal(err)
 	}
 	for _, scope := range []string{"skills", "skills/alpha"} {
@@ -142,7 +144,7 @@ func TestScanSilentlySkipsUnrelatedLinksAndKeepsSpecialFileWarnings(t *testing.T
 		"cycle":    "cycle",
 		"alias":    "skills",
 	} {
-		if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
+		if err := testutil.Symlink(t, target, filepath.Join(root, name)); err != nil {
 			t.Fatal(err)
 		}
 	}

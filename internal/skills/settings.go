@@ -3,6 +3,7 @@ package skills
 import (
 	"errors"
 	"fmt"
+	pathpkg "path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -78,7 +79,8 @@ func normalizeProjectDirectories(directories []ProjectDirectory) ([]ProjectDirec
 }
 
 func relativeProjectTemplatePath(path string) bool {
-	path = strings.TrimSpace(path)
+	// Use slash semantics even on Windows to expose disguised drive prefixes.
+	path = pathpkg.Clean(strings.ReplaceAll(strings.TrimSpace(path), `\`, "/"))
 	if strings.HasPrefix(path, "/") || strings.HasPrefix(path, `\`) || path == "~" || strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
 		return false
 	}

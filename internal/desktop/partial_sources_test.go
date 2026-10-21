@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"racomi/internal/testutil"
 	skillstore "racomi/internal/skills"
 )
 
@@ -46,7 +47,7 @@ func TestSourcePartialRefreshSynchronizesValidNeighborAndPreservesLocalSkill(t *
 	if err = os.WriteFile(filepath.Join(f.repo, "CLAUDE.md"), []byte("Source instructions\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err = os.Symlink("CLAUDE.md", filepath.Join(f.repo, "AGENTS.md")); err != nil {
+	if err = testutil.Symlink(t, "CLAUDE.md", filepath.Join(f.repo, "AGENTS.md")); err != nil {
 		t.Fatal(err)
 	}
 	f.write("skills/beta", "beta", "beta v2")
@@ -168,11 +169,11 @@ func TestSourceEmptyPriorCatalogPreservesInstalledSkippedSkills(t *testing.T) {
 				err = os.WriteFile(filepath.Join(f.repo, "skills", "alpha", "SKILL.md"), []byte("Malformed metadata\n"), 0644)
 			case "skill-directory-symlink":
 				if err = os.RemoveAll(filepath.Join(f.repo, "skills", "alpha")); err == nil {
-					err = os.Symlink("../../healthy/beta", filepath.Join(f.repo, "skills", "alpha"))
+					err = testutil.Symlink(t, "../../healthy/beta", filepath.Join(f.repo, "skills", "alpha"))
 				}
 			case "ancestor-directory-symlink":
 				if err = os.RemoveAll(filepath.Join(f.repo, "skills")); err == nil {
-					err = os.Symlink("healthy", filepath.Join(f.repo, "skills"))
+					err = testutil.Symlink(t, "healthy", filepath.Join(f.repo, "skills"))
 				}
 			}
 			if err != nil {

@@ -55,7 +55,8 @@ func projectCustomPath(root, input string) (stored, resolved string, err error) 
 		resolved, err = expandedTargetPath(input)
 		return resolved, resolved, err
 	}
-	stored = filepath.Clean(input)
+	// Store relative paths with portable separators for backups and cloud sync.
+	stored = filepath.ToSlash(filepath.Clean(input))
 	return stored, canonicalSystemPath(filepath.Join(root, stored)), nil
 }
 

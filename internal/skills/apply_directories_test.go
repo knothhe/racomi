@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"racomi/internal/testutil"
 )
 
 func projectWithDirectories(t *testing.T, store *Store, base string, directories []string, skills ...Skill) Target {
@@ -123,6 +125,7 @@ func TestSymlinkUpdatesModeConversionsAndRemoval(t *testing.T) {
 	source := candidate(t, base, "alpha", "one")
 	skill := install(t, store, source)[0]
 	settings := state(t, store).Settings
+	testutil.RequireSymlink(t)
 	settings.DeploymentMode = DeploymentSymlink
 	if err := store.SaveSettings(settings); err != nil {
 		t.Fatal(err)
@@ -164,6 +167,7 @@ func TestSymlinkUpdatesModeConversionsAndRemoval(t *testing.T) {
 			t.Fatalf("symlink did not convert to a regular directory: %v", err)
 		}
 	}
+	testutil.RequireSymlink(t)
 	settings.DeploymentMode = DeploymentSymlink
 	if err = store.SaveSettings(settings); err != nil {
 		t.Fatal(err)
@@ -187,6 +191,7 @@ func TestChangedManagedSymlinkCannotBeUpdatedRemovedOrAdopted(t *testing.T) {
 			store, base := newStore(t)
 			skill := install(t, store, candidate(t, base, "alpha", "original"))[0]
 			settings := state(t, store).Settings
+			testutil.RequireSymlink(t)
 			settings.DeploymentMode = DeploymentSymlink
 			if err := store.SaveSettings(settings); err != nil {
 				t.Fatal(err)
@@ -209,7 +214,7 @@ func TestChangedManagedSymlinkCannotBeUpdatedRemovedOrAdopted(t *testing.T) {
 			}
 			switch replacement {
 			case "foreign-link":
-				if err := os.Symlink(outside, deployed); err != nil {
+				if err := testutil.Symlink(t, outside, deployed); err != nil {
 					t.Fatal(err)
 				}
 			case "copied-directory":
@@ -221,7 +226,7 @@ func TestChangedManagedSymlinkCannotBeUpdatedRemovedOrAdopted(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err = os.Symlink(relative, deployed); err != nil {
+				if err = testutil.Symlink(t, relative, deployed); err != nil {
 					t.Fatal(err)
 				}
 			}

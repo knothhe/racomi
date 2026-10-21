@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"racomi/internal/testutil"
 )
 
 func TestProjectDirectoryTemplatesNormalizePersistAndClone(t *testing.T) {
@@ -23,8 +25,8 @@ func TestProjectDirectoryTemplatesNormalizePersistAndClone(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := []ProjectDirectory{
-		{ID: "project-dir-relative", Name: "团队技能", Path: filepath.Join("..", "shared", "skills")},
-		{ID: "project-dir-local", Name: "Local", Path: filepath.Join("custom", "skills")},
+		{ID: "project-dir-relative", Name: "团队技能", Path: "../shared/skills"},
+		{ID: "project-dir-local", Name: "Local", Path: "custom/skills"},
 	}
 	if !reflect.DeepEqual(state(t, store).Settings.CustomProjectDirectories, expected) {
 		t.Fatal("project templates were not normalized")
@@ -150,6 +152,9 @@ func TestProjectTemplateEditsAndDeletionLeaveExistingDeploymentsUntouched(t *tes
 			store, base := newStore(t)
 			skill := install(t, store, candidate(t, base, "alpha", "original"))[0]
 			settings := state(t, store).Settings
+			if mode == DeploymentSymlink {
+				testutil.RequireSymlink(t)
+			}
 			settings.DeploymentMode = mode
 			settings.CustomProjectDirectories = []ProjectDirectory{{ID: "project-dir-team", Name: "Team", Path: "team/skills"}}
 			settings.DefaultProjectDirectories = []string{"project-dir-team"}
@@ -296,6 +301,9 @@ func TestLegacyAbsoluteProjectTemplatesAndProjectSnapshotsRemainUsable(t *testin
 			absolute := filepath.Join(base, "legacy", "skills")
 			legacy := state(t, store)
 			legacy.Settings.DeploymentMode = mode
+			if mode == DeploymentSymlink {
+				testutil.RequireSymlink(t)
+			}
 			legacy.Settings.CustomProjectDirectories = []ProjectDirectory{{ID: "project-dir-legacy", Name: "Legacy", Path: absolute}}
 			legacy.Settings.DefaultProjectDirectories = []string{"project-dir-legacy"}
 			// Simulate a state written before SaveSettings required relative templates.

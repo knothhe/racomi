@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -170,6 +171,9 @@ func TestCheckUpdatesFetchesEveryRequestedRef(t *testing.T) {
 }
 
 func TestGitTransferTimeoutsKeepCancellationAndEffectiveBudget(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture uses a Unix shell executable")
+	}
 	// A synthetic Git executable lets the caller's deadline expire without
 	// network access or a five-minute wait. exec replaces the shell for cleanup.
 	dir := t.TempDir()
