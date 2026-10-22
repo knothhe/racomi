@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"racomi/internal/testutil"
 )
 
 func TestCustomProjectPathsResolvePersistAndCloneWithoutDeploying(t *testing.T) {
@@ -26,7 +28,7 @@ func TestCustomProjectPathsResolvePersistAndCloneWithoutDeploying(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectedCustom := []string{filepath.Join(".tool", "skills"), filepath.Join("..", "shared", "skills"), absolute, filepath.Join(home, "custom", "skills")}
+	expectedCustom := []string{".tool/skills", "../shared/skills", absolute, filepath.Join(home, "custom", "skills")}
 	expectedPaths := []string{filepath.Join(root, ".agents", "skills"), filepath.Join(root, ".tool", "skills"), filepath.Join(base, "shared", "skills"), absolute, filepath.Join(home, "custom", "skills")}
 	if !slices.Equal(target.CustomPaths, expectedCustom) || !slices.Equal(target.Paths, expectedPaths) || target.ProjectRoot != root || target.Path != expectedPaths[0] {
 		t.Fatalf("custom paths did not resolve against the project root: %+v", target)
@@ -67,6 +69,9 @@ func TestCustomOnlyProjectAppliesAndRetiresDirectoriesInBothModes(t *testing.T) 
 			store, base := newStore(t)
 			skill := install(t, store, candidate(t, base, "alpha", "original"))[0]
 			settings := state(t, store).Settings
+			if mode == DeploymentSymlink {
+				testutil.RequireSymlink(t)
+			}
 			settings.DeploymentMode = mode
 			if err := store.SaveSettings(settings); err != nil {
 				t.Fatal(err)
@@ -143,7 +148,7 @@ func TestCustomProjectPathsRejectOverlapDataDirectoryAndSymlinkParents(t *testin
 		t.Fatal(err)
 	}
 	link := filepath.Join(root, "linked")
-	if err := os.Symlink(outside, link); err != nil {
+	if err := testutil.Symlink(t, outside, link); err != nil {
 		t.Fatal(err)
 	}
 	for _, custom := range [][]string{{""}, {"  "}, {".agents/skills"}, {"foo", "foo/bar"}, {"../outside/skills", "../outside/skills/."}, {store.Root()}, {base}, {"/"}, {"linked/skills"}} {

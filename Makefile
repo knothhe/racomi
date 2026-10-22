@@ -1,3 +1,7 @@
+ifeq ($(OS),Windows_NT)
+include scripts/windows.mk
+else
+
 GO ?= go
 NPM ?= npm
 NODE ?= node
@@ -115,3 +119,5 @@ release-initial:
 
 run: build
 	./bin/racomi
+
+endif

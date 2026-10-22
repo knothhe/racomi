@@ -86,6 +86,12 @@ func extractPaths(parent context.Context, repo, revision, root string, paths []s
 		return nil, err
 	}
 	issues, archiveErr := unpackArchiveBudget(pipe, root, extractedBytes)
+	if archiveErr == nil {
+		// archive/tar stops at the end marker, before Git's block padding.
+		// Drain it before Wait: Windows pipes can fill with that padding and
+		// leave Git blocked on write while we wait for it to exit.
+		_, archiveErr = io.Copy(io.Discard, pipe)
+	}
 	if archiveErr != nil {
 		cancel()
 	}

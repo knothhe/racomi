@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"racomi/internal/testutil"
 )
 
 func writeLocalDeployment(t *testing.T, path, body string) {
@@ -28,6 +30,9 @@ func TestForceApplyOverwritesUnmanagedEntriesAndKeepsUnrelatedContent(t *testing
 				store, base := newStore(t)
 				skill := install(t, store, candidate(t, base, "alpha", "selected"))[0]
 				settings := state(t, store).Settings
+				if mode == DeploymentSymlink {
+					testutil.RequireSymlink(t)
+				}
 				settings.DeploymentMode = mode
 				if err := store.SaveSettings(settings); err != nil {
 					t.Fatal(err)
@@ -49,7 +54,7 @@ func TestForceApplyOverwritesUnmanagedEntriesAndKeepsUnrelatedContent(t *testing
 						t.Fatal(err)
 					}
 				case "foreign-link":
-					if err := os.Symlink(outside, old); err != nil {
+					if err := testutil.Symlink(t, outside, old); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -101,6 +106,9 @@ func TestForceApplyRepairsOrRemovesChangedManagedContent(t *testing.T) {
 				store, base := newStore(t)
 				skill := install(t, store, candidate(t, base, "alpha", "selected"))[0]
 				settings := state(t, store).Settings
+				if mode == DeploymentSymlink {
+					testutil.RequireSymlink(t)
+				}
 				settings.DeploymentMode = mode
 				if err := store.SaveSettings(settings); err != nil {
 					t.Fatal(err)
@@ -127,7 +135,7 @@ func TestForceApplyRepairsOrRemovesChangedManagedContent(t *testing.T) {
 					if err := os.Remove(deployed); err != nil {
 						t.Fatal(err)
 					}
-					if err := os.Symlink(outside, deployed); err != nil {
+					if err := testutil.Symlink(t, outside, deployed); err != nil {
 						t.Fatal(err)
 					}
 				} else {
@@ -180,7 +188,7 @@ func TestForceApplyReviewedRejectsChangedContentAndNewOverwritePaths(t *testing.
 				if err := os.RemoveAll(old); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.Symlink(outside, old); err != nil {
+				if err := testutil.Symlink(t, outside, old); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -197,7 +205,7 @@ func TestForceApplyReviewedRejectsChangedContentAndNewOverwritePaths(t *testing.
 				if err := os.Remove(old); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.Symlink(filepath.Join(base, "different"), old); err != nil {
+				if err := testutil.Symlink(t, filepath.Join(base, "different"), old); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -242,7 +250,7 @@ func TestForceApplyDoesNotReadOrDeleteNestedSymlinkDestinations(t *testing.T) {
 		t.Fatal(err)
 	}
 	link := filepath.Join(target.Path, "alpha", "external")
-	if err := os.Symlink(outside, link); err != nil {
+	if err := testutil.Symlink(t, outside, link); err != nil {
 		t.Fatal(err)
 	}
 	plan, err := store.Plan(target.ID)
@@ -301,7 +309,7 @@ func TestForceApplyStillBlocksDuplicateNamesDamagedObjectsAndUnsafeTargets(t *te
 		target := saveTarget(t, store, base, savePreset(t, store, "selected", skill))
 		outside := filepath.Join(base, "outside")
 		writeLocalDeployment(t, outside, "outside")
-		if err := os.Symlink(outside, target.Path); err != nil {
+		if err := testutil.Symlink(t, outside, target.Path); err != nil {
 			t.Fatal(err)
 		}
 		if err := store.ForceApply(target.ID); err == nil {
@@ -444,7 +452,7 @@ func TestForceApplyBatchRollsBackOverwrittenRemovedAndCaseRenamedEntries(t *test
 	if err = os.MkdirAll(global.Path, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err = os.Symlink(outside, filepath.Join(global.Path, "ALPHA")); err != nil {
+	if err = testutil.Symlink(t, outside, filepath.Join(global.Path, "ALPHA")); err != nil {
 		t.Fatal(err)
 	}
 	retired, err := store.SaveTarget(Target{Name: "retired", Kind: "global", Path: filepath.Join(base, "retired"), EnabledSkillIDs: []string{skills[2].ID}})

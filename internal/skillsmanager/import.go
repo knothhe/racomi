@@ -78,7 +78,11 @@ func Read(filename string, existing skillstore.State) (*Bundle, error) {
 		return nil, err
 	}
 	filename = filepath.Join(parent, filepath.Base(filename))
-	u := url.URL{Scheme: "file", Path: filename}
+	uriPath := filepath.ToSlash(filename)
+	if filepath.VolumeName(filename) != "" && !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	u := url.URL{Scheme: "file", Path: uriPath}
 	q := url.Values{"mode": {"ro"}, "_query_only": {"1"}, "_busy_timeout": {"3000"}}
 	u.RawQuery = q.Encode()
 	db, err := sql.Open("sqlite3", u.String())

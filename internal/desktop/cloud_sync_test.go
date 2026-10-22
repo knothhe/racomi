@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -48,7 +49,7 @@ func TestCloudSyncConfigurationStaysDeviceLocalAndRedacted(t *testing.T) {
 		}
 	}
 	info, err := os.Stat(filepath.Join(root, "cloud-sync-config.json"))
-	if err != nil || info.Mode().Perm() != 0600 {
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
 		t.Fatalf("credentials must have 0600 permissions: %v %v", info, err)
 	}
 	reopened, err := New(root)

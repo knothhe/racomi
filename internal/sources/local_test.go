@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"racomi/internal/testutil"
 	skillstore "racomi/internal/skills"
 )
 
@@ -60,7 +61,7 @@ func TestLocalPreviewSupportsSingleSkillAndReportsInvalidNeighbors(t *testing.T)
 	writeTestSkill(t, root, "alpha", "alpha", "Valid", "Alpha")
 	writeTestSkill(t, root, "linked", "linked", "Unsafe", "Linked")
 	writeTestSkill(t, root, "invalid", "invalid", "Invalid", "Invalid")
-	if err := os.Symlink(filepath.Join(root, "alpha", "SKILL.md"), filepath.Join(root, "linked", "link")); err != nil {
+	if err := testutil.Symlink(t, filepath.Join(root, "alpha", "SKILL.md"), filepath.Join(root, "linked", "link")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "invalid", "SKILL.md"), []byte("missing metadata"), 0644); err != nil {

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"racomi/internal/testutil"
 )
 
 func availabilityLink(skill string) string { return "https://skills.sh/team/repo/" + skill }
@@ -64,7 +66,7 @@ func TestCheckHubAvailabilityUsesNamesAndCanonicalDiscoveryWithoutPreviews(t *te
 func TestCheckHubAvailabilityReportsUnsafeAmbiguousAndInvalidContent(t *testing.T) {
 	repo := recoveryTestRepo(t)
 	writeTestSkill(t, repo, ".agents/skills/unsafe", "unsafe", "Unsafe asset", "Cannot install links")
-	if err := os.Symlink("SKILL.md", filepath.Join(repo, ".agents/skills/unsafe/linked.txt")); err != nil {
+	if err := testutil.Symlink(t, "SKILL.md", filepath.Join(repo, ".agents/skills/unsafe/linked.txt")); err != nil {
 		t.Fatal(err)
 	}
 	for _, location := range []string{".agents/skills/first", ".agents/skills/second"} {
@@ -157,7 +159,7 @@ func TestCheckHubAvailabilityDoesNotHideAmbiguityWhenOneMatchIsUnsafe(t *testing
 	for _, subpath := range []string{"skills/first", "skills/second"} {
 		writeTestSkill(t, repo, subpath, "impeccable", "Hub skill variant", "Content from "+subpath)
 	}
-	if err := os.Symlink("SKILL.md", filepath.Join(repo, "skills", "first", "linked.txt")); err != nil {
+	if err := testutil.Symlink(t, "SKILL.md", filepath.Join(repo, "skills", "first", "linked.txt")); err != nil {
 		t.Fatal(err)
 	}
 	client, _ := cachedHubRecoveryClient(t, repo)

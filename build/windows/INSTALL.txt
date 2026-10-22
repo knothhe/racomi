@@ -1,0 +1,25 @@
+racomi for Windows x64
+
+Requires Windows 10/11 x64 and Microsoft Edge WebView2 Runtime.
+If WebView2 is missing: https://developer.microsoft.com/microsoft-edge/webview2/
+Git is required to import or refresh Git sources.
+
+Verify the ZIP using PowerShell:
+  Get-FileHash .\racomi-*-x86_64-windows.zip -Algorithm SHA256
+Compare the result with the accompanying .sha256 file, then extract the ZIP
+and double-click racomi.exe. Keep the executable in a writable user folder.
+This build is unsigned; check the download source before opening it.
+
+To update, exit racomi and replace racomi.exe.
+To uninstall the portable build, exit racomi and delete the extracted files.
+User data and deployed skills are preserved.
+
+Source installation:
+  make install
+  make uninstall
+Default: %LOCALAPPDATA%\Programs\racomi\racomi.exe with a Start menu shortcut.
+Use APP_DIR to choose another installation directory.
+Exit the app before installing an update or uninstalling.
+
+Symbolic link deployment requires Windows Developer Mode or elevation.
+Use copy deployment if symbolic links are unavailable.

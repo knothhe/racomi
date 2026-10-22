@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"racomi/internal/testutil"
 )
 
 func writeHubSkillVariant(t *testing.T, repo, subpath, marker string) {
@@ -161,7 +163,7 @@ func TestHubSkillSelectionDoesNotReplaceUnsafePreferredSkill(t *testing.T) {
 	preferred := ".agents/skills/impeccable"
 	writeHubSkillVariant(t, repo, preferred, "Preferred skill with an unsupported asset")
 	writeHubSkillVariant(t, repo, ".claude/skills/impeccable", "Different lower priority variant")
-	if err := os.Symlink("reference.txt", filepath.Join(repo, filepath.FromSlash(preferred), "linked.txt")); err != nil {
+	if err := testutil.Symlink(t, "reference.txt", filepath.Join(repo, filepath.FromSlash(preferred), "linked.txt")); err != nil {
 		t.Fatal(err)
 	}
 	testGit(t, repo, "add", ".")
@@ -191,7 +193,7 @@ func TestHubSkillSelectionIgnoresUnrelatedSymlinkMarker(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(unrelated, "document.md"), []byte("Unrelated linked document"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("document.md", filepath.Join(unrelated, "SKILL.md")); err != nil {
+	if err := testutil.Symlink(t, "document.md", filepath.Join(unrelated, "SKILL.md")); err != nil {
 		t.Fatal(err)
 	}
 	testGit(t, repo, "add", ".")
@@ -251,7 +253,7 @@ func TestHubSkillSelectionDoesNotHideAmbiguityWhenOneMatchIsUnsafe(t *testing.T)
 	for _, subpath := range []string{"skills/first", "skills/second"} {
 		writeHubSkillVariant(t, repo, subpath, "Variant from "+subpath)
 	}
-	if err := os.Symlink("reference.txt", filepath.Join(repo, "skills", "first", "linked.txt")); err != nil {
+	if err := testutil.Symlink(t, "reference.txt", filepath.Join(repo, "skills", "first", "linked.txt")); err != nil {
 		t.Fatal(err)
 	}
 	testGit(t, repo, "add", ".")

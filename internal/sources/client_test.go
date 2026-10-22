@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"racomi/internal/testutil"
 	skillstore "racomi/internal/skills"
 )
 
@@ -386,7 +387,7 @@ func TestRepositorySymlinkAndInvalidSkillAreSkipped(t *testing.T) {
 		t.Run(invalid, func(t *testing.T) {
 			repo := testRepo(t)
 			if invalid == "symlink" {
-				if err := os.Symlink("/etc/passwd", filepath.Join(repo, "skills", "alpha", "outside")); err != nil {
+				if err := testutil.Symlink(t, "/etc/passwd", filepath.Join(repo, "skills", "alpha", "outside")); err != nil {
 					t.Fatal(err)
 				}
 			} else {

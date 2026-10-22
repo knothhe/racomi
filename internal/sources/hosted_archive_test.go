@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -99,7 +100,7 @@ func TestExtractHostedArchiveLayoutsAndAssets(t *testing.T) {
 					}
 				}
 				info, err := os.Stat(filepath.Join(root, "scripts", "run.sh"))
-				if err != nil || info.Mode().Perm() != 0755 {
+				if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0755) {
 					t.Fatalf("executable permissions: %v, error %v", info, err)
 				}
 				info, err = os.Stat(filepath.Join(root, "empty"))

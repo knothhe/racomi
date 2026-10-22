@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"racomi/internal/testutil"
 )
 
 func testDir(t *testing.T) string {
@@ -311,6 +313,9 @@ func TestContentAddressingAndExecutableBits(t *testing.T) {
 	if err := os.Chmod(filepath.Join(first.Path, "SKILL.md"), 0755); err != nil {
 		t.Fatal(err)
 	}
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows ACLs do not expose Unix executable permission bits")
+	}
 	hash, err := HashDir(first.Path)
 	if err != nil || hash == skills[0].ContentHash {
 		t.Fatal("executable bits did not affect content hash", err)
@@ -345,14 +350,14 @@ func TestPathAndSymlinkProtection(t *testing.T) {
 		t.Fatal(err)
 	}
 	link := filepath.Join(base, "linked")
-	if err := os.Symlink(outside, link); err != nil {
+	if err := testutil.Symlink(t, outside, link); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.SaveTarget(Target{Name: "linked", Kind: "global", Path: filepath.Join(link, "skills")}); err == nil {
 		t.Fatal("accepted symlink parent")
 	}
 	source := candidate(t, base, "alpha", "alpha")
-	if err := os.Symlink(filepath.Join(outside, "secret"), filepath.Join(source.Path, "unsafe")); err != nil {
+	if err := testutil.Symlink(t, filepath.Join(outside, "secret"), filepath.Join(source.Path, "unsafe")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Install([]Candidate{source}); err == nil {
@@ -370,7 +375,7 @@ func TestPathAndSymlinkProtection(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(target.Path, "alpha")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(outside, filepath.Join(target.Path, "alpha")); err != nil {
+	if err := testutil.Symlink(t, outside, filepath.Join(target.Path, "alpha")); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Apply(target.ID); err == nil {
@@ -380,7 +385,7 @@ func TestPathAndSymlinkProtection(t *testing.T) {
 	if err := os.RemoveAll(target.Path); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(outside, target.Path); err != nil {
+	if err := testutil.Symlink(t, outside, target.Path); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Apply(target.ID); err == nil {
@@ -512,7 +517,7 @@ func TestJSONIndexIsCompleteAndPrivate(t *testing.T) {
 		t.Fatal("bad index", err)
 	}
 	info, err := os.Stat(filepath.Join(store.Root(), "state.json"))
-	if err != nil || info.Mode().Perm() != 0600 {
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
 		t.Fatal("index should be private", err)
 	}
 }
@@ -542,7 +547,7 @@ func TestMacOSSystemAliasAndUserSymlinkRemainDistinct(t *testing.T) {
 		t.Fatal("aliased application failed")
 	}
 	link := filepath.Join(base, "custom-link")
-	if err := os.Symlink(target.Path, link); err != nil {
+	if err := testutil.Symlink(t, target.Path, link); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.SaveTarget(Target{Name: "user link", Kind: "global", Path: link}); err == nil {

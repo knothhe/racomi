@@ -12,19 +12,21 @@ const projectMakefile = fileURLToPath(new URL('../Makefile', import.meta.url));
 const jsonText = value => JSON.stringify(value, null, 2) + '\n';
 const nodeCheck = source => [process.execPath, '--input-type=commonjs', '-e', source];
 const checkMarker = nodeCheck("require('node:fs').writeFileSync('.git/check-ran', 'yes')");
-const shellQuote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+const shellQuote = value => process.platform === 'win32' ? '"' + value.replaceAll('"', '\\"') + '"' : "'" + value.replaceAll("'", "'\\''") + "'";
 
 function fixture(t, { versionFile = 'frontend/package.json', lockVersion = 3, shrinkwrap = false, config = {} } = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'racomi-release-test-'));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const repo = path.join(base, 'work');
   const remote = path.join(base, 'remote.git');
+  const emptyGitConfig = path.join(base, 'empty.gitconfig');
+  fs.writeFileSync(emptyGitConfig, '');
   fs.mkdirSync(repo);
   // Ignore the user's Git configuration and environment; every push is to this
   // fixture's local bare repository, and only fixture commits/tags are created.
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')));
   Object.assign(env, {
-    GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: emptyGitConfig, GIT_CONFIG_NOSYSTEM: '1',
     GIT_AUTHOR_NAME: 'Release test', GIT_AUTHOR_EMAIL: 'release-test@example.invalid',
     GIT_COMMITTER_NAME: 'Release test', GIT_COMMITTER_EMAIL: 'release-test@example.invalid',
   });
@@ -261,18 +263,26 @@ for (const versionFile of ['../package.json', '/tmp/package.json', './frontend/p
 for (const symlink of ['manifest', 'directory', 'lock', 'dangling-lock']) {
   test(`rejects a symlinked ${symlink} before writing versions`, t => {
     const f = fixture(t);
+    const createSymlink = (destination, name, type) => {
+      try { fs.symlinkSync(destination, name, type); return true; }
+      catch (error) {
+        if (process.platform !== 'win32' || error.code !== 'EPERM') throw error;
+        t.skip('symbolic links require Windows Developer Mode or elevation');
+        return false;
+      }
+    };
     if (symlink === 'directory') {
       const destination = path.join(f.base, 'outside-frontend');
       f.git('rm', '--cached', '--', f.versionFile, ...f.lockFiles);
       fs.renameSync(path.join(f.repo, 'frontend'), destination);
-      fs.symlinkSync(destination, path.join(f.repo, 'frontend'));
+      if (!createSymlink(destination, path.join(f.repo, 'frontend'), 'dir')) return;
       f.commit('frontend');
     } else {
       const name = symlink === 'manifest' ? f.versionFile : f.lockFiles[0];
       const destination = path.join(f.base, 'outside.json');
       if (symlink !== 'dangling-lock') fs.writeFileSync(destination, f.read(name));
       fs.unlinkSync(path.join(f.repo, name));
-      fs.symlinkSync(destination, path.join(f.repo, name));
+      if (!createSymlink(destination, path.join(f.repo, name), 'file')) return;
       f.commit(name);
     }
     const result = f.release(['patch', '--apply'], false);
@@ -307,9 +317,17 @@ test('root VERSION remains supported without a Node manifest', t => {
 
 test('project Make release and release-initial targets use preview mode by default', t => {
   const f = fixture(t);
-  const releaseCommand = `RELEASE_COMMAND=${shellQuote(process.execPath)} ${shellQuote(releaseScript)}`;
+  // Keep the recipe's script path inside the temporary fixture. Native Windows
+  // make can encode non-ASCII absolute recipe arguments using the ANSI codepage.
+  const fixtureReleaseScript = path.join(f.base, 'release.mjs');
+  fs.copyFileSync(releaseScript, fixtureReleaseScript);
+  // Node resolves the module URL through macOS /var -> /private/var. Match that
+  // path in argv so the copied script's CLI entry-point check runs main().
+  const releaseCommand = `RELEASE_COMMAND=${shellQuote(process.execPath)} ${shellQuote(fs.realpathSync(fixtureReleaseScript))}`;
   for (const [target, releaseType] of [['release', 'upgrade'], ['release-initial', 'initial']]) {
-    const plan = JSON.parse(f.run('make', ['--silent', '-f', projectMakefile, target, 'VERSION_BUMP=minor', releaseCommand]).stdout);
+    const result = f.run('make', ['--silent', '-I', path.dirname(projectMakefile), '-f', projectMakefile, target, 'VERSION_BUMP=minor', releaseCommand]);
+    assert.notEqual(result.stdout.trim(), '', `${target} must execute the release CLI and print its preview`);
+    const plan = JSON.parse(result.stdout);
     assert.equal(plan.mode, 'preview');
     assert.equal(plan.release_type, releaseType);
     assert.equal(plan.target, target === 'release' ? '1.3.0' : '1.2.3');
