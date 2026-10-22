@@ -20,6 +20,18 @@
 .source-footer{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:auto;font-size:11px;color:var(--muted)}.source-footer .list-status{font-size:10px;white-space:nowrap}.source-footer .list-status.warning,.source-footer .list-status.error{padding:2px 6px;border-radius:4px}
 .source-grid-empty{grid-column:1/-1;padding:30px;color:var(--muted);text-align:center}
 @media(max-width:760px){.layout.sources.has-detail{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(180px,1fr) minmax(200px,1fr)}.sources-browser{overflow:auto}.source-grid{flex:none;overflow:visible}.sources-browser .list-toolbar{position:sticky;top:0;z-index:1;background:var(--bg);padding-bottom:10px}}
+
+/* Availability updates occupy one stable line on each existing result card. */
+.hub-availability .source-card{gap:12px;min-height:146px}
+.hub-availability .source-copy-heading{display:flex;align-items:center;gap:6px;min-width:0}
+.hub-availability .source-copy-heading strong{flex:1;min-width:0}
+.hub-availability .source-copy-heading .badge{flex:none}
+.hub-skill-status{display:flex;align-items:center;gap:5px;min-height:18px;margin:0;color:var(--muted);font-size:11px;line-height:18px}
+.hub-skill-status.missing,.hub-skill-status.unavailable{color:var(--amber)}
+.hub-skill-status .status-symbol{flex:none;width:12px;text-align:center}
+.hub-availability .source-footer{flex-wrap:wrap;align-content:flex-end;min-height:calc(1.4em + 7px + 25px);row-gap:7px}
+.hub-availability .source-footer .button{text-decoration:none;margin-left:auto}
+.hub-availability .source-card:focus-within{border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -41,5 +53,32 @@
 <span>✓ 就绪</span>
 <span>本地工作空间</span>
 </footer>
+
+<script>
+if (new URLSearchParams(location.search).get('state') === 'availability') {
+  document.title = '发现 · 技能可用性';
+  document.querySelector('.source-grid').classList.add('hub-availability');
+  const cards = [
+    { name: 'polish', source: 'pbakaus/impeccable', installs: '18.4K', state: 'missing', installed: true },
+    { name: 'audit', source: 'pbakaus/impeccable', installs: '9.6K', state: 'missing' },
+    { name: 'impeccable', source: 'pbakaus/impeccable', installs: '3.3K', state: 'available' },
+    { name: 'find-skills', source: 'vercel-labs/skills', installs: '24.6K', state: 'checking' },
+    { name: 'web-design-guidelines', source: 'vercel-labs/agent-skills', installs: '5.4K', state: 'unknown' },
+    { name: 'team-guidelines', source: 'team/design', installs: '504', state: 'unavailable' },
+  ];
+  const statuses = {
+    missing: { icon: '⚠', text: '上游已移除或改名', detail: '当前仓库版本中未找到此技能。可查看仓库当前技能，并手动选择要导入的内容。' },
+    unavailable: { icon: '⚠', text: '暂不可用', detail: '此技能的内容暂不可用。可查看仓库中的其他技能。' },
+    available: { icon: '✓', text: '可正常预览', detail: '已在当前仓库版本中找到此技能。' },
+    checking: { icon: '◌', text: '核验中', detail: '正在检查当前仓库中的技能，可继续预览。' },
+    unknown: { icon: 'ⓘ', text: '未能核验', detail: '暂时无法读取仓库，技能状态尚未确定。可继续尝试预览。' },
+  };
+  const query = new URLSearchParams({ state: 'repository-loading', theme: document.documentElement.dataset.theme });
+  document.querySelector('.source-grid').innerHTML = cards.map((card, index) => {
+    const status = statuses[card.state];
+    return `<article class="source-card search-result" tabindex="-1"><span class="source-top"><span class="source-icon">▣</span><span class="source-copy"><span class="source-copy-heading"><strong>${card.name}</strong>${card.installed ? '<span class="badge green">✓ 已安装</span>' : ''}</span><small>${card.source}</small></span></span><p class="hub-skill-status ${card.state}" id="availability-${index}" title="${status.detail}"><span class="status-symbol" aria-hidden="true">${status.icon}</span>${status.text}</p><span class="source-footer"><span>↓ ${card.installs}</span>${card.state === 'missing' ? `<a class="button" href="discover-preview-error.html?${query}" aria-describedby="availability-${index}">查看仓库当前技能</a>` : `<button class="button" aria-describedby="availability-${index}">${card.state === 'unavailable' ? '查看仓库当前技能' : '＋ 预览'}</button>`}</span></article>`;
+  }).join('');
+}
+</script>
 </body>
 </html>

@@ -19,6 +19,14 @@ type SkillListPage struct {
 	Page    int            `json:"page"`
 }
 
+type HubAvailability struct {
+	URL       string `json:"url"`
+	State     string `json:"state"`
+	Revision  string `json:"revision"`
+	CheckedAt string `json:"checkedAt"`
+	Reason    string `json:"reason"`
+}
+
 type CandidateInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`

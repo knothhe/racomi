@@ -71,6 +71,7 @@ const backendExact = new Map(Object.entries(backendMessages).flatMap(([key, tran
 const backendReasonTemplates = new Set([
   "repository download timed out after {0} seconds: {1}",
   "repository connection timed out after {0} seconds: {1}",
+  "skills.sh skill {0} is unavailable: {1}",
   "unsupported skill content at {0}: {1}",
   "skipped repository entry {0}: {1}",
   "skill {0} was skipped during refresh: {1}",

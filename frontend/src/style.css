@@ -133,7 +133,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px;
 .workspace[data-page="skills"], .workspace[data-page="sources"], .workspace[data-page="discover"] { overflow: hidden; }
 .page-content[data-page="skills"], .page-content[data-page="sources"], .page-content[data-page="discover"] { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
 .page-content[data-page="skills"] > .page-heading, .page-content[data-page="sources"] > .page-heading, .page-content[data-page="discover"] > .page-heading, .skills-controls { flex: none; }
-.page-content[data-page="discover"] { max-width: none; }
+.page-content:is([data-page="skills"], [data-page="sources"], [data-page="presets"], [data-page="projects"], [data-page="global"], [data-page="discover"]) { max-width: none; }
 .page-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px 16px; min-height: 36px; margin-bottom: 12px; }
 .page-heading > div:first-child { min-width: 0; }
 .page-section-title { font-size: 14px; font-weight: 600; letter-spacing: -.15px; margin-bottom: 3px; }
@@ -313,6 +313,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .document-toggle[aria-checked="true"] .document-switch { background: var(--accent); }
 .document-toggle[aria-checked="true"] .document-switch::after { transform: translateX(12px); background: var(--accent-fg); }
 .skill-document { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--card-2); color: var(--fg-2); user-select: text; }
+.skill-document > .markdown-body { max-width: 100ch; margin-inline: auto; }
 .document-raw, .document-raw code { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 11.5px/1.7 var(--code); tab-size: 2; }
 .document-error { display: flex; align-items: flex-start; flex-direction: column; gap: 10px; padding: 12px 0; font-size: 12px; }
 .document-error strong { color: var(--red); font-weight: 500; }
@@ -360,6 +361,10 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .result-footer { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-left: auto; flex: none; }
 .result-footer > span { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .search-result > .unsupported-reason { font: 11px/1.5 var(--font); color: var(--amber); flex-basis: 100%; order: 4; padding-left: 34px; }
+.search-result > .hub-skill-status { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; min-height: 18px; margin: 0; color: var(--muted); font-size: 11px; line-height: 18px; }
+.search-result > .hub-skill-status:is(.missing, .unavailable) { color: var(--amber); }
+.hub-skill-status [data-hub-status-symbol] { display: flex; align-items: center; flex: none; width: 12px; }
+.hub-skill-status .icon { width: 12px; height: 12px; }
 .preview-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 16px; overflow: auto; overscroll-behavior: contain; }
 .preview-panel > :not(.selection-list) { flex: none; }
 .preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
@@ -373,6 +378,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .preview-elapsed { color: var(--accent); font-variant-numeric: tabular-nums; }
 .preview-request .button { align-self: flex-start; }
 .preview-request-error { padding: 12px; border-radius: 8px; background: var(--red-soft); color: var(--red); line-height: 1.65; }
+.preview-recovery-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.preview-recovery-note { margin-bottom: 12px; padding: 10px 12px; border-radius: 8px; background: var(--amber-soft); color: var(--amber); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
 .preview-error-details { color: var(--muted); font-size: 11px; }
 .preview-error-details summary { cursor: pointer; }
 .preview-error-details pre { margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.65 var(--code); }
@@ -1016,6 +1023,11 @@ html[data-nav-layout="side"] .app-header { padding-left: 20px; }
 :is(.side-edge, .workspace-split-resizer).is-resizing::before { opacity: 0; transition: none; }
 :is(.side-edge, .workspace-split-resizer).is-resizing::after { opacity: 1; }
 body.workspace-split-drag, body.workspace-split-drag * { cursor: col-resize !important; user-select: none !important; }
+/* Wide workspaces give the reader room without stretching the skill list. */
+@container workspace (min-width: 1200px) {
+  .page-content:is([data-page="skills"], [data-page="sources"], [data-page="presets"], [data-page="projects"], [data-page="global"], [data-page="discover"]) { padding-inline: 24px; }
+  .skills-layout { grid-template-columns: clamp(360px, 36%, 640px) minmax(0, 1fr); }
+}
 @container workspace (min-width: 761px) {
   [data-workspace-split]:not([data-workspace-split="projects"]) { grid-template-columns: var(--workspace-columns); }
 }
@@ -1228,6 +1240,12 @@ input.settings-toggle:checked::after { transform: translateX(12px); }
 .result-installs, .result-installed { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
 .result-installs .icon, .result-installed .icon { width: 12px; height: 12px; }
 .search-result > .unsupported-reason { flex-basis: auto; order: 0; padding-left: 0; }
+.search-result[data-hub-url] { gap: 12px; min-height: 146px; }
+.search-result[data-hub-url] > .hub-skill-status { flex: 0 0 auto; padding-left: 0; }
+/* Reserve a count line and button line before availability changes the action. */
+.search-result[data-hub-url] .result-footer { flex-wrap: wrap; align-content: flex-end; min-height: calc(1.4em + 7px + 25px); row-gap: 7px; font-size: 11px; }
+.search-result[data-hub-url] .result-actions { flex-wrap: wrap; justify-content: flex-end; min-width: 0; max-width: 100%; margin-left: auto; }
+.search-result[data-hub-url] .result-heading strong { flex: 1; min-width: 0; }
 .discover-content.has-preview { grid-template-columns: minmax(0, 1.2fr) minmax(280px, 1fr); }
 @container workspace (max-width: 720px) {
   .discover-content.has-preview { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(180px, 1fr) minmax(200px, 1fr); }

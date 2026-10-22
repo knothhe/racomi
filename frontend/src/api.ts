@@ -77,6 +77,7 @@ export interface Preview {
   skipped?: { subpath: string; reason: string }[];
 }
 export interface SearchResult { name: string; slug: string; source: string; installs: number; url: string; supported?: boolean; unsupportedReason?: string }
+export interface HubAvailability { url: string; state: "available" | "missing" | "unavailable" | "unknown"; revision: string; checkedAt: string; reason: string }
 export interface SkillListPage { skills: SearchResult[]; total: number; hasMore: boolean; page: number }
 export interface Update { skillId: string; revision: string; summary: string; available: boolean; removed: boolean; error: string }
 export interface ApplyPlan {
@@ -118,7 +119,9 @@ export const api = {
   saveSettingsPatch: (patch: Partial<AppSettings>, onlyMissing = false) => invoke<AppState>("SaveSettingsPatch", patch, onlyMissing),
   search: (query: string) => invoke<SearchResult[]>("Search", query),
   listSkills: (page: number) => invoke<SkillListPage>("ListSkills", page),
+  checkHubAvailability: (inputs: string[]) => invoke<HubAvailability[]>("CheckHubAvailability", inputs),
   preview: (source: string, ref: string, subpath: string) => invoke<Preview>("Preview", source, ref, subpath),
+  previewHubRepository: (source: string, ref: string, subpath: string) => invoke<Preview>("PreviewHubRepository", source, ref, subpath),
   previewLocal: (path: string) => invoke<Preview>("PreviewLocal", path),
   install: (id: string, paths: string[]) => invoke<AppState>("Install", id, paths),
   saveSource: (source: Source, expected: Source | null = null) => invoke<AppState>("SaveSourceChecked", source, expected),

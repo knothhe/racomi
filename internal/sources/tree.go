@@ -110,15 +110,18 @@ func (entry repositoryEntry) regular() bool {
 }
 
 type skillExtraction struct {
-	marker   repositoryEntry
-	files    []int
-	bytes    int64
-	count    int
-	blocked  bool
-	priority bool
+	marker        repositoryEntry
+	name          string
+	files         []int
+	bytes         int64
+	count         int
+	blocked       bool
+	priority      bool
+	validMetadata bool
 }
 
-func planSkillExtraction(ctx context.Context, repo string, entries []repositoryEntry, issues []repositoryIssue, subpath, skill string, priorityPaths ...string) ([]string, []repositoryIssue, error) {
+func planSkillExtraction(ctx context.Context, repo string, entries []repositoryEntry, issues []repositoryIssue, spec sourceSpec, priorityPaths ...string) ([]string, []repositoryIssue, string, error) {
+	subpath, skill := spec.subpath, spec.skill
 	roots, issues := discoverSkillRoots(entries, issues, subpath)
 	if len(priorityPaths) > 0 {
 		// A scoped discovery can later register a wider source. Rebuilding its
@@ -135,24 +138,43 @@ func planSkillExtraction(ctx context.Context, repo string, entries []repositoryE
 	// skill must not consume the budget needed by a healthy neighbor.
 	metadataIssues, err := inspectSkillMetadata(ctx, repo, roots, skill)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 	issues = append(issues, metadataIssues...)
-	files, issues := allocateSkillExtraction(entries, issues, roots)
 	if skill != "" {
-		matches := 0
-		for _, root := range roots {
-			if root.priority && !root.blocked {
-				matches++
+		prioritizeHubSkillRoots(roots, subpath)
+	} else if spec.hubRepository {
+		prioritizeHubRepositoryRoots(roots, subpath)
+	}
+	files, issues := allocateSkillExtraction(entries, issues, roots)
+	selectedPath := ""
+	if skill != "" {
+		matches := make([]string, 0)
+		blocked := make([]string, 0)
+		for rootPath, root := range roots {
+			if root.priority {
+				if root.blocked {
+					blocked = append(blocked, rootPath)
+				} else {
+					matches = append(matches, rootPath)
+				}
 			}
 		}
 		// Budget skips cannot turn an ambiguous skills.sh selector into an
-		// apparently unique match. Count before any files are materialized.
-		if matches != 1 {
-			return nil, nil, fmt.Errorf("skills.sh skill %q did not match exactly one repository skill", skill)
+		// apparently unique match. Unsafe content cannot remove an identity
+		// from that ambiguity either. Count before files are materialized.
+		if len(matches)+len(blocked) > 1 {
+			return nil, nil, "", ambiguousHubSkillError(skill, append(matches, blocked...))
 		}
+		if len(matches) == 0 {
+			if len(blocked) > 0 {
+				return nil, nil, "", blockedHubSkillError(skill, blocked, issues)
+			}
+			return nil, nil, "", missingHubSkillError(skill)
+		}
+		selectedPath = matches[0]
 	}
-	return files, issues, nil
+	return files, issues, selectedPath, nil
 }
 
 func discoverSkillRoots(entries []repositoryEntry, issues []repositoryIssue, subpath string) (map[string]*skillExtraction, []repositoryIssue) {
@@ -271,7 +293,15 @@ func allocateSkillExtraction(entries []repositoryEntry, issues []repositoryIssue
 func inspectSkillMetadata(parent context.Context, repo string, roots map[string]*skillExtraction, selected string) ([]repositoryIssue, error) {
 	markers := make([]*skillExtraction, 0, len(roots))
 	for _, root := range roots {
-		if root.priority && root.marker.regular() && root.marker.Size <= 1<<20 {
+		if !root.priority {
+			continue
+		}
+		if selected != "" {
+			// Unreadable markers can only match their directory name. An
+			// unrelated symlink must not outrank a readable name match.
+			root.priority = path.Base(path.Dir(root.marker.Path)) == selected
+		}
+		if root.marker.regular() && root.marker.Size <= 1<<20 {
 			markers = append(markers, root)
 		}
 	}
@@ -317,6 +347,11 @@ func inspectSkillMetadata(parent context.Context, repo string, roots map[string]
 			break
 		}
 		name, _, metadataErr := metadata(body[:len(body)-1])
+		root.name = name
+		if metadataErr != nil {
+			root.name = hubAvailabilityMetadataName(body[:len(body)-1])
+		}
+		root.validMetadata = metadataErr == nil
 		if metadataErr != nil {
 			root.blocked = true
 			issues = append(issues, repositoryIssue{Path: root.marker.Path, Reason: metadataErr.Error(), SkillOnly: true})
@@ -324,7 +359,7 @@ func inspectSkillMetadata(parent context.Context, repo string, roots map[string]
 		// A skills.sh name may match the frontmatter or the directory. Scope
 		// selection retains its original priority when there is no name selector.
 		if selected != "" {
-			root.priority = name == selected || path.Base(path.Dir(root.marker.Path)) == selected
+			root.priority = root.name == selected || path.Base(path.Dir(root.marker.Path)) == selected
 		}
 	}
 	if err != nil {

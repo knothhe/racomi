@@ -12,6 +12,12 @@ const messages: ReadonlyArray<readonly [string, string, string, string]> = [
   ["Git operation timed out or was canceled: {0}", "Git operation timed out or was canceled. Details: {0}", "Git 操作超时或已取消。详情：{0}", "Git 操作逾時或已取消。詳情：{0}"],
   ["context deadline exceeded", "The time limit was reached", "已达到等待时限", "已達等待時限"],
   ["context canceled", "The request was canceled", "请求已取消", "請求已取消"],
+  ["skills.sh skill {0} was not found in the current repository revision; the index may be outdated or the skill may have been renamed or removed; preview the repository to see available skills", "skills.sh skill {0} was not found in the current repository revision. The index may be outdated, or the skill may have been renamed or removed. Preview the repository to see available skills.", "当前仓库版本中未找到 skills.sh 技能 {0}。索引可能已过期，或技能已改名、移除。请预览仓库查看可用技能。", "目前儲存庫版本中找不到 skills.sh 技能 {0}。索引可能已過期，或技能已改名、移除。請預覽儲存庫查看可用技能。"],
+  ["skills.sh skill {0} matches multiple repository skills: {1}; specify a skill subdirectory", "skills.sh skill {0} matches multiple repository skills: {1}. Specify a skill subdirectory.", "skills.sh 技能 {0} 匹配到多个仓库技能：{1}。请指定技能子目录。", "skills.sh 技能 {0} 符合多個儲存庫技能：{1}。請指定技能子目錄。"],
+  ["skills.sh skill {0} is unavailable: {1}", "skills.sh skill {0} is unavailable: {1}", "skills.sh 技能 {0} 不可用：{1}", "skills.sh 技能 {0} 無法使用：{1}"],
+  ["the selected skill could not be read", "The selected skill could not be read", "无法读取所选技能", "無法讀取所選技能"],
+  ["enter a Git-backed skills.sh skill link", "Enter a Git-backed skills.sh skill link", "请输入来自 Git 仓库的 skills.sh 技能链接", "請輸入來自 Git 儲存庫的 skills.sh 技能連結"],
+  ["skills.sh skill {0} did not match exactly one repository skill", "skills.sh skill {0} could not be uniquely matched to a repository skill. Preview the repository to see available skills.", "skills.sh 技能 {0} 未能唯一匹配仓库中的技能。请预览仓库查看可用技能。", "skills.sh 技能 {0} 無法唯一對應到儲存庫中的技能。請預覽儲存庫查看可用技能。"],
 
   ["preset changed or was deleted while editing; reopen the editor and review the latest version", "The preset changed or was deleted while you were editing. Reopen the editor and review the latest version.", "编辑期间预设已变更或删除，请重新打开编辑器并检查最新版本。", "編輯期間預設已變更或刪除，請重新開啟編輯器並檢查最新版本。"],
   ["source changed or was deleted while editing; reopen the editor and review the latest version", "The source changed or was deleted while you were editing. Reopen the editor and review the latest version.", "编辑期间来源已变更或删除，请重新打开编辑器并检查最新版本。", "編輯期間來源已變更或刪除，請重新開啟編輯器並檢查最新版本。"],

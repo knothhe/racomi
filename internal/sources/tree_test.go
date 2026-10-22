@@ -130,10 +130,10 @@ func TestExplicitScopeAndSkillNameGetPreviewBudgetFirst(t *testing.T) {
 
 func TestSkillSelectorAmbiguityCannotBeHiddenByPreviewBudget(t *testing.T) {
 	repo := testRepo(t)
-	writeTestSkill(t, repo, "a/wanted", "other", "Directory name match", "Other")
-	writeTestSkill(t, repo, "z/directory", "wanted", "Frontmatter name match", "Wanted")
-	writeLargeTestFile(t, filepath.Join(repo, "a", "wanted", "asset.bin"), 60<<20)
-	writeLargeTestFile(t, filepath.Join(repo, "z", "directory", "asset.bin"), 60<<20)
+	writeTestSkill(t, repo, "skills/a/wanted", "other", "Directory name match", "Other")
+	writeTestSkill(t, repo, "skills/z/directory", "wanted", "Frontmatter name match", "Wanted")
+	writeLargeTestFile(t, filepath.Join(repo, "skills", "a", "wanted", "asset.bin"), 60<<20)
+	writeLargeTestFile(t, filepath.Join(repo, "skills", "z", "directory", "asset.bin"), 60<<20)
 	testGit(t, repo, "add", ".")
 	testGit(t, repo, "commit", "-m", "Add ambiguous skills.sh matches exceeding combined budget")
 	client := New(t.TempDir())
@@ -141,7 +141,7 @@ func TestSkillSelectorAmbiguityCannotBeHiddenByPreviewBudget(t *testing.T) {
 	client.mu.Lock()
 	_, err := client.previewLocked(context.Background(), spec, true)
 	client.mu.Unlock()
-	if err == nil || !strings.Contains(err.Error(), "did not match exactly one repository skill") {
+	if err == nil || !strings.Contains(err.Error(), "matches multiple repository skills") {
 		t.Fatalf("budget skip hid the ambiguous skills.sh name: %v", err)
 	}
 	if len(client.previews) != 0 {

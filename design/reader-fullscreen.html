@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>技能 · 全屏自适应</title><link rel="stylesheet" href="board.css">
+<script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'dark'</script>
+<style>
+.page{max-width:none}.layout{grid-template-rows:minmax(0,1fr)}
+.library{display:flex;flex-direction:column;overflow:hidden}.list{flex:1;min-height:0;overflow:auto}
+.list-row>strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:500}.origin{flex:none;width:34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.search{flex:1;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card-2);margin:0 8px}.controls>span:last-child{margin-left:auto}
+.document{padding:16px;min-width:0}.reader{max-width:100ch;margin:0 auto;overflow-wrap:anywhere;font-size:12.5px;line-height:1.75}
+.reader h1{font-size:21px;margin:0 0 16px}.reader p{margin:0 0 16px}.reader table{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse;margin-bottom:16px;font-size:12px}
+.reader th,.reader td{min-width:8ch;padding:7px 10px;border:1px solid var(--line);vertical-align:top;text-align:left;overflow-wrap:normal;word-break:normal}.reader th{background:var(--pill)}.reader code{font:11px/1.6 var(--code);background:var(--pill);border-radius:4px;padding:2px 4px;overflow-wrap:normal}
+@media(min-width:1200px){.page{padding-inline:24px}.layout{grid-template-columns:clamp(360px,36%,640px) minmax(0,1fr)}}
+@media(max-width:760px){.layout{grid-template-rows:repeat(2,minmax(0,1fr))}.origin{width:30%}.document{padding:12px}}
+</style></head>
+<body>
+<header class="header"><span class="brand">◈ racomi</span><nav class="nav"><span>发现</span><span>来源</span><span class="active">技能</span><span>预设</span><span>全局</span><span>项目</span></nav><span class="theme">▣　⚙</span></header>
+<main class="page"><div class="page-heading"><h1>技能</h1><div class="actions"><button class="button">↻ 检查更新</button><button class="button primary">＋ 导入技能</button></div></div>
+<div class="controls"><span>状态 <b>全部 · 282　⌄</b></span><span>来源 <b>全部来源　⌄</b></span><span>排序 <b>名称 A → Z　⌄</b></span></div>
+<div class="layout"><section class="panel library"><div class="list-toolbar"><span>☐</span><span class="search">⌕　im</span><span>89 个</span></div><div class="list">
+<div class="list-row "><span>☐　◇</span><strong>hyperframes-studio</strong><span class="origin">heygen-com/hyperframes</span><span class="badge">已安装</span></div>
+<div class="list-row current"><span>☐　◇</span><strong>impeccable</strong><span class="origin">pbakaus/impeccable</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>implement</strong><span class="origin">mattpocock/skills</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>implement-spec</strong><span class="origin">mattpocock/skills</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>improve-animations</strong><span class="origin">emilkowalski/skills</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>improve-codebase-architecture</strong><span class="origin">mattpocock/skills</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>improve-ui</strong><span class="origin">ibelick/ui-skills</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>media-use</strong><span class="origin">heygen-com/hyperframes</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>mobile-native</strong><span class="origin">mattpocock/skills</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>motion-doctrine</strong><span class="origin">heygen-com/hyperframes</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>motion-graphics</strong><span class="origin">heygen-com/hyperframes</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>motion-prompt</strong><span class="origin">knothhe/motion-prompt</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>music-to-video</strong><span class="origin">heygen-com/hyperframes</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>no-comments</strong><span class="origin">backnotprop/pstack</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>poteto-mode</strong><span class="origin">backnotprop/pstack</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>principle-encode-lessons</strong><span class="origin">backnotprop/pstack</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>principle-fix-root-causes</strong><span class="origin">backnotprop/pstack</span><span class="badge">已安装</span></div>
+<div class="list-row "><span>☐　◇</span><strong>principle-test-behavior</strong><span class="origin">backnotprop/pstack</span><span class="badge">已安装</span></div>
+</div></section>
+<aside class="panel detail"><div class="detail-header"><div class="detail-title"><span class="symbol">◇</span><h2>impeccable</h2></div><span class="badge green">已安装</span></div><div class="tabs"><span>概览</span><span class="active">SKILL.md</span></div><div class="document-toolbar"><span>SKILL.md</span><button class="document-toggle" role="switch" aria-checked="false">原文 <span class="switch"></span></button></div>
+<article class="document"><div class="reader"><h1>Impeccable</h1><p>A design language for building interfaces with clarity, consistency, and attention to detail.</p><table><thead><tr><th>Command</th><th>Category</th><th>Purpose</th><th>Reference</th></tr></thead><tbody>
+<tr><td><code>document</code></td><td>Build</td><td>Generate DESIGN.md from existing project code</td><td><code>reference/document.md</code></td></tr>
+<tr><td><code>extract</code></td><td>Build</td><td>Pull reusable tokens and components into a design system</td><td><code>reference/extract.md</code></td></tr>
+<tr><td><code>critique</code></td><td>Evaluate</td><td>UX design review with heuristic scoring</td><td><code>reference/critique.md</code></td></tr>
+<tr><td><code>audit</code></td><td>Evaluate</td><td>Technical quality checks (a11y, perf, responsive)</td><td><code>reference/audit.md</code></td></tr>
+<tr><td><code>polish</code></td><td>Refine</td><td>Final quality pass before shipping</td><td><code>reference/polish.md</code></td></tr>
+<tr><td><code>bolder</code></td><td>Refine</td><td>Amplify safe or bland designs</td><td><code>reference/bolder.md</code></td></tr>
+<tr><td><code>quieter</code></td><td>Refine</td><td>Tone down aggressive or visually noisy designs</td><td><code>reference/quieter.md</code></td></tr>
+<tr><td><code>adapt</code></td><td>Refine</td><td>Adapt the interface for different screen sizes and devices</td><td><code>reference/adapt.md</code></td></tr>
+</tbody></table><p>在宽屏上保留舒适的正文行宽；窄窗口下表格可单独横向滚动，列表和详情各自滚动。</p></div></article><div class="detail-footer">♲ 移除技能</div></aside></div></main><footer class="statusbar"><span>✓ 本地工作空间</span><span>282 个技能 · 8 个预设 · 6 个项目</span></footer>
+</body></html>

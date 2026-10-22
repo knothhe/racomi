@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,35 +88,114 @@ func TestLiveSkillsHubPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(cache)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
 	client := New(cache)
-	results, err := client.Search(ctx, "find-skills")
-	if err != nil {
-		t.Fatal(err)
+	for _, test := range []struct{ query, slug, subpath string }{
+		{"find-skills", "vercel-labs/skills/find-skills", "skills/find-skills"},
+		{"impeccable", "pbakaus/impeccable/impeccable", ".agents/skills/impeccable"},
+		// The Hub retains old standalone entries that upstream has merged
+		// into impeccable commands. audit also names an upstream test fixture.
+		{"polish", "pbakaus/impeccable/polish", ""},
+		{"audit", "pbakaus/impeccable/audit", ""},
+	} {
+		t.Run(test.query, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), SourceOperationTimeout)
+			defer cancel()
+			selected := &SearchResult{Slug: test.slug, URL: "https://skills.sh/" + test.slug}
+			if test.subpath != "" {
+				results, err := client.Search(ctx, test.query)
+				if err != nil {
+					t.Fatal(err)
+				}
+				selected = nil
+				for i := range results {
+					if results[i].Slug == test.slug {
+						selected = &results[i]
+						break
+					}
+				}
+				if selected == nil {
+					t.Fatalf("the public index did not return %s", test.slug)
+				}
+			}
+			preview, err := client.Preview(ctx, selected.URL, "", "")
+			if test.subpath == "" {
+				if err == nil {
+					_ = client.Release(preview.ID)
+					t.Fatalf("stale Hub entry offered an unrelated skill: %+v", preview)
+				}
+				if !strings.Contains(err.Error(), "was not found in the current repository revision") {
+					t.Fatalf("stale Hub entry did not receive an actionable error: %v", err)
+				}
+				t.Logf("Hub %s correctly rejected: %v", selected.Slug, err)
+				recovered, err := client.PreviewHubRepository(ctx, selected.URL, "", "")
+				if err != nil {
+					t.Fatal("cannot browse the repository after a stale Hub entry", err)
+				}
+				t.Cleanup(func() { _ = client.Release(recovered.ID) })
+				if len(recovered.Candidates) != 1 || recovered.Candidates[0].Name != "impeccable" || recovered.Candidates[0].Subpath != ".agents/skills/impeccable" {
+					t.Fatalf("recovery offered generated copies or fixtures: %+v", recovered)
+				}
+				if _, err := client.Candidates(recovered.ID, []string{"tests/oracle/workspaces/ctx-pin/.claude/skills/audit"}); err == nil {
+					t.Fatal("recovery allowed installing an unoffered fixture")
+				}
+				t.Logf("Hub %s recovered to %s (%s), candidate %s", selected.Slug, recovered.Source, recovered.Revision, recovered.Candidates[0].Subpath)
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = client.Release(preview.ID) })
+			if len(preview.Candidates) != 1 || preview.Candidates[0].Name != selected.Name || preview.Candidates[0].Subpath != test.subpath {
+				t.Fatalf("Hub result and Git candidate disagree: %#v %#v", selected, preview)
+			}
+			candidates, err := client.Candidates(preview.ID, []string{test.subpath})
+			if err != nil || len(candidates) != 1 {
+				t.Fatalf("cannot prepare the public candidate: %v", err)
+			}
+			t.Logf("Hub %s -> %s (%s), candidate %s at %s", selected.Slug, preview.Source, preview.Revision, candidates[0].Skill.Name, candidates[0].Skill.Subpath)
+		})
 	}
-	var selected *SearchResult
-	for i := range results {
-		if results[i].Slug == "vercel-labs/skills/find-skills" {
-			selected = &results[i]
-			break
+}
+
+func TestLiveSkillsHubAvailability(t *testing.T) {
+	if os.Getenv("RACOMI_TEST_LIVE_SOURCES") != "1" {
+		t.Skip("set RACOMI_TEST_LIVE_SOURCES=1 to validate public Hub availability")
+	}
+	cache := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	inputs := []string{
+		"https://skills.sh/pbakaus/impeccable/polish",
+		"https://skills.sh/pbakaus/impeccable/impeccable",
+		"https://skills.sh/pbakaus/impeccable/audit",
+		"https://skills.sh/vercel-labs/skills/find-skills",
+	}
+	want := []string{"missing", "available", "missing", "available"}
+	client := New(cache)
+	statuses, err := client.CheckHubAvailability(ctx, inputs)
+	if err != nil || len(statuses) != len(inputs) {
+		t.Fatalf("cannot check the public discovery cards: %+v %v", statuses, err)
+	}
+	for i, status := range statuses {
+		if status.URL != inputs[i] || status.State != want[i] || status.Revision == "" || status.CheckedAt == "" {
+			t.Fatalf("incorrect availability for %s: %+v; want %s", inputs[i], status, want[i])
+		}
+		t.Logf("%s: %s at %s", status.URL, status.State, status.Revision)
+	}
+	if entries, err := os.ReadDir(filepath.Join(cache, "previews")); !os.IsNotExist(err) || len(entries) != 0 {
+		t.Fatalf("card checks created preview content: %+v %v", entries, err)
+	}
+	// A new Client models restarting the app. The same fresh repository facts
+	// must remain available without repeating downloads for each card.
+	cached, err := New(cache).CheckHubAvailability(ctx, inputs)
+	if err != nil || len(cached) != len(statuses) {
+		t.Fatalf("cannot reuse persisted availability: %+v %v", cached, err)
+	}
+	for i := range cached {
+		if cached[i] != statuses[i] {
+			t.Fatalf("fresh persisted availability was not reused: %+v, want %+v", cached[i], statuses[i])
 		}
 	}
-	if selected == nil {
-		t.Fatal("the public index did not return vercel-labs/skills/find-skills")
-	}
-	preview, err := client.Preview(ctx, selected.URL, "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(preview.Candidates) != 1 || preview.Candidates[0].Name != selected.Name {
-		t.Fatalf("Hub result and Git candidate disagree: %#v %#v", selected, preview)
-	}
-	candidates, err := client.Candidates(preview.ID, []string{preview.Candidates[0].Subpath})
-	if err != nil || len(candidates) != 1 {
-		t.Fatalf("cannot prepare the public candidate: %v", err)
-	}
-	t.Logf("Hub %s -> %s (%s), candidate %s at %s", selected.Slug, preview.Source, preview.Revision, candidates[0].Skill.Name, candidates[0].Skill.Subpath)
 }
 
 // This opt-in test downloads public hosted skill data into a temporary cache.

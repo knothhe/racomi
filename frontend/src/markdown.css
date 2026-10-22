@@ -37,7 +37,8 @@
 .markdown-body pre code { display: block; padding: 0; border-radius: 0; background: transparent; color: inherit; font: 11.5px/1.7 var(--code); white-space: pre; overflow-wrap: normal; tab-size: 2; }
 .markdown-body hr { margin: 1.5em 0; border: 0; border-top: 1px solid var(--line); }
 .markdown-body table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 12px; }
-.markdown-body :is(th, td) { padding: 7px 10px; border: 1px solid var(--line); text-align: left; }
+.markdown-body :is(th, td) { min-width: 8ch; padding: 7px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: normal; word-break: normal; }
+.markdown-body :is(th, td) code { overflow-wrap: normal; }
 .markdown-body th { background: var(--card-2); color: var(--fg); font-weight: 600; }
 .markdown-body img { max-width: 100%; height: auto; border-radius: 4px; vertical-align: middle; }
 .markdown-body .markdown-frontmatter { margin-bottom: 18px; border: 1px solid var(--line); border-radius: 7px; background: var(--card-2); }

@@ -19,7 +19,15 @@
 .source-top{display:flex;align-items:center;gap:10px;min-width:0}.source-icon{display:grid;place-items:center;flex:none;width:34px;height:34px;border-radius:9px;background:var(--pill);color:var(--fg-2);font-size:20px}.source-copy{min-width:0;flex:1}.source-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:550}.source-copy small{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font:10.5px var(--code)}
 .source-footer{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:auto;font-size:11px;color:var(--muted)}.source-footer .list-status{font-size:10px;white-space:nowrap}.source-footer .list-status.warning,.source-footer .list-status.error{padding:2px 6px;border-radius:4px}
 .source-grid-empty{grid-column:1/-1;padding:30px;color:var(--muted);text-align:center}
+.recovery-panel{display:flex;flex-direction:column;gap:12px;padding:16px;min-height:0;overflow:auto}
+.recovery-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex:none}.recovery-heading h3{font-size:13px;font-weight:600}.recovery-heading p{margin-top:4px;overflow-wrap:anywhere}.recovery-heading .button{margin:-4px -5px 0 0}
+.recovery-notice{padding:12px;border-radius:8px;background:var(--amber-soft);color:var(--amber);font-size:12px;line-height:1.65;overflow-wrap:anywhere;flex:none}.recovery-notice.error{background:var(--red-soft);color:var(--red)}
+.recovery-actions{display:flex;flex-wrap:wrap;gap:8px;flex:none}.recovery-actions a{text-decoration:none}.recovery-copy{font-size:12px;line-height:1.65;color:var(--fg-2)}
+.recovery-panel details{font-size:11px;color:var(--muted)}.recovery-panel details summary{cursor:pointer}.recovery-panel details pre{font:10.5px/1.6 var(--code);white-space:pre-wrap;overflow-wrap:anywhere}
+.recovery-list{flex:1;min-height:96px;overflow:auto;border:1px solid var(--line);border-radius:8px}.recovery-list .catalog-row:first-child{border-top:0}.recovery-list .catalog-copy code{overflow-wrap:anywhere}.recovery-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;flex:none}
+.recovery-spinner{display:inline-block;margin-right:6px;color:var(--accent)}
 @media(max-width:760px){.layout.sources.has-detail{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(180px,1fr) minmax(200px,1fr)}.sources-browser{overflow:auto}.source-grid{flex:none;overflow:visible}.sources-browser .list-toolbar{position:sticky;top:0;z-index:1;background:var(--bg);padding-bottom:10px}}
+@media(max-width:760px){.layout.sources:has(.recovery-panel){grid-template-rows:minmax(180px,.7fr) minmax(300px,1.3fr)}}
 </style>
 </head>
 <body>
@@ -41,5 +49,45 @@
 <span>✓ 就绪</span>
 <span>本地工作空间</span>
 </footer>
+<script>
+const state = new URLSearchParams(location.search).get('state');
+const next = (value) => {
+  const query = new URLSearchParams(location.search);
+  query.set('state', value);
+  return `?${query}`;
+};
+const panel = document.querySelector('aside');
+const heading = (title, selectable = false) => `<div class="recovery-heading"><div><h3>${title}</h3><p class="mono muted">pbakaus/impeccable</p></div><div class="recovery-actions">${selectable ? '<button class="button quiet" id="select-all-candidates">全选</button>' : ''}<button class="button quiet" aria-label="关闭" title="关闭 (Esc)">×</button></div></div>`;
+const views = {
+  missing: `${heading('⚠ 未找到技能')}<div class="recovery-notice error" role="alert">当前仓库版本中未找到 skills.sh 技能 “polish”。索引可能已过期，或技能已改名、移除。</div><div class="recovery-actions"><a class="button primary" href="${next('repository-loading')}">查看仓库可用技能</a><a class="button" href="${next('missing')}">↻ 重试预览</a></div><details><summary>错误详情</summary><pre>当前仓库版本中未找到 skills.sh 技能 "polish"。索引可能已过期，或技能已改名、移除。请预览仓库查看可用技能。</pre></details>`,
+  'repository-loading': `${heading('<span class="recovery-spinner" aria-hidden="true">◌</span>正在读取仓库技能…')}<p class="recovery-copy" role="status">正在读取仓库并查找当前可用技能。</p><p class="muted">已等待 2 秒</p><p class="muted">可以切换到其他页面，预览会继续进行。</p>`,
+  'repository-ready': `${heading('选择要导入的技能 <span class="badge">1</span>', true)}<p class="recovery-notice" role="status">未找到 polish，请选择当前仓库中的技能。</p><div class="recovery-list" tabindex="0" role="region" aria-label="选择要导入的技能"><label class="catalog-row"><input type="checkbox" name="candidate"><span class="catalog-copy"><strong>impeccable</strong><small>用于设计审查、视觉打磨和无障碍改进的综合技能。</small><code>.agents/skills/impeccable</code></span></label></div><div class="recovery-footer"><span class="muted" id="candidate-count">已选择 0 个技能</span><button class="button primary" id="import-candidates" disabled>↓ 导入所选技能</button></div>`,
+};
+if (views[state]) {
+  panel.className = 'panel recovery-panel';
+  panel.removeAttribute('style');
+  panel.innerHTML = views[state];
+  document.title = `发现 · ${state === 'missing' ? '技能缺失与恢复' : state === 'repository-loading' ? '读取仓库可用技能' : '选择当前仓库中的技能'}`;
+  const firstCard = document.querySelector('.source-card');
+  firstCard.setAttribute('aria-pressed', 'true');
+  firstCard.querySelector('strong').textContent = 'polish';
+  firstCard.querySelector('small').textContent = 'pbakaus/impeccable';
+  document.querySelector('.statusbar span').textContent = state === 'repository-loading' ? '◌ 正在读取仓库技能…' : '✓ 就绪';
+  if (state === 'repository-ready') {
+    const checkbox = panel.querySelector('input');
+    const updateSelection = () => {
+      const selected = checkbox.checked;
+      panel.querySelector('#candidate-count').textContent = `已选择 ${selected ? 1 : 0} 个技能`;
+      panel.querySelector('#import-candidates').disabled = !selected;
+      panel.querySelector('#select-all-candidates').textContent = selected ? '取消全选' : '全选';
+    };
+    checkbox.addEventListener('change', updateSelection);
+    panel.querySelector('#select-all-candidates').addEventListener('click', () => {
+      checkbox.checked = !checkbox.checked;
+      updateSelection();
+    });
+  }
+}
+</script>
 </body>
 </html>

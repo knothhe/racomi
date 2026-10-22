@@ -56,6 +56,7 @@ function navigationHarness() {
     const t = (key) => key, e = (value) => value;
     const render = () => recordRender();
     const ensureHubResults = () => {};
+    const hubAvailability = { cancel: () => {} };
     const app = { querySelectorAll: () => [] };
     ${production}
     function navigate(target) { const action = target.dataset.action; ${clickProduction} }

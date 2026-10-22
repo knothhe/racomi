@@ -243,12 +243,20 @@ func (c *Client) previewOptionsLocked(ctx context.Context, spec sourceSpec, refr
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return Preview{}, err
 	}
-	issues, err := extractCommit(ctx, repo, revision, root, spec.subpath, spec.skill, priorityPaths...)
+	issues, selectedPath, err := extractCommit(ctx, repo, revision, root, spec, priorityPaths...)
 	if err != nil {
 		os.RemoveAll(root)
 		return Preview{}, err
 	}
 	items, skipped, warnings, err := scanSkills(root, spec.subpath, revision, issues, allowEmpty)
+	if spec.skill != "" {
+		for _, item := range skipped {
+			if item.Subpath == selectedPath {
+				os.RemoveAll(root)
+				return Preview{}, unavailableHubSkillError(spec.skill, item.Reason)
+			}
+		}
+	}
 	if err != nil {
 		os.RemoveAll(root)
 		return Preview{}, err
@@ -256,13 +264,15 @@ func (c *Client) previewOptionsLocked(ctx context.Context, spec sourceSpec, refr
 	if spec.skill != "" {
 		selected := make([]CandidateInfo, 0, 1)
 		for _, item := range items {
-			if item.Name == spec.skill || filepath.Base(item.Subpath) == spec.skill {
+			// Keep the path resolved before extraction; a skipped preferred
+			// build must not silently turn a lower-priority copy into the result.
+			if item.Subpath == selectedPath {
 				selected = append(selected, item)
 			}
 		}
 		if len(selected) != 1 {
 			os.RemoveAll(root)
-			return Preview{}, fmt.Errorf("skills.sh skill %q did not match exactly one repository skill", spec.skill)
+			return Preview{}, unavailableHubSkillError(spec.skill, "the selected skill could not be read")
 		}
 		items = selected
 	}

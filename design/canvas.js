@@ -408,6 +408,126 @@ window.H2_DESIGN_CANVAS = {
       "y": 17020,
       "w": 1280,
       "h": 760
+    },
+    {
+      "file": "discover-preview-error.html?state=missing&theme=light",
+      "title": "发现 · 技能缺失与恢复 · 1280 · 浅色",
+      "x": 0,
+      "y": 18080,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "discover-preview-error.html?state=missing&theme=light",
+      "title": "发现 · 技能缺失与恢复 · 640 · 浅色",
+      "x": 1320,
+      "y": 18080,
+      "w": 640,
+      "h": 760
+    },
+    {
+      "file": "discover-preview-error.html?state=missing&theme=dark",
+      "title": "发现 · 技能缺失与恢复 · 1280 · 深色",
+      "x": 2040,
+      "y": 18080,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "discover-preview-error.html?state=repository-loading&theme=light",
+      "title": "发现 · 读取仓库可用技能 · 1280 · 浅色",
+      "x": 0,
+      "y": 19020,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "discover-preview-error.html?state=repository-loading&theme=light",
+      "title": "发现 · 读取仓库可用技能 · 640 · 浅色",
+      "x": 1320,
+      "y": 19020,
+      "w": 640,
+      "h": 760
+    },
+    {
+      "file": "discover-preview-error.html?state=repository-loading&theme=dark",
+      "title": "发现 · 读取仓库可用技能 · 1280 · 深色",
+      "x": 2040,
+      "y": 19020,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "discover-preview-error.html?state=repository-ready&theme=light",
+      "title": "发现 · 选择当前仓库中的技能 · 1280 · 浅色",
+      "x": 0,
+      "y": 19960,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "discover-preview-error.html?state=repository-ready&theme=light",
+      "title": "发现 · 选择当前仓库中的技能 · 640 · 浅色",
+      "x": 1320,
+      "y": 19960,
+      "w": 640,
+      "h": 760
+    },
+    {
+      "file": "discover-preview-error.html?state=repository-ready&theme=dark",
+      "title": "发现 · 选择当前仓库中的技能 · 1280 · 深色",
+      "x": 2040,
+      "y": 19960,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "discover-cards.html?state=availability&theme=light",
+      "title": "发现 · 卡片可用性 · 1280 · 浅色",
+      "x": 0,
+      "y": 20900,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "discover-cards.html?state=availability&theme=light",
+      "title": "发现 · 卡片可用性 · 640 · 浅色",
+      "x": 1320,
+      "y": 20900,
+      "w": 640,
+      "h": 760
+    },
+    {
+      "file": "discover-cards.html?state=availability&theme=dark",
+      "title": "发现 · 卡片可用性 · 1280 · 深色",
+      "x": 2040,
+      "y": 20900,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "reader-fullscreen.html?theme=dark",
+      "title": "技能自适应 · 全屏 · 1920 · 深色",
+      "x": 0,
+      "y": 22800,
+      "w": 1920,
+      "h": 1080
+    },
+    {
+      "file": "reader-fullscreen.html?theme=light",
+      "title": "技能自适应 · 常规 · 1440 · 浅色",
+      "x": 1960,
+      "y": 22800,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "reader-fullscreen.html?theme=dark",
+      "title": "技能自适应 · 紧凑 · 760 · 深色",
+      "x": 3440,
+      "y": 22800,
+      "w": 760,
+      "h": 900
     }
   ],
   "notes": [
@@ -470,6 +590,24 @@ window.H2_DESIGN_CANVAS = {
       "x": 0,
       "y": 14060,
       "w": 1280
+    },
+    {
+      "text": "skills.sh 条目缺失时，主动作读取同一仓库的当前技能，重试保留原条目。恢复加载中保留 pbakaus/impeccable 来源与关闭入口；成功后继续说明未找到 polish，并列出当前候选，默认全部不选、导入禁用。用户手动选择后才可导入。关闭保留原列表与搜索；失败恢复沿用现有请求错误面板。",
+      "x": 0,
+      "y": 17940,
+      "w": 1280
+    },
+    {
+      "text": "发现列表在后台核验技能，仅当前仓库确定零匹配时显示“上游已移除或改名”，并把原预览动作改为“查看仓库当前技能”；恢复仍走既有仓库预览，默认零选。核验中不阻塞列表或预览，网络、权限等未能核验时保留预览，不能判断为失效。技能匹配存在但内容不可用时单独显示“暂不可用”，原因通过悬浮提示说明，并允许查看仓库其他技能。每张卡片保留一行状态，已安装标记可并存；状态更新只改原卡片内的文字和动作，不重排榜单、不替换焦点元素，不改变列表滚动。",
+      "x": 0,
+      "y": 20780,
+      "w": 1280
+    },
+    {
+      "text": "技能、来源、预设、全局与项目管理页随工作区宽度展开。技能页在 1200px 以上默认将列表限制在 360–640px，剩余空间用于详情；用户拖动比例继续生效。正文限制为 100ch，表格保持完整单词，超宽时仅在表格内滚动。760px 及以下沿用上下分栏。",
+      "x": 0,
+      "y": 22580,
+      "w": 1920
     }
   ]
 };

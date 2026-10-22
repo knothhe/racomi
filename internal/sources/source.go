@@ -18,12 +18,13 @@ var scpSource = regexp.MustCompile(`^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[A-Za-z0-9_.
 var domainLabel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*$`)
 
 type sourceSpec struct {
-	source   string
-	ref      string
-	subpath  string
-	skill    string
-	treeTail string
-	hosted   bool
+	source        string
+	ref           string
+	subpath       string
+	skill         string
+	treeTail      string
+	hosted        bool
+	hubRepository bool
 }
 
 func parseSource(input, ref, subpath string) (sourceSpec, error) {

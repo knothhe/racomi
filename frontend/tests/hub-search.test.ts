@@ -3,9 +3,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
+import { createHubAvailability } from "../src/hub-availability.ts";
 
 const main = ts.createSourceFile("main.ts", readFileSync(new URL("../src/main.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
-const functions = new Set(["searchHub", "ensureHubResults", "syncBusyControls"]);
+const functions = new Set(["searchHub", "ensureHubResults", "syncBusyControls", "checkVisibleHubAvailability"]);
 const variables = new Set(["searchResults", "searchQuery", "hubResultQuery", "hubListing", "hubSearchGeneration", "hubSearchRequest", "activeTasks", "actionTasks", "formTasks", "skillSelectionActions", "applicationActions", "discoveryBusy"]);
 const production = main.statements.filter((statement) => {
   if (ts.isFunctionDeclaration(statement)) return !!statement.name && functions.has(statement.name.text);
@@ -16,7 +17,7 @@ const production = main.statements.filter((statement) => {
     || (call.expression.getText(main) === "document.addEventListener" && call.arguments[0]?.getText(main) === '"submit"');
 }).map((statement) => statement.getText(main)).join("\n");
 
-interface Result { name: string }
+interface Result { name: string; url?: string }
 interface Listing { skills: Result[]; total: number; hasMore: boolean; page: number }
 interface Pending {
   method: string; argument: string | number; cancellations: number;
@@ -56,6 +57,16 @@ function harness() {
   submit.form = form; submit.type = "submit";
   more.dataset.action = "load-more-hub";
   const pending: Pending[] = [], errors: [string, boolean][] = [];
+  const checks: { cancellations: number; resolve: (value: unknown[]) => void }[] = [];
+  const availability = createHubAvailability({
+    check: () => {
+      const check = { cancellations: 0 } as typeof checks[number];
+      const promise = new Promise<never>((resolve) => { check.resolve = resolve; });
+      checks.push(check);
+      return Object.assign(promise, { cancel: () => { check.cancellations++; } });
+    },
+    changed: () => {},
+  });
   const listeners = new Map<string, (event: TestEvent) => void | Promise<void>>();
   let renders = 0;
   const request = (method: string, argument: string | number) => {
@@ -65,7 +76,7 @@ function harness() {
     return Object.assign(promise, { cancel: () => { entry.cancellations++; } });
   };
   const runtime = vm.runInNewContext(ts.transpileModule(`
-    let data = {}, currentPage = "discover", discoverTab = "hub";
+    let data = {}, currentPage = "discover", discoverTab = "hub", preview = null, previewRequest = null;
     const hasPendingMutation = () => false, applicationBusy = () => false, settingsControlsBusy = () => false;
     const globalDirectorySelectionBlocked = () => false;
     const status = () => {}, arr = (value) => value || [];
@@ -80,6 +91,7 @@ function harness() {
     });
   `, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText, {
     Error, HTMLButtonElement: Button,
+    hubAvailability: availability,
     recordRender: (query: string) => {
       renders++;
       input = new Control();
@@ -100,7 +112,7 @@ function harness() {
     snapshot: () => { results: Result[] | null; query: string; resultQuery: string; listing: Listing | null; busy: boolean };
   };
   return {
-    ...runtime, pending, errors, get input() { return input; }, submit, more, results, renders: () => renders,
+    ...runtime, availability, checks, pending, errors, get input() { return input; }, submit, more, results, renders: () => renders,
     type: (value: string, isComposing = false) => { assert.equal(input.disabled, false); input.value = value; listeners.get("app:input")!({ target: input, isComposing, preventDefault() {} }); },
     search: () => listeners.get("document:submit")!({ target: form, preventDefault() {} }) as Promise<void>,
   };
@@ -254,4 +266,26 @@ test("only the current failure is reported and a subsequent search can recover",
   await retry;
   assert.deepEqual([...h.snapshot().results!], [{ name: "recovered" }]);
   assert.equal(h.snapshot().busy, false);
+});
+
+test("search results render before background checks and a new query cancels the previous check generation", async () => {
+  const h = harness();
+  const oldURL = "https://skills.sh/team/old/polish", currentURL = "https://skills.sh/team/current/review";
+  const old = h.searchHub("old");
+  h.pending[0].resolve([{ name: "old result", url: oldURL }]); await old;
+  assert.equal(h.results.innerHTML, "old result");
+  assert.equal(h.snapshot().busy, false);
+  assert.equal(h.checks.length, 1);
+  assert.equal(h.input.disabled, false);
+  const fresh = h.searchHub("current");
+  assert.equal(h.checks[0].cancellations, 1);
+  h.checks[0].resolve([{ url: oldURL, state: "missing", revision: "old", checkedAt: "", reason: "" }]);
+  h.pending[1].resolve([{ name: "current result", url: currentURL }]); await fresh;
+  assert.equal(h.results.innerHTML, "current result");
+  assert.equal(h.availability.get(oldURL), undefined);
+  assert.equal(h.availability.get(currentURL)?.state, "checking");
+  h.checks[1].resolve([{ url: currentURL, state: "available", revision: "current", checkedAt: "", reason: "" }]);
+  await nextTurn();
+  assert.equal(h.availability.get(currentURL)?.state, "available");
+  assert.equal(h.results.innerHTML, "current result");
 });

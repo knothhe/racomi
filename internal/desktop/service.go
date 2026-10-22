@@ -277,10 +277,20 @@ func (s *Service) ListSkills(ctx context.Context, page int) (sources.SkillListPa
 	return s.sources.ListSkills(ctx, page)
 }
 
+func (s *Service) CheckHubAvailability(ctx context.Context, inputs []string) ([]sources.HubAvailability, error) {
+	return s.sources.CheckHubAvailability(ctx, inputs)
+}
+
 func (s *Service) Preview(ctx context.Context, source, ref, subpath string) (sources.Preview, error) {
 	ctx, cancel := context.WithTimeout(ctx, sources.SourceOperationTimeout)
 	defer cancel()
 	return s.sources.Preview(ctx, source, ref, subpath)
+}
+
+func (s *Service) PreviewHubRepository(ctx context.Context, source, ref, subpath string) (sources.Preview, error) {
+	ctx, cancel := context.WithTimeout(ctx, sources.SourceOperationTimeout)
+	defer cancel()
+	return s.sources.PreviewHubRepository(ctx, source, ref, subpath)
 }
 
 func (s *Service) PreviewLocal(ctx context.Context, path string) (sources.Preview, error) {

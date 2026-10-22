@@ -32,23 +32,23 @@ type repositoryIssue struct {
 	SkillOnly bool // A valid data file can still be an invalid nested skill marker.
 }
 
-func extractCommit(parent context.Context, repo, revision, root, subpath, skill string, priorityPaths ...string) ([]repositoryIssue, error) {
+func extractCommit(parent context.Context, repo, revision, root string, spec sourceSpec, priorityPaths ...string) ([]repositoryIssue, string, error) {
 	ctx, cancel := context.WithTimeout(parent, 60*time.Second)
 	defer cancel()
 	entries, issues, err := inspectCommit(ctx, repo, revision)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	paths, issues, err := planSkillExtraction(ctx, repo, entries, issues, subpath, skill, priorityPaths...)
+	paths, issues, selectedPath, err := planSkillExtraction(ctx, repo, entries, issues, spec, priorityPaths...)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	// Preserve a real but empty selected scope, without inventing directories
 	// for missing paths or links that replaced previously known skill trees.
 	for _, entry := range entries {
-		if entry.Path == subpath && entry.Kind == "tree" {
-			if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(subpath)), 0755); err != nil {
-				return nil, err
+		if entry.Path == spec.subpath && entry.Kind == "tree" {
+			if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(spec.subpath)), 0755); err != nil {
+				return nil, "", err
 			}
 			break
 		}
@@ -63,12 +63,12 @@ func extractCommit(parent context.Context, repo, revision, root, subpath, skill 
 		}
 		batchIssues, err := extractPaths(ctx, repo, revision, root, paths[:n], &extractedBytes)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		issues = append(issues, batchIssues...)
 		paths = paths[n:]
 	}
-	return issues, nil
+	return issues, selectedPath, nil
 }
 
 func extractPaths(parent context.Context, repo, revision, root string, paths []string, extractedBytes *int64) ([]repositoryIssue, error) {

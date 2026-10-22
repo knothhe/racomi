@@ -442,6 +442,7 @@ Object.assign(api, {
     const results = await api.search("");
     return { skills: results.slice(page * 200, (page + 1) * 200), total: results.length, hasMore: (page + 1) * 200 < results.length, page };
   },
+  checkHubAvailability: async (urls: string[]) => urls.map((url) => ({ url, state: "unknown" as const, revision: "", checkedAt: "", reason: "" })),
   checkUpdates: async () => testParameters.has("skill-statuses") ? [
     { skillId: "design", revision: "updated-design", summary: "Design update", available: true, removed: false, error: "" },
     { skillId: "code", revision: "", summary: "", available: false, removed: false, error: "无法读取来源" },
@@ -686,6 +687,27 @@ if (visualReview) {
     },
     readSkillDocument: async (id: string) => {
       const skill = checkedSkills([id])[0];
+      if (testParameters.has("document-table")) {
+        const commands = [
+          ["document", "Build", "Generate DESIGN.md from existing project code"],
+          ["extract", "Build", "Pull reusable tokens and components into a design system"],
+          ["critique", "Evaluate", "UX design review with heuristic scoring"],
+          ["audit", "Evaluate", "Technical quality checks (a11y, perf, responsive)"],
+          ["polish", "Refine", "Final quality pass before shipping"],
+          ["bolder", "Refine", "Amplify safe or bland designs"],
+          ["quieter", "Refine", "Tone down aggressive or visually noisy designs"],
+          ["adapt", "Refine", "Adapt the interface for different screen sizes and devices"],
+        ];
+        return readFixtureDocument([
+          `# ${skill.name}`, "", skill.description, "",
+          "## Commands", "", "| Command | Category | Purpose | Reference |", "| --- | --- | --- | --- |",
+          ...commands.map(([command, category, purpose]) => `| \`${command}\` | ${category} | ${purpose} | \`reference/${command}.md\` |`), "",
+          "## 宽表格 / Wide table", "",
+          "| Command | Desktop reference | Compact reference | Keyboard reference | Accessibility reference | Localization reference |", "| --- | --- | --- | --- | --- | --- |",
+          ...commands.map(([command]) => `| \`${command}\` | \`reference/${command}.desktop.md\` | \`reference/${command}.compact.md\` | \`reference/${command}.keyboard.md\` | \`reference/${command}.accessibility.md\` | \`reference/${command}.localization.md\` |`), "",
+          "## Long content", "", ...commands.flatMap(([, , purpose]) => [purpose, ""]),
+        ].join("\n"));
+      }
       return readFixtureDocument(`---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n# ${skill.name}\n\n${skill.description}\n\n[质量检查](#quality-checks)\n\n## 工作流程 / Workflow\n\n1. 明确用户目标，检查信息层级和阅读顺序。\n2. 对齐标题、表单、操作与内容边界。\n3. 验证长文本、中英文和紧凑窗口下的布局。\n\n## Quality checks\n\n- Consistent spacing and readable typography\n- Keyboard access and visible focus\n- Clear feedback before applying changes\n\n> 阅读完成后再应用到项目或全局目录。\n\n| 状态 | 操作 |\n| --- | --- |\n| 正常 | 阅读文档、切换原文 |\n| 失败 | 重试读取 |\n\n\`\`\`sh\nmake check\n\`\`\`\n\n[设计说明](references/workflow.md)\n\n![布局示例](assets/layout.png)\n`);
     },
     saveSource: async (source: AppState["state"]["sources"][number]) => {
@@ -739,6 +761,71 @@ if (visualReview) {
     chooseSkillsManagerFile: async () => "/test/imports/skills-manager.db",
     previewSkillsManager: async (databasePath: string) => ({ id: "visual-skills-manager-preview", databasePath, skillCount: 3, presetCount: 1, sourceCount: 1, warnings: [], skillNames: ["Interface Design", "Code Review", "Team Writing"], presetNames: ["Team workflow"] }),
     importSkillsManager: async () => ({ app: copy(), result: { addedSkills: 0, skippedSkills: 3, addedPresets: 0, skippedPresets: 1, addedSources: 0, skippedSources: 1 } }),
+  } satisfies Partial<typeof api>);
+}
+if (testParameters.has("hub-recovery") || testParameters.has("hub-availability")) {
+  const result = { name: "polish", slug: "pbakaus/impeccable/polish", source: "pbakaus/impeccable", installs: 18420, url: "https://skills.sh/pbakaus/impeccable/polish", supported: true };
+  let recoveryAttempts = 0;
+  Object.assign(api, {
+    search: async (query: string) => `${result.name} ${result.source}`.includes(query.trim().toLowerCase()) ? [result] : [],
+    listSkills: async (page: number) => ({ skills: page === 0 ? [result] : [], total: 1, hasMore: false, page }),
+    preview: async (source: string, ref: string, subpath: string) => {
+      document.documentElement.dataset.hubPreviewArguments = JSON.stringify([source, ref, subpath]);
+      throw new Error('skills.sh skill "polish" was not found in the current repository revision; the index may be outdated or the skill may have been renamed or removed; preview the repository to see available skills');
+    },
+    previewHubRepository: async (source: string, ref: string, subpath: string) => {
+      document.documentElement.dataset.hubRecoveryArguments = JSON.stringify([source, ref, subpath]);
+      document.documentElement.dataset.hubRecoveryAttempts = String(++recoveryAttempts);
+      const delay = Math.min(60000, Math.max(0, Number(testParameters.get("hub-recovery-delay")) || 0));
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+      if (testParameters.has("hub-recovery-fail-once") && recoveryAttempts === 1) throw new Error("cannot clone repository: connection interrupted");
+      return {
+        id: "hub-recovery-preview", source: "https://github.com/pbakaus/impeccable.git", ref: ref || "main", revision: "9e8d7c6b5a40",
+        candidates: [{ name: "impeccable", description: "用于设计审查、视觉打磨和无障碍改进的综合技能。", subpath: ".agents/skills/impeccable", revision: "9e8d7c6b5a40" }], warnings: [], skipped: [],
+      };
+    },
+    install: async () => {
+      document.documentElement.dataset.hubRecoveryInstallAttempted = "true";
+      throw new Error("The recovery browser fixture does not install skills");
+    },
+  } satisfies Partial<typeof api>);
+}
+if (testParameters.has("hub-availability")) {
+  const cards = [
+    { source: "pbakaus/impeccable", name: "polish", state: "missing" as const },
+    { source: "pbakaus/impeccable", name: "audit", state: "missing" as const },
+    { source: "pbakaus/impeccable", name: "impeccable", state: "available" as const },
+    { source: "vercel-labs/skills", name: "find-skills", state: "available" as const },
+    { source: "vercel-labs/agent-skills", name: "web-design-guidelines", state: "unknown" as const },
+    { source: "team/design", name: "team-guidelines", state: "unavailable" as const },
+  ].map((card) => ({ ...card, slug: `${card.source}/${card.name}`, url: `https://skills.sh/${card.source}/${card.name}`, installs: 18420, supported: true }));
+  state.state.skills.push({ ...state.state.skills[0], id: "installed-polish", name: "polish", source: "https://github.com/pbakaus/impeccable.git", subpath: "skills/polish" });
+  const requests: string[][] = [];
+  Object.assign(api, {
+    search: async (query: string) => cards.filter((card) => `${card.name} ${card.source}`.includes(query.trim().toLowerCase())),
+    listSkills: async (page: number) => ({ skills: page === 0 ? cards : [], total: cards.length, hasMore: false, page }),
+    checkHubAvailability: (urls: string[]) => {
+      requests.push(urls); document.documentElement.dataset.hubAvailabilityRequests = JSON.stringify(requests);
+      let cancel = () => {};
+      const promise = new Promise<Awaited<ReturnType<typeof api.checkHubAvailability>>>((resolve, reject) => {
+        const delay = Math.min(60000, Math.max(0, Number(testParameters.get("hub-availability-delay")) || 650));
+        const timer = window.setTimeout(() => resolve(urls.map((url) => {
+          const card = cards.find((card) => card.url === url)!;
+          return { url, state: card.state, revision: "9e8d7c6b5a40", checkedAt: new Date().toISOString(), reason: card.state === "unavailable" ? 'unsupported skill content at "skills/team-guidelines/AGENTS.md": symlink is not supported' : card.state === "unknown" ? "cannot clone repository: connection interrupted" : "" };
+        })), delay);
+        cancel = () => {
+          clearTimeout(timer); reject(new Error("context canceled"));
+          document.documentElement.dataset.hubAvailabilityCancellations = String(Number(document.documentElement.dataset.hubAvailabilityCancellations || 0) + 1);
+        };
+      });
+      return Object.assign(promise, { cancel: async () => cancel() });
+    },
+    preview: async (source: string, ref: string) => {
+      document.documentElement.dataset.hubPreviewArguments = JSON.stringify([source, ref, ""]);
+      const card = cards.find((card) => card.url === source)!;
+      if (card.state === "missing") throw new Error(`skills.sh skill "${card.name}" was not found in the current repository revision; the index may be outdated or the skill may have been renamed or removed; preview the repository to see available skills`);
+      return { id: "hub-availability-preview", source, ref: ref || "main", revision: "9e8d7c6b5a40", candidates: [{ name: card.name, description: "Available fixture skill", subpath: `skills/${card.name}`, revision: "9e8d7c6b5a40" }], warnings: [], skipped: [] };
+    },
   } satisfies Partial<typeof api>);
 }
 await import("../src/main");

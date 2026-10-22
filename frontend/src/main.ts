@@ -5,6 +5,8 @@ import { renderSourceFilter, installSourceFilters } from "./source-filter";
 import { syncNavigationMarkup } from "./navigation-render";
 import { installWorkspaceResize, syncWorkspaceResize } from "./workspace-resize";
 import { applicationSourceDisplayName, hostedSourceDomain, hubResultInstalled, sourceDisplayName } from "./source-names";
+import { gitBackedHubSkill, recoverableHubSkill } from "./hub-recovery";
+import { createHubAvailability } from "./hub-availability";
 import { changeSelection } from "./skill-selection";
 import { matchesProject, matchesProjectSkill, projectSkillApplied, sortProjects, moveProject, type ProjectSort } from "./project-browser";
 import { applicationPlanDisposition, hasApplicationChanges } from "./application-plan";
@@ -114,10 +116,16 @@ let hubResultQuery = "";
 let hubListing: Pick<SkillListPage, "page" | "total" | "hasMore"> | null = null;
 let hubSearchGeneration = 0;
 let hubSearchRequest: ReturnType<typeof api.search> | ReturnType<typeof api.listSkills> | null = null;
+const hubAvailability = createHubAvailability({ check: (urls) => api.checkHubAvailability(urls), changed: updateHubAvailabilityCards });
 let preview: Preview | null = null;
+let previewMissingSkill = "";
+let previewRepositoryRecovery = false;
 type PreviewReturn = { key: string; scroll: ListScroll };
 let previewReturnTo: PreviewReturn | null = null;
-type PreviewRequest = { source: string; ref: string; subpath: string; matchName: string; kind: "git" | "local"; startedAt: number; loading: boolean; error: string };
+type PreviewKind = "git" | "local" | "hub-repository";
+type PreviewSelectionMode = "auto" | "none";
+type PreviewRecoveryReason = "missing" | "unavailable";
+type PreviewRequest = { source: string; ref: string; subpath: string; matchName: string; kind: PreviewKind; selectionMode: PreviewSelectionMode; recoveryReason: PreviewRecoveryReason; startedAt: number; loading: boolean; error: string };
 let previewRequest: PreviewRequest | null = null;
 let sourceDraft = "";
 let localSourceDraft = "";
@@ -171,6 +179,7 @@ const actionTasks: Record<string, string> = {
   "check-updates": "正在检查技能更新…", "refresh-source": "正在刷新来源…",
   "select-filtered-preset-skills": "正在保存预设…",
   "sync-source": "正在同步来源中的技能…", "hub-preview": "正在读取来源并发现技能…",
+  "preview-hub-repository": "正在读取仓库技能…",
   "choose-project-dir": "正在选择项目目录…",
   "choose-global-dir": "正在选择技能目录…", "choose-local-dir": "正在选择技能目录…",
   "select-all-candidates": "正在导入所选技能…", "close-preview": "正在导入所选技能…",
@@ -190,7 +199,7 @@ const formTasks: Record<string, string> = {
 };
 const applicationActions = ["plan-projects", "apply-projects", "apply-reviewed-projects", "clear-project-selection", "move-project", "plan-project", "apply-project", "plan-global", "apply-global", "clear-application", "retry-selection", "select-global-directories", "default-global-directories", "new-global-directory", "edit-global-directory", "delete-global-directory", "new-project-directory", "edit-project-directory", "delete-project-directory"];
 const applicationBusy = () => hasPendingMutation() || ["正在检查项目变化…", "正在检查全局变化…"].some((label) => activeTasks.has(label));
-const discoveryBusy = () => ["正在读取来源并发现技能…", "正在读取本地目录并发现技能…", "正在选择技能目录…", "正在导入所选技能…"].some((label) => activeTasks.has(label));
+const discoveryBusy = () => ["正在读取来源并发现技能…", "正在读取仓库技能…", "正在读取本地目录并发现技能…", "正在选择技能目录…", "正在导入所选技能…"].some((label) => activeTasks.has(label));
 const settingsControlsBusy = () => selectionAutosave.busy || [...activeTasks].some((label) => label !== "正在保存设置…" && (stateChangingTasks.has(label) || ["正在检查项目变化…", "正在检查全局变化…"].includes(label)));
 const settingsAutosave = createSettingsAutosave<AppState>({
   read: () => data!.state.settings,
@@ -502,6 +511,7 @@ function syncCloudConflictBanner() {
   if (!previous) workspace.prepend(wrapper);
 }
 function render() {
+  if (currentPage !== "discover" || discoverTab !== "hub") hubAvailability.cancel();
   const current = nav.find((item) => item.id === currentPage)!;
   const view = currentPage === "guide" ? `guide-${guideTab}` : currentPage === "settings" && settingsBackups ? "backups" : currentPage;
   const oldContent = document.querySelector<HTMLElement>(".workspace");
@@ -792,6 +802,37 @@ function relinkSourceEditor(source: Source, subpath: string) {
   if (source.lastError || !entry || !removed.length) return;
   modal(t("重新关联技能"), t("用于上游移动路径或改名。确认后更新本地内容，并保留技能 ID 与预设引用。"), `<input type="hidden" name="sourceId" value="${e(source.id)}"><input type="hidden" name="subpath" value="${e(subpath)}"><label class="field"><span>${t("选择保留的本地技能")}</span><select name="skillId" required>${removed.map((item) => `<option value="${e(item.local!.id)}">${e(item.local!.name)} · ${e(item.local!.subpath || ".")}</option>`).join("")}</select></label><dl class="metadata"><dt>${t("新技能")}</dt><dd>${e(entry.item.name)}</dd><dt>${t("新路径")}</dt><dd class="mono">${e(subpath || ".")}</dd></dl><div class="info-note">${t("关联后，使用该技能的项目与全局配置会标记为待应用，请到相应页面应用变化。")}</div>`, `<button class="button primary" type="submit">${t("关联并更新本地技能")}</button>`, "source-relink");
 }
+function hubAvailabilityPresentation(result: SearchResult) {
+  const value = hubAvailability.get(result.url);
+  const state = result.supported !== false && gitBackedHubSkill(result.url) ? value?.state || "checking" : "";
+  const label = state === "missing" ? t("上游已移除或改名") : state === "unavailable" ? t("暂不可用") : state === "available" ? t("可正常预览") : state === "unknown" ? t("未能核验") : state === "checking" ? t("核验中") : "";
+  const reason = value?.reason ? tMessage(value.reason) : state === "missing" ? t("当前仓库版本中未找到此技能。可查看仓库当前技能，并手动选择要导入的内容。") : state === "unavailable" ? t("此技能的内容暂不可用。可查看仓库中的其他技能。") : state === "available" ? t("已在当前仓库版本中找到此技能。") : state === "unknown" ? t("暂时无法读取仓库，技能状态尚未确定。可继续尝试预览。") : state === "checking" ? t("正在检查当前仓库中的技能，可继续预览。") : "";
+  const detail = value?.checkedAt ? `${reason}\n${t("核验时间：{0}", { 0: date(value.checkedAt) })}` : reason;
+  const recover = state === "missing" || state === "unavailable";
+  return { state, label, detail, recover, symbol: recover ? "alert" : state === "available" ? "check" : state === "unknown" ? "info" : "refresh", buttonLabel: t(result.supported === false ? "暂不支持" : recover ? "查看仓库当前技能" : "预览") };
+}
+function updateHubAvailabilityCards(urls: readonly string[]) {
+  if (currentPage !== "discover" || discoverTab !== "hub") return;
+  const changed = new Set(urls);
+  for (const card of document.querySelectorAll<HTMLElement>(".search-result[data-hub-url]")) {
+    if (!changed.has(card.dataset.hubUrl || "")) continue;
+    const result = searchResults?.[Number(card.dataset.hubIndex)];
+    if (!result || result.url !== card.dataset.hubUrl) continue;
+    const value = hubAvailabilityPresentation(result);
+    const status = card.querySelector<HTMLElement>(".hub-skill-status");
+    if (status) { status.className = `hub-skill-status ${value.state}`; status.title = value.detail; }
+    const label = card.querySelector<HTMLElement>("[data-hub-status-label]");
+    if (label) label.textContent = value.label;
+    const symbol = card.querySelector<HTMLElement>("[data-hub-status-symbol]");
+    if (symbol) symbol.innerHTML = value.state ? icon(value.symbol) : "";
+    const buttonLabel = card.querySelector<HTMLElement>("[data-hub-preview-label]");
+    if (buttonLabel) buttonLabel.textContent = value.buttonLabel;
+  }
+}
+function checkVisibleHubAvailability(preserve = false) {
+  if (currentPage !== "discover" || discoverTab !== "hub" || preview || previewRequest) return;
+  void hubAvailability.run(arr(searchResults).filter((result) => result.supported !== false && result.url).map((result) => result.url), preserve);
+}
 function hubResults() {
   if (searchResults === null) return activeTasks.has("正在搜索 skills.sh…")
     ? empty(t("正在读取 skills.sh 技能…"), "", '<span class="spinner"></span>', "compass")
@@ -800,7 +841,8 @@ function hubResults() {
   const count = hubListing ? t("已显示 {0} / {1} 个技能", { 0: searchResults.length, 1: hubListing.total }) : t("{0} 个技能", { 0: searchResults.length });
   return `<div class="hub-results-heading"><h3>${hubResultQuery ? t("搜索结果") : t("skills.sh 默认榜单")}</h3><span>${e(count)}</span></div><div class="results-list">${searchResults.map((result, index) => {
     const installed = hubResultInstalled(result, skills());
-    return `<article class="search-result" tabindex="-1"><div class="result-top"><span class="skill-symbol small-symbol">${icon("box")}</span><div class="result-copy"><div class="result-heading"><strong title="${e(result.name)}">${e(result.name)}</strong></div><p class="mono" title="${e(result.source)}">${e(result.source)}</p></div></div>${result.supported === false ? `<p class="unsupported-reason">${e(tMessage(result.unsupportedReason) || t("此来源暂不支持导入"))}</p>` : ""}<div class="result-footer"><span class="result-installs">${icon("download")}${Number.isFinite(result.installs) ? new Intl.NumberFormat(getLocale(), { notation: "compact" }).format(result.installs) : "—"}</span><div class="result-actions">${installed ? `<span class="result-installed">${icon("check")}${t("已安装")}</span>` : ""}${button(t(result.supported === false ? "暂不支持" : "预览"), "hub-preview", "small", `data-index="${index}" ${result.supported === false ? "disabled" : ""}`, "plus")}</div></div></article>`;
+    const value = hubAvailabilityPresentation(result);
+    return `<article class="search-result" data-hub-url="${e(result.url)}" data-hub-index="${index}" tabindex="-1"><div class="result-top"><span class="skill-symbol small-symbol">${icon("box")}</span><div class="result-copy"><div class="result-heading"><strong title="${e(result.name)}">${e(result.name)}</strong>${installed ? `<span class="result-installed">${icon("check")}${t("已安装")}</span>` : ""}</div><p class="mono" title="${e(result.source)}">${e(result.source)}</p></div></div>${result.supported === false ? `<p class="unsupported-reason">${e(tMessage(result.unsupportedReason) || t("此来源暂不支持导入"))}</p>` : ""}<p class="hub-skill-status ${value.state}" id="hub-availability-${index}" title="${e(value.detail)}"><span data-hub-status-symbol aria-hidden="true">${value.state ? icon(value.symbol) : ""}</span><span data-hub-status-label>${e(value.label)}</span></p><div class="result-footer"><span class="result-installs">${icon("download")}${Number.isFinite(result.installs) ? new Intl.NumberFormat(getLocale(), { notation: "compact" }).format(result.installs) : "—"}</span><div class="result-actions"><button type="button" class="button small" data-action="hub-preview" data-index="${index}" aria-describedby="hub-availability-${index}" ${result.supported === false ? "disabled" : ""}>${icon("plus")}<span data-hub-preview-label>${e(value.buttonLabel)}</span></button></div></div></article>`;
   }).join("")}</div>${hubListing?.hasMore ? `<div class="hub-results-footer">${button(t("加载更多"), "load-more-hub", "small", "", "chevron-down")}</div>` : ""}`;
 }
 async function searchHub(query: string, loadMore = false) {
@@ -808,6 +850,7 @@ async function searchHub(query: string, loadMore = false) {
   query = loadMore ? hubResultQuery : query.trim();
   const page = loadMore ? hubListing!.page + 1 : 0;
   const generation = ++hubSearchGeneration;
+  hubAvailability.cancel();
   void hubSearchRequest?.cancel?.();
   hubSearchRequest = null;
   if (!loadMore) { searchQuery = query; hubResultQuery = query; searchResults = null; hubListing = null; }
@@ -837,12 +880,14 @@ async function searchHub(query: string, loadMore = false) {
       const results = currentPage === "discover" && discoverTab === "hub" ? document.querySelector<HTMLElement>("#search-results") : null;
       // Keep the search field mounted so completion cannot interrupt IME input.
       if (results) results.innerHTML = hubResults();
+      checkVisibleHubAvailability(loadMore);
       syncBusyControls();
     }
   }
 }
 function ensureHubResults() {
   if (data && currentPage === "discover" && discoverTab === "hub" && searchResults === null && !activeTasks.has("正在搜索 skills.sh…")) void searchHub(searchQuery);
+  else if (data && searchResults !== null && !activeTasks.has("正在搜索 skills.sh…")) checkVisibleHubAvailability();
 }
 function discoverPage() {
   const tabs = ([["hub", 'Skill Hub <span class="tab-note">skills.sh</span>'], ["git", e(t("Git 仓库"))], ["local", e(t("本地目录"))]] as const).map(([tab, label]) => `<button type="button" id="discover-tab-${tab}" class="tab-button ${discoverTab === tab ? "active" : ""}" data-action="discover-tab" data-tab="${tab}" role="tab" aria-controls="discover-tab-panel" aria-selected="${discoverTab === tab}" tabindex="${discoverTab === tab ? 0 : -1}">${label}</button>`).join("");
@@ -853,7 +898,7 @@ function previewWaitHint(request: PreviewRequest, seconds: number) {
   if (request.kind === "local") return t("正在读取本地技能文件，请稍候。");
   if (seconds >= 45) return t("仓库较大或传输较慢时可能需要几分钟，请稍候。超时后可以重试。");
   if (seconds >= 15) return t("仍在等待仓库内容，网络较慢或仓库较大时可能需要更久。");
-  return t("正在获取仓库内容并查找技能。首次预览可能需要更长时间。");
+  return request.kind === "hub-repository" ? t("正在读取仓库并查找当前可用技能。") : t("正在获取仓库内容并查找技能。首次预览可能需要更长时间。");
 }
 function updatePreviewWait() {
   if (!previewRequest?.loading) return;
@@ -866,19 +911,24 @@ function updatePreviewWait() {
 function previewRequestPanel() {
   const request = previewRequest!;
   const seconds = Math.max(0, Math.floor((Date.now() - request.startedAt) / 1000));
-  const timedOut = /timed out|timeout|deadline exceeded/i.test(request.error);
-  const title = request.loading ? t("正在准备预览…") : timedOut ? t("预览超时") : t("未能完成预览");
-  return `<section class="panel preview-panel preview-request" aria-labelledby="preview-request-title" aria-busy="${request.loading}"><div class="preview-heading"><h3 id="preview-request-title">${request.loading ? '<span class="spinner" aria-hidden="true"></span>' : icon("alert")}${title}</h3>${iconButton(t("关闭"), "close-preview", "close", "", "", `${t("关闭")} (Esc)`)}</div><p class="mono preview-request-source">${e(request.source)}</p>${request.loading ? `<p id="preview-elapsed" class="preview-elapsed" role="timer" aria-live="off">${t("已等待 {0} 秒", { 0: seconds })}</p><p id="preview-wait-hint" role="status">${previewWaitHint(request, seconds)}</p><p class="muted">${t("可以切换到其他页面，预览会继续进行。")}</p>` : `<div class="preview-request-error" role="alert"><p>${request.kind === "local" ? t("请检查目录是否存在且可读取，然后重试。") : timedOut ? t("获取仓库或读取技能内容超过等待时限。仓库大小、传输速度或代理连接都可能影响耗时，请稍后重试。") : t("请检查网络、仓库地址和访问权限后重试。")}</p></div>${button(t("重试预览"), "retry-preview", "primary", "", "refresh")}<details class="preview-error-details"><summary>${t("错误详情")}</summary><pre>${e(tMessage(request.error))}</pre></details>`}</section>`;
+  const skillSelectionError = /^skills\.sh skill /.test(request.error);
+  const missingSkill = request.kind === "git" ? recoverableHubSkill(request.source, request.error) : "";
+  const timedOut = !skillSelectionError && /timed out|timeout|deadline exceeded/i.test(request.error);
+  const title = request.loading ? request.kind === "hub-repository" ? t("正在读取仓库技能…") : t("正在准备预览…") : missingSkill ? t("未找到技能") : timedOut ? t("预览超时") : t("未能完成预览");
+  return `<section class="panel preview-panel preview-request" aria-labelledby="preview-request-title" aria-busy="${request.loading}"><div class="preview-heading"><h3 id="preview-request-title">${request.loading ? '<span class="spinner" aria-hidden="true"></span>' : icon("alert")}${title}</h3>${iconButton(t("关闭"), "close-preview", "close", "", "", `${t("关闭")} (Esc)`)}</div><p class="mono preview-request-source">${e(request.source)}</p>${request.loading ? `<p id="preview-elapsed" class="preview-elapsed" role="timer" aria-live="off">${t("已等待 {0} 秒", { 0: seconds })}</p><p id="preview-wait-hint" role="status">${previewWaitHint(request, seconds)}</p><p class="muted">${t("可以切换到其他页面，预览会继续进行。")}</p>` : `<div class="preview-request-error" role="alert"><p>${skillSelectionError ? e(tMessage(request.error)) : request.kind === "local" ? t("请检查目录是否存在且可读取，然后重试。") : timedOut ? t("获取仓库或读取技能内容超过等待时限。仓库大小、传输速度或代理连接都可能影响耗时，请稍后重试。") : t("请检查网络、仓库地址和访问权限后重试。")}</p></div><div class="preview-recovery-actions">${missingSkill ? button(t("查看仓库可用技能"), "preview-hub-repository", "primary", "", "search") : ""}${button(t("重试预览"), "retry-preview", missingSkill ? "" : "primary", "", "refresh")}</div><details class="preview-error-details"><summary>${t("错误详情")}</summary><pre>${e(tMessage(request.error))}</pre></details>`}</section>`;
 }
 function previewPanel() {
   const skipped = arr(preview!.skipped);
-  return `<section class="panel preview-panel" data-preserve-scroll="discover-preview:${e(preview!.id)}"><div class="preview-heading"><div><h3>${t("选择要导入的技能 ")}<span class="badge">${arr(preview!.candidates).length}</span></h3><p class="mono" title="${e(preview!.source)}">${e(preview!.local ? globalPath(preview!.source) : preview!.source)}${preview!.local ? "" : ` · ${e(short(preview!.revision))}`}</p></div><div class="preview-actions">${button(selectedCandidates.size === arr(preview!.candidates).length ? t("取消全选") : t("全选"), "select-all-candidates", "quiet small", arr(preview!.candidates).length ? "" : "disabled")}${iconButton(t("关闭"), "close-preview", "close", "", "", `${t("关闭")} (Esc)`)}</div></div>${scanWarnings(preview!.warnings)}${skipped.length ? `<div class="preview-skipped" role="status"><strong>${t("本次跳过 {0} 个技能", { 0: skipped.length })}</strong><ul>${skipped.map((item) => `<li><code>${e(item.subpath || ".")}</code><span>${e(tMessage(item.reason))}</span></li>`).join("")}</ul></div>` : ""}${arr(preview!.candidates).length ? `<div class="selection-list" data-preserve-scroll="discover-candidates:${e(preview!.id)}" tabindex="0" role="region" aria-label="${t("选择要导入的技能 ")}">${arr(preview!.candidates).map((candidate) => `<label class="selection-row"><input type="checkbox" name="candidate" value="${e(candidate.subpath)}" ${selectedCandidates.has(candidate.subpath) ? "checked" : ""}><span><strong>${e(candidate.name)}</strong>${candidate.description ? `<small>${e(candidate.description)}</small>` : ""}<code>${e(candidate.subpath || ".")}</code></span></label>`).join("")}</div><div class="form-footer"><span class="muted" id="candidate-count">${t("已选择 ")}${selectedCandidates.size}${t(" 个技能")}</span>${button(t("导入所选技能"), "install", "primary", selectedCandidates.size ? "" : "disabled", "download")}</div>` : `<div class="small-empty">${t(preview!.local ? "没有发现有效的 SKILL.md，请检查所选目录。" : preview!.hosted ? "没有发现有效的 SKILL.md，请检查来源。" : "没有发现有效的 SKILL.md，请检查仓库与子目录。")}</div>`}</section>`;
+  return `<section class="panel preview-panel" data-preserve-scroll="discover-preview:${e(preview!.id)}"><div class="preview-heading"><div><h3>${t("选择要导入的技能 ")}<span class="badge">${arr(preview!.candidates).length}</span></h3><p class="mono" title="${e(preview!.source)}">${e(preview!.local ? globalPath(preview!.source) : preview!.source)}${preview!.local ? "" : ` · ${e(short(preview!.revision))}`}</p></div><div class="preview-actions">${button(selectedCandidates.size === arr(preview!.candidates).length ? t("取消全选") : t("全选"), "select-all-candidates", "quiet small", arr(preview!.candidates).length ? "" : "disabled")}${iconButton(t("关闭"), "close-preview", "close", "", "", `${t("关闭")} (Esc)`)}</div></div>${previewRepositoryRecovery ? `<p class="preview-recovery-note" role="status">${e(previewMissingSkill ? t("未找到 {0}，请选择当前仓库中的技能。", { 0: previewMissingSkill }) : t("请选择当前仓库中的技能。"))}</p>` : ""}${scanWarnings(preview!.warnings)}${skipped.length ? `<div class="preview-skipped" role="status"><strong>${t("本次跳过 {0} 个技能", { 0: skipped.length })}</strong><ul>${skipped.map((item) => `<li><code>${e(item.subpath || ".")}</code><span>${e(tMessage(item.reason))}</span></li>`).join("")}</ul></div>` : ""}${arr(preview!.candidates).length ? `<div class="selection-list" data-preserve-scroll="discover-candidates:${e(preview!.id)}" tabindex="0" role="region" aria-label="${t("选择要导入的技能 ")}">${arr(preview!.candidates).map((candidate) => `<label class="selection-row"><input type="checkbox" name="candidate" value="${e(candidate.subpath)}" ${selectedCandidates.has(candidate.subpath) ? "checked" : ""}><span><strong>${e(candidate.name)}</strong>${candidate.description ? `<small>${e(candidate.description)}</small>` : ""}<code>${e(candidate.subpath || ".")}</code></span></label>`).join("")}</div><div class="form-footer"><span class="muted" id="candidate-count">${t("已选择 ")}${selectedCandidates.size}${t(" 个技能")}</span>${button(t("导入所选技能"), "install", "primary", selectedCandidates.size ? "" : "disabled", "download")}</div>` : `<div class="small-empty">${t(preview!.local ? "没有发现有效的 SKILL.md，请检查所选目录。" : preview!.hosted ? "没有发现有效的 SKILL.md，请检查来源。" : "没有发现有效的 SKILL.md，请检查仓库与子目录。")}</div>`}</section>`;
 }
 function closePreview() {
   if (activeTasks.has("正在导入所选技能…")) return;
+  hubAvailability.cancel();
   const returnTo = previewReturnTo;
   previewReturnTo = null;
   preview = null;
+  previewMissingSkill = "";
+  previewRepositoryRecovery = false;
   previewRequest = null;
   selectedCandidates.clear();
   render();
@@ -886,6 +936,7 @@ function closePreview() {
   const index = returnTo ? arr(searchResults).findIndex((result) => JSON.stringify([result.source, result.slug || result.name]) === returnTo.key) : -1;
   const card = discoverTab === "hub" && index >= 0 ? document.querySelector<HTMLButtonElement>(`[data-action="hub-preview"][data-index="${index}"]`)?.closest<HTMLElement>(".search-result") : null;
   (card || document.querySelector<HTMLInputElement>('[data-page-search="discover"]'))?.focus({ preventScroll: true });
+  checkVisibleHubAvailability(true);
 }
 function renderPreview() {
   const panel = document.querySelector<HTMLElement>(".discover-content > .preview-panel");
@@ -1362,28 +1413,41 @@ async function load() {
     if (revision === stateRevision && settingsRevision === settingsWriteRevision && !settingsAutosave.busy) { loadError = err instanceof Error ? err.message : String(err); render(); }
   }
 }
-async function doPreview(source: string, ref: string, subpath: string, matchName = "", kind: "git" | "local" = "git", returnTo: PreviewReturn | null = null) {
+async function doPreview(source: string, ref: string, subpath: string, matchName = "", kind: PreviewKind = "git", returnTo: PreviewReturn | null = null, selectionMode: PreviewSelectionMode = "auto", recoveryReason: PreviewRecoveryReason = "missing") {
   if (discoveryBusy()) return;
+  hubAvailability.cancel();
   previewReturnTo = returnTo;
   if (kind === "local") localSourceDraft = source;
   else { sourceDraft = source; refDraft = ref; subpathDraft = subpath; }
-  preview = null; selectedCandidates.clear();
-  const request: PreviewRequest = { source, ref, subpath, matchName, kind, startedAt: Date.now(), loading: true, error: "" };
+  preview = null; previewMissingSkill = ""; previewRepositoryRecovery = false; selectedCandidates.clear();
+  const request: PreviewRequest = { source, ref, subpath, matchName, kind, selectionMode, recoveryReason, startedAt: Date.now(), loading: true, error: "" };
   previewRequest = request;
   const timer = window.setInterval(updatePreviewWait, 1000);
   try {
-    const result = await task(kind === "local" ? "正在读取本地目录并发现技能…" : "正在读取来源并发现技能…", async () => {
+    const result = await task(kind === "local" ? "正在读取本地目录并发现技能…" : kind === "hub-repository" ? "正在读取仓库技能…" : "正在读取来源并发现技能…", async () => {
       if (currentPage === "discover") {
         renderPreview();
       }
-      try { return await (kind === "local" ? api.previewLocal(source) : api.preview(source, ref, subpath)); }
-      catch (err) { request.error = err instanceof Error ? err.message : String(err); return undefined; }
+      try { return await (kind === "local" ? api.previewLocal(source) : kind === "hub-repository" ? api.previewHubRepository(source, ref, subpath) : api.preview(source, ref, subpath)); }
+      catch (err) {
+        request.error = err instanceof Error ? err.message : String(err);
+        if (previewRequest === request && recoverableHubSkill(source, request.error)) hubAvailability.record({ url: source, state: "missing", revision: "", checkedAt: "", reason: request.error });
+        return undefined;
+      }
     });
     if (previewRequest !== request) return;
     if (result) {
       preview = result;
-      selectedCandidates = new Set(arr(result.candidates).filter((c) => matchName ? c.name === matchName || c.subpath.split("/").pop() === matchName : true).map((c) => c.subpath));
-      if (matchName && !selectedCandidates.size) toast(t("来源预览已完成，请根据名称手动选择技能。"));
+      const original = gitBackedHubSkill(source)?.skill;
+      const matchingOriginalCandidates = original ? arr(result.candidates).filter((candidate) => candidate.name === original || candidate.subpath.split("/").pop() === original) : [];
+      previewRepositoryRecovery = kind === "hub-repository";
+      previewMissingSkill = kind === "hub-repository" && recoveryReason === "missing" && !matchingOriginalCandidates.length ? matchName : "";
+      // A repository-wide preview may skip duplicates or oversized content;
+      // only the exact selector can prove availability. Recheck after closing.
+      if (kind === "hub-repository") hubAvailability.invalidate(source);
+      if (original && kind === "git") hubAvailability.record({ url: source, state: "available", revision: result.revision, checkedAt: "", reason: "" });
+      selectedCandidates = selectionMode === "none" ? new Set() : new Set(arr(result.candidates).filter((c) => matchName ? c.name === matchName || c.subpath.split("/").pop() === matchName : true).map((c) => c.subpath));
+      if (selectionMode === "auto" && matchName && !selectedCandidates.size) toast(t("来源预览已完成，请根据名称手动选择技能。"));
     }
   } finally {
     window.clearInterval(timer);
@@ -1775,6 +1839,7 @@ document.addEventListener("click", async (ev) => {
   if (target.dataset.action === "toggle-sidebar") { changeNavigationLayout(toggleNavLayout); return; }
   if (target.dataset.themePreference) { setThemePreference(target.dataset.themePreference as ThemePreference); render(); return; }
   if (target.dataset.page) {
+    if (target.dataset.page !== "discover") hubAvailability.cancel();
     currentPage = target.dataset.page as Page; render(); ensureHubResults();
     if (currentPage === "skills" && detailTab === "document" && selectedSkill) void loadSkillDocument(selectedSkill);
     return;
@@ -1886,9 +1951,15 @@ document.addEventListener("click", async (ev) => {
     return;
   }
   if (action === "clear-selected-skills") { bulkSkillSelection.clear(); render(); return; }
+  if (action === "preview-hub-repository" && previewRequest && !previewRequest.loading && previewRequest.kind === "git") {
+    const { source, ref, subpath, error } = previewRequest;
+    const skill = recoverableHubSkill(source, error);
+    if (skill) await doPreview(source, ref, subpath, skill, "hub-repository", previewReturnTo, "none");
+    return;
+  }
   if (action === "retry-preview" && previewRequest && !previewRequest.loading) {
-    const { source, ref, subpath, matchName, kind } = previewRequest;
-    await doPreview(source, ref, subpath, matchName, kind, previewReturnTo); return;
+    const { source, ref, subpath, matchName, kind, selectionMode, recoveryReason } = previewRequest;
+    await doPreview(source, ref, subpath, matchName, kind, previewReturnTo, selectionMode, recoveryReason); return;
   }
   if (action === "load-more-hub") { await searchHub("", true); return; }
   if (action === "discover-tab") {
@@ -2018,9 +2089,13 @@ document.addEventListener("click", async (ev) => {
       if (s && await confirm(t("移除技能"), t("确定移除本地技能“{0}”？已应用的旧版本将在下次应用时移除。", { 0: s.name }), "", t("移除技能"), true)) await mutate("正在移除技能…", () => api.removeSkill(id), t("技能已移除。"));
     } else if (action === "hub-preview") {
       const r = searchResults?.[Number(target.dataset.index)];
-      if (r && r.supported !== false) await doPreview(r.url || r.source, "", "", r.slug?.split("/").pop() || r.name, "git", { key: JSON.stringify([r.source, r.slug || r.name]), scroll: captureListScroll(".hub-panel") });
+      if (r && r.supported !== false) {
+        const value = hubAvailability.get(r.url), original = gitBackedHubSkill(r.url);
+        const recover = original && (value?.state === "missing" || value?.state === "unavailable");
+        await doPreview(r.url || r.source, "", "", recover ? original.skill : r.slug?.split("/").pop() || r.name, recover ? "hub-repository" : "git", { key: JSON.stringify([r.source, r.slug || r.name]), scroll: captureListScroll(".hub-panel") }, recover ? "none" : "auto", value?.state === "unavailable" ? "unavailable" : "missing");
+      }
     } else if (action === "install" && preview && selectedCandidates.size) {
-      if (await mutate("正在导入所选技能…", () => api.install(preview!.id, [...selectedCandidates]), t("所选技能已导入本地。"))) { preview = null; selectedCandidates.clear(); currentPage = "skills"; render(); }
+      if (await mutate("正在导入所选技能…", () => api.install(preview!.id, [...selectedCandidates]), t("所选技能已导入本地。"))) { preview = null; previewMissingSkill = ""; previewRepositoryRecovery = false; selectedCandidates.clear(); currentPage = "skills"; render(); }
     } else if (action === "delete-preset") {
       const p = presets().find((p) => p.id === id);
       if (p && await confirm(t("删除预设"), t("确定删除“{0}”？技能原件会保留，相关项目与全局配置需重新应用。", { 0: p.name }), "", t("删除预设"), true)) await mutate("正在删除预设…", () => api.deletePreset(id), t("预设已删除。") );
