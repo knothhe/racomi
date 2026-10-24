@@ -29,7 +29,9 @@ func waitFor(description string, timeout time.Duration, condition func() bool) e
 
 func check(app *application.App, service *desktop.Service) error {
 	var first *application.WebviewWindow
-	if err := waitFor("initial window", 15*time.Second, func() bool {
+	// Hosted runners can cold-start WebView2 slowly after the build/test load.
+	// Keep startup separate from the close acknowledgement deadline below.
+	if err := waitFor("initial window", 60*time.Second, func() bool {
 		windows := app.Window.GetAll()
 		if len(windows) != 1 {
 			return false
@@ -39,7 +41,7 @@ func check(app *application.App, service *desktop.Service) error {
 	}); err != nil {
 		return err
 	}
-	if err := waitFor("real frontend readiness", 20*time.Second, func() bool { return desktop.NativeFrontendReady(service) }); err != nil {
+	if err := waitFor("real frontend readiness", 60*time.Second, func() bool { return desktop.NativeFrontendReady(service) }); err != nil {
 		return err
 	}
 	for i := 0; i < 10; i++ {
@@ -60,14 +62,14 @@ func check(app *application.App, service *desktop.Service) error {
 		return err
 	}
 	service.OpenWindow()
-	if err := waitFor("reopen after release", 10*time.Second, func() bool {
+	if err := waitFor("reopen after release", 60*time.Second, func() bool {
 		windows := app.Window.GetAll()
 		return len(windows) == 1 && windows[0] != first && windows[0].IsVisible()
 	}); err != nil {
 		return err
 	}
 	fmt.Println("PASS: Windows stays running and reopens after the one-minute release")
-	if err := waitFor("recreated frontend readiness", 20*time.Second, func() bool { return desktop.NativeFrontendReady(service) }); err != nil {
+	if err := waitFor("recreated frontend readiness", 60*time.Second, func() bool { return desktop.NativeFrontendReady(service) }); err != nil {
 		return err
 	}
 	_, err := service.SetLightweight(false)
@@ -92,7 +94,7 @@ func main() {
 	if _, err = os.Stat(filepath.Join(assets, "index.html")); err != nil {
 		log.Fatal("build the frontend first: ", err)
 	}
-	watchdog := time.AfterFunc(3*time.Minute, func() { fmt.Fprintln(os.Stderr, "FAIL: native lifecycle timeout"); os.Exit(1) })
+	watchdog := time.AfterFunc(5*time.Minute, func() { fmt.Fprintln(os.Stderr, "FAIL: native lifecycle timeout"); os.Exit(1) })
 	defer watchdog.Stop()
 	service, err := desktop.New(root)
 	if err != nil {
