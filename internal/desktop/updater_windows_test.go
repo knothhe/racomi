@@ -49,6 +49,23 @@ func windowsReleaseFixture(t *testing.T, info buildinfo.Info) []byte {
 	return binary
 }
 
+func requireVisibleWindowsRestart(t *testing.T, marker string) {
+	t.Helper()
+	data, err := os.ReadFile(marker + ".startup.json")
+	if err != nil {
+		t.Fatal("restarted process did not report its startup window settings:", err)
+	}
+	var startup struct {
+		Hidden bool `json:"hidden"`
+	}
+	if err = json.Unmarshal(data, &startup); err != nil {
+		t.Fatal(err)
+	}
+	if startup.Hidden {
+		t.Fatal("restart forces the application window hidden")
+	}
+}
+
 func TestWindowsUpdaterStagesOnlyVerifiedIdentity(t *testing.T) {
 	public, private, _ := ed25519.GenerateKey(nil)
 	oldKey, oldClient := buildinfo.PublicKey, updateHTTPClient
@@ -167,6 +184,7 @@ func TestWindowsUpdateHelperWaitsReplacesAndRestarts(t *testing.T) {
 	if digestAfter, _ := executableDigest(exe); digestAfter != digest {
 		t.Fatal("wrong installed executable")
 	}
+	requireVisibleWindowsRestart(t, marker)
 }
 
 func TestWindowsReplacementFailurePreservesOriginal(t *testing.T) {
@@ -254,6 +272,7 @@ func TestWindowsUpdateRollsBackWhenRestartCannotLaunch(t *testing.T) {
 	}
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
 		if _, err := os.Stat(marker); err == nil {
+			requireVisibleWindowsRestart(t, marker)
 			return
 		}
 		time.Sleep(25 * time.Millisecond)

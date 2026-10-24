@@ -212,13 +212,15 @@ func applyWindowsUpdate(plan windowsUpdatePlan) error {
 		return err
 	}
 	command := exec.Command(plan.Executable)
-	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	// Suppress console allocation without STARTF_USESHOWWINDOW/SW_HIDE, which
+	// would also hide the GUI application's first window after the restart.
+	command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
 	if err = command.Start(); err != nil {
 		if restoreErr := replaceWindowsExecutable(plan.Executable, backup, plan.Staged); restoreErr != nil {
 			return fmt.Errorf("restart failed: %v; rollback failed: %w", err, restoreErr)
 		}
 		previous := exec.Command(plan.Executable)
-		previous.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		previous.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
 		if restartErr := previous.Start(); restartErr == nil {
 			_ = previous.Process.Release()
 		}
