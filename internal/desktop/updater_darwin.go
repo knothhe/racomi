@@ -73,7 +73,7 @@ static void racomiStartUpdater(const char *identity, const char *version, const 
 }
 static char *racomiUpdaterStatus(void) {
  id updater = [racomiUpdaterController updater];
- NSDictionary *status = @{@"available":@(updater != nil), @"canCheck":@([updater canCheckForUpdates] || racomiInstallHandler != nil),
+ NSDictionary *status = @{@"available":@((BOOL)(updater != nil)), @"canCheck":@((BOOL)([updater canCheckForUpdates] || racomiInstallHandler != nil)),
   @"automatic":@([updater automaticallyChecksForUpdates]), @"reason":racomiUpdateError ?: @""};
  NSString *json = [[[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:status options:0 error:nil] encoding:NSUTF8StringEncoding] autorelease];
  return strdup(json.UTF8String);
