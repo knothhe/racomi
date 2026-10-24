@@ -76,6 +76,7 @@ func TestPreviewHubRepositoryRecoversMissingSkillWithoutCopiesOrFixtures(t *test
 			if len(preview.Candidates) != 1 || preview.Candidates[0].Name != "impeccable" || preview.Candidates[0].Subpath != canonical {
 				t.Fatalf("recovery offered copies or fixtures: %+v", preview.Candidates)
 			}
+			assertHubVariant(t, client, preview, duplicate)
 			if len(preview.Skipped) != 1 || preview.Skipped[0].Subpath != standardSkipped {
 				t.Fatalf("recovery retained fixture diagnostics or lost a standard skill diagnostic: %+v", preview.Skipped)
 			}
@@ -86,7 +87,7 @@ func TestPreviewHubRepositoryRecoversMissingSkillWithoutCopiesOrFixtures(t *test
 			if err != nil || len(selected) != 1 || selected[0].Skill.Source != recoveryGitSource || selected[0].Skill.Ref != revision {
 				t.Fatalf("canonical recovery candidate lost its provenance: %+v %v", selected, err)
 			}
-			for _, hidden := range []string{duplicate, fixture, standardSkipped, fixtureSkipped, "skills/outside"} {
+			for _, hidden := range []string{fixture, standardSkipped, fixtureSkipped, "skills/outside"} {
 				if _, err := client.Candidates(preview.ID, []string{hidden}); err == nil {
 					t.Fatalf("recovery allowed installing an unoffered path %q", hidden)
 				}
@@ -96,7 +97,7 @@ func TestPreviewHubRepositoryRecoversMissingSkillWithoutCopiesOrFixtures(t *test
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = client.Release(gitPreview.ID) })
-			if len(gitPreview.Candidates) != 3 || len(gitPreview.Skipped) != 2 {
+			if len(gitPreview.Candidates) != 2 || len(gitPreview.Skipped) != 2 {
 				t.Fatalf("ordinary Git preview was silently filtered: %+v", gitPreview)
 			}
 			for _, path := range []string{canonical, duplicate, fixture} {
@@ -124,7 +125,7 @@ func TestPreviewHubRepositoryKeepsEqualPriorityPathsAndDistinctSkills(t *testing
 	for _, candidate := range preview.Candidates {
 		paths = append(paths, candidate.Subpath)
 	}
-	want := []string{".agents/skills/first", ".agents/skills/second", ".claude/skills/other"}
+	want := []string{".agents/skills/first", ".agents/skills/second", ".claude/skills/copy", ".claude/skills/other"}
 	if !reflect.DeepEqual(paths, want) {
 		t.Fatalf("recovery collapsed ambiguous paths or filtered a distinct skill: got %v, want %v", paths, want)
 	}

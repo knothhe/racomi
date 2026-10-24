@@ -6,13 +6,16 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	skillstore "racomi/internal/skills"
 )
 
 // Follow the skills CLI's common search locations for skills.sh name selectors.
 // See https://github.com/vercel-labs/skills/blob/main/src/skills.ts.
 // A repository can publish different builds of one skill for several agents;
 // recursive discovery also finds fixtures that are not the indexed skill.
-// Ordinary repository previews still expose every path independently.
+// All previews group conventional distribution copies and retain different
+// contents as selectable variants of the preferred build.
 var hubSkillDirectories = []string{
 	"skills", "skills/.curated", "skills/.experimental", "skills/.system",
 	".agents/skills", ".claude/skills", ".cline/skills", ".codebuddy/skills",
@@ -36,12 +39,50 @@ func hubSkillPriority(scope, skillPath string) int {
 	if path.Dir(relative) == "." {
 		return 1
 	}
+	best, longest := len(hubSkillDirectories)+2, 0
 	for i, directory := range hubSkillDirectories {
 		if child, ok := strings.CutPrefix(relative, directory+"/"); ok && strings.Count(child, "/") < 3 {
-			return i + 2
+			if len(directory) > longest {
+				best, longest = i+2, len(directory)
+			}
 		}
 	}
-	return len(hubSkillDirectories) + 2
+	return best
+}
+
+// A name selector cannot ask the user to distinguish multiple physical paths
+// in one distribution tier. Reject the complete ambiguous family, even when
+// the preferred tier itself has only one build.
+func validateHubDistribution(roots map[string]*skillExtraction, scope, selected string) error {
+	items := make([]CandidateInfo, 0, len(roots))
+	for subpath, root := range roots {
+		if !repositoryPathWithin(scope, subpath) {
+			continue
+		}
+		name := root.name
+		if name == "" {
+			name = path.Base(subpath)
+		}
+		items = append(items, CandidateInfo{Name: name, Subpath: subpath})
+	}
+	keys := distributionCandidateKeys(items)
+	for _, item := range items {
+		if !roots[item.Subpath].priority {
+			continue
+		}
+		key := skillstore.DistributionKey(item.Name, item.Subpath)
+		if keys[item.Subpath] == key {
+			continue
+		}
+		paths := make([]string, 0)
+		for _, candidate := range items {
+			if skillstore.DistributionKey(candidate.Name, candidate.Subpath) == key {
+				paths = append(paths, candidate.Subpath)
+			}
+		}
+		return ambiguousHubSkillError(selected, paths)
+	}
+	return nil
 }
 
 func prioritizeHubSkillRoots(roots map[string]*skillExtraction, scope string) {
@@ -76,24 +117,21 @@ func prioritizeHubSkillRoots(roots map[string]*skillExtraction, scope string) {
 
 func prioritizeHubRepositoryRoots(roots map[string]*skillExtraction, scope string) {
 	fallback := len(hubSkillDirectories) + 2
-	best := make(map[string]int)
 	hasStandard := false
 	for rootPath, root := range roots {
 		if !root.priority {
 			continue
 		}
 		priority := hubSkillPriority(scope, rootPath)
-		if previous, exists := best[root.name]; !exists || priority < previous {
-			best[root.name] = priority
-		}
 		hasStandard = hasStandard || root.validMetadata && priority < fallback
 	}
 	for rootPath, root := range roots {
 		priority := hubSkillPriority(scope, rootPath)
 		// Reserve the preview budget before extracting generated copies or
 		// fixtures; filtering afterward cannot restore a skipped source build.
-		root.priority = root.priority && priority == best[root.name] && (!hasStandard || priority < fallback)
+		root.priority = root.priority && (!hasStandard || priority < fallback)
 	}
+	prioritizeDistributionRoots(roots)
 }
 
 func missingHubSkillError(skill string) error {

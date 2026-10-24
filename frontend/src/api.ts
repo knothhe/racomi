@@ -68,11 +68,15 @@ export interface AppState {
   state: { settings: AppSettings; schema: number; skills: Skill[]; sources: Source[]; presets: Preset[]; targets: Target[] };
   snapshots: Snapshot[];
 }
+export interface PreviewCandidate {
+  name: string; description: string; subpath: string; revision: string;
+  contentHash?: string; variants?: PreviewCandidate[];
+}
 export interface Preview {
   local?: boolean;
   hosted?: boolean;
   id: string; source: string; ref: string; revision: string;
-  candidates: { name: string; description: string; subpath: string; revision: string }[];
+  candidates: PreviewCandidate[];
   warnings?: string[];
   skipped?: { subpath: string; reason: string }[];
 }

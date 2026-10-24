@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	skillstore "racomi/internal/skills"
 )
 
 // Tree metadata is cheap to inspect even when unrelated blobs are enormous.
@@ -143,10 +145,20 @@ func planSkillExtraction(ctx context.Context, repo string, entries []repositoryE
 	issues = append(issues, metadataIssues...)
 	if skill != "" {
 		prioritizeHubSkillRoots(roots, subpath)
+		if err := validateHubDistribution(roots, subpath, skill); err != nil {
+			return nil, nil, "", err
+		}
 	} else if spec.hubRepository {
 		prioritizeHubRepositoryRoots(roots, subpath)
+	} else if len(priorityPaths) == 0 {
+		prioritizeDistributionRoots(roots)
 	}
 	files, issues := allocateSkillExtraction(entries, issues, roots)
+	for i := range issues {
+		if root := roots[path.Dir(issues[i].Path)]; issues[i].SkillOnly && root != nil && root.validMetadata {
+			issues[i].SkillName = root.name
+		}
+	}
 	selectedPath := ""
 	if skill != "" {
 		matches := make([]string, 0)
@@ -228,6 +240,10 @@ func allocateSkillExtraction(entries []repositoryEntry, issues []repositoryIssue
 	sort.Slice(paths, func(i, j int) bool {
 		if roots[paths[i]].priority != roots[paths[j]].priority {
 			return roots[paths[i]].priority
+		}
+		left, right := skillstore.DistributionPriority(paths[i]), skillstore.DistributionPriority(paths[j])
+		if left != right {
+			return left < right
 		}
 		return paths[i] < paths[j]
 	})

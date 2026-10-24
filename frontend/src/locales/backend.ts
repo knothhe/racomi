@@ -1,5 +1,8 @@
 // Explicit backend message templates. Placeholders preserve names, paths, and nested errors.
 const messages: ReadonlyArray<readonly [string, string, string, string]> = [
+  ["select only one variant of each skill", "Choose one variant per skill", "每个技能只能选择一个变体", "每個技能只能選擇一個變體"],
+  ["select only one distribution variant of skill {0}", "Choose one distribution variant of skill {0}", "技能 {0} 只能选择一个分发变体", "技能 {0} 只能選擇一個分發變體"],
+  ["multiple installed variants match skill {0}; select an installed path or relink a specific skill", "Multiple installed variants match skill {0}. Select an installed path or relink a specific skill.", "技能 {0} 匹配到多个已安装变体，请选择已安装的路径或重新关联具体技能。", "技能 {0} 符合多個已安裝變體，請選擇已安裝的路徑或重新關聯特定技能。"],
   ["select at least one project", "Select at least one project", "请至少选择一个项目", "請至少選擇一個專案"],
   ["project order must include every project exactly once", "The project list changed. Refresh it and reorder again.", "项目列表已变化，请刷新后重新排序。", "專案清單已變更，請重新整理後再次排序。"],
   ["invalid target timestamp", "Invalid application configuration timestamp", "应用配置的时间格式无效", "套用設定的時間格式無效"],

@@ -393,6 +393,15 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .selection-row strong { font-size: 12px; font-weight: 550; overflow-wrap: anywhere; }
 .selection-row small { font-size: 11.5px; line-height: 1.5; color: var(--fg-2); overflow-wrap: anywhere; }
 .selection-row code { font-size: 10.5px; color: var(--muted); }
+.candidate-group { border-bottom: 1px solid var(--line-2); }
+.candidate-group:last-child { border-bottom: 0; }
+.candidate-group > .selection-row { border-bottom: 0; }
+.variant-control { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; margin: 0; padding: 0 12px 10px 34px; font-size: 11px; color: var(--fg-2); }
+.variant-control > span { flex: none; }
+.variant-control select, .variant-control .select-trigger { flex: 1; min-width: 0; max-width: 100%; font-family: var(--code); font-size: 10px; }
+.variant-control small { width: 100%; color: var(--muted); font-size: 10.5px; line-height: 1.5; }
+.source-catalog-body { flex: 1; min-width: 0; }
+.source-catalog-body > .variant-control { margin-top: 8px; padding: 0 0 0 22px; }
 
 /* Sources retain their catalog between refreshes and sync only the skills. */
 .sources-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }

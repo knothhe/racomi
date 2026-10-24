@@ -267,9 +267,12 @@ func (snapshot hubAvailabilitySnapshot) availability(skill string) (string, stri
 		}
 	}
 	matches, blocked := make([]hubAvailabilityRoot, 0), make([]hubAvailabilityRoot, 0)
+	distributionRoots := make(map[string]*skillExtraction, len(snapshot.Roots))
 	for _, root := range snapshot.Roots {
 		priority := hubSkillPriority(".", root.Path)
-		if (root.Name != skill && path.Base(root.Path) != skill) || priority > best || hasStandard && priority == fallback {
+		selected := (root.Name == skill || path.Base(root.Path) == skill) && priority <= best && (!hasStandard || priority != fallback)
+		distributionRoots[root.Path] = &skillExtraction{name: root.Name, priority: selected}
+		if !selected {
 			continue
 		}
 		if root.Blocked {
@@ -277,6 +280,9 @@ func (snapshot hubAvailabilitySnapshot) availability(skill string) (string, stri
 		} else {
 			matches = append(matches, root)
 		}
+	}
+	if err := validateHubDistribution(distributionRoots, ".", skill); err != nil {
+		return "unavailable", err.Error()
 	}
 	if len(matches)+len(blocked) > 1 {
 		paths := make([]string, 0, len(matches)+len(blocked))

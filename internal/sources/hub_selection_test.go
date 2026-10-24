@@ -71,7 +71,8 @@ func TestHubSkillSelectionPrefersAgentDirectoryToDistributionCopies(t *testing.T
 	if err != nil {
 		t.Fatal("standard agent skill was made ambiguous by distribution copies", err)
 	}
-	assertHubSkillSelection(t, client, preview, ".", variants[0], "variant from "+variants[0], variants[1:]...)
+	assertHubSkillSelection(t, client, preview, ".", variants[0], "variant from "+variants[0], variants[2:]...)
+	assertHubVariant(t, client, preview, variants[1])
 }
 
 func TestHubSkillSelectionPrefersSkillsDirectoryToAgentDirectory(t *testing.T) {
@@ -85,7 +86,53 @@ func TestHubSkillSelectionPrefersSkillsDirectoryToAgentDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal("source skill was made ambiguous by an agent copy", err)
 	}
-	assertHubSkillSelection(t, client, preview, ".", "skills/impeccable", "Primary source skill", ".agents/skills/impeccable")
+	assertHubSkillSelection(t, client, preview, ".", "skills/impeccable", "Primary source skill")
+	assertHubVariant(t, client, preview, ".agents/skills/impeccable")
+}
+
+func TestHubSkillSelectionPrefersRootSkillsToCuratedDistribution(t *testing.T) {
+	repo := testRepo(t)
+	writeHubSkillVariant(t, repo, "skills/impeccable", "Primary source skill")
+	writeHubSkillVariant(t, repo, "skills/.curated/impeccable", "Curated distribution")
+	testGit(t, repo, "add", ".")
+	testGit(t, repo, "commit", "-m", "Add source and curated distribution")
+	client := New(t.TempDir())
+	preview, err := previewHubSkill(t, client, repo, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertHubSkillSelection(t, client, preview, ".", "skills/impeccable", "Primary source skill")
+	assertHubVariant(t, client, preview, "skills/.curated/impeccable")
+	if hubSkillPriority(".", "skills/.curated/impeccable") <= hubSkillPriority(".", "skills/impeccable") {
+		t.Fatal("specialized directory did not retain its own distribution tier")
+	}
+}
+
+func TestHubSkillSelectionRejectsAmbiguousLowerDistributionTier(t *testing.T) {
+	repo := testRepo(t)
+	paths := []string{"skills/impeccable", ".claude/skills/first", ".claude/skills/second"}
+	for _, subpath := range paths {
+		writeHubSkillVariant(t, repo, subpath, "Content from "+subpath)
+	}
+	testGit(t, repo, "add", ".")
+	testGit(t, repo, "commit", "-m", "Add ambiguous lower distribution tier")
+	client := New(t.TempDir())
+	_, err := previewHubSkill(t, client, repo, ".")
+	if err == nil || !strings.Contains(err.Error(), "matches multiple repository skills") {
+		t.Fatalf("Hub selector silently hid ambiguous lower-tier builds: %v", err)
+	}
+	for _, subpath := range paths {
+		if !strings.Contains(err.Error(), subpath) {
+			t.Fatalf("ambiguity error omitted a family member: %v", err)
+		}
+	}
+	snapshot := hubAvailabilitySnapshot{}
+	for _, subpath := range paths {
+		snapshot.Roots = append(snapshot.Roots, hubAvailabilityRoot{Path: subpath, Name: "impeccable", ValidMetadata: true})
+	}
+	if state, reason := snapshot.availability("impeccable"); state != "unavailable" || !strings.Contains(reason, "matches multiple repository skills") {
+		t.Fatalf("Hub availability disagreed with selector ambiguity: %q %q", state, reason)
+	}
 }
 
 func TestHubSkillSelectionRejectsAmbiguousStandardDirectory(t *testing.T) {
@@ -123,7 +170,7 @@ func TestHubSkillSelectionHonorsExplicitScope(t *testing.T) {
 	assertHubSkillSelection(t, client, preview, "selected", selected, "Scoped agent skill", outside, fixture)
 }
 
-func TestGitRepositoryPreviewPreservesDistinctHubSkillCopies(t *testing.T) {
+func TestGitRepositoryPreviewGroupsDistributionCopiesAndPreservesFixtures(t *testing.T) {
 	repo := testRepo(t)
 	variants := []string{
 		"skills/impeccable",
@@ -143,8 +190,8 @@ func TestGitRepositoryPreviewPreservesDistinctHubSkillCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = client.Release(preview.ID) })
-	if preview.Subpath != "." || len(preview.Candidates) != len(variants)+2 {
-		t.Fatalf("unrestricted Git preview silently filtered skills: %+v", preview)
+	if preview.Subpath != "." || len(preview.Candidates) != len(variants) {
+		t.Fatalf("Git preview did not group distribution copies: %+v", preview)
 	}
 	for _, subpath := range variants {
 		candidates, err := client.Candidates(preview.ID, []string{subpath})
@@ -155,6 +202,20 @@ func TestGitRepositoryPreviewPreservesDistinctHubSkillCopies(t *testing.T) {
 		if err != nil || string(body) != "variant from "+subpath {
 			t.Fatalf("Git preview changed %q: %q %v", subpath, body, err)
 		}
+	}
+}
+
+func assertHubVariant(t *testing.T, client *Client, preview Preview, subpath string) {
+	t.Helper()
+	if len(preview.Candidates) != 1 || len(preview.Candidates[0].Variants) != 1 || preview.Candidates[0].Variants[0].Subpath != subpath {
+		t.Fatalf("Hub preview lost the selectable distribution variant: %+v", preview.Candidates)
+	}
+	candidates, err := client.Candidates(preview.ID, []string{subpath})
+	if err != nil || len(candidates) != 1 || candidates[0].Skill.Subpath != subpath {
+		t.Fatalf("Hub variant lost its physical provenance: %+v %v", candidates, err)
+	}
+	if _, err := client.Candidates(preview.ID, []string{preview.Candidates[0].Subpath, subpath}); err == nil {
+		t.Fatal("Hub preview allowed selecting two variants of one skill")
 	}
 }
 

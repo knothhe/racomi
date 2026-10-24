@@ -44,7 +44,7 @@ func (c *Client) DescribePreview(previewID string) (Preview, error) {
 		return Preview{}, errors.New("preview is no longer available; preview the source again")
 	}
 	preview := record.preview
-	preview.Candidates = append([]CandidateInfo{}, preview.Candidates...)
+	preview.Candidates = cloneCandidates(preview.Candidates)
 	preview.Skipped = append([]SkippedSkill(nil), preview.Skipped...)
 	preview.Warnings = append([]string(nil), preview.Warnings...)
 	return preview, nil
@@ -92,6 +92,9 @@ func (c *Client) CatalogForPreview(previewID string, source skillstore.Source) (
 			// Invalid metadata cannot provide a trusted, portable skill name.
 			old = skillstore.SourceSkill{Name: "unreadable-skill", Subpath: item.Subpath}
 		}
+		if item.name != "" {
+			old.Name = item.name
+		}
 		old.Removed, old.New, old.SkipReason = false, false, item.Reason
 		catalog = append(catalog, old)
 		delete(previous, item.Subpath)
@@ -134,7 +137,8 @@ func (c *Client) CatalogForPreview(previewID string, source skillstore.Source) (
 	source.Catalog, source.LastError = catalog, ""
 	source.Warnings = warnings
 	source.RefreshedAt = time.Now().UTC().Format(time.RFC3339Nano)
-	record.preview.Candidates = items
+	record.candidates = items
+	record.preview.Candidates = groupDistributionCandidates(items, skipped...)
 	record.preview.Skipped, record.preview.Warnings = skipped, warnings
 	c.previews[previewID] = record
 	return source, nil
@@ -214,7 +218,7 @@ func (c *Client) PrepareSourceSync(ctx context.Context, source skillstore.Source
 	if err != nil {
 		return nil, "", err
 	}
-	candidates, err := c.Candidates(preview.ID, paths)
+	candidates, err := c.candidatesForPreview(preview.ID, paths, source.Catalog)
 	if err != nil {
 		_ = c.Release(preview.ID)
 		return nil, "", err

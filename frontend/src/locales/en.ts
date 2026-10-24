@@ -968,4 +968,7 @@ export const en = {
   "正在检查当前仓库中的技能，可继续预览。": "Checking this skill in the current repository. You can still preview it.",
   "核验时间：{0}": "Checked at: {0}",
   "请选择当前仓库中的技能。": "Choose a skill from the current repository.",
+  "选择变体": "Choose variant",
+  "不同变体的内容有所区别。": "Variants contain different content.",
+  "{0} 个变体": "{0} variants",
 } as const;

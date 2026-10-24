@@ -33,6 +33,8 @@ type previewRecord struct {
 	preview Preview
 	root    string
 	issues  []repositoryIssue
+	// Keep physical paths for source catalogs and already-installed variants.
+	candidates []CandidateInfo
 }
 
 type Client struct {
@@ -262,28 +264,27 @@ func (c *Client) previewOptionsLocked(ctx context.Context, spec sourceSpec, refr
 		return Preview{}, err
 	}
 	if spec.skill != "" {
-		selected := make([]CandidateInfo, 0, 1)
-		for _, item := range items {
-			// Keep the path resolved before extraction; a skipped preferred
-			// build must not silently turn a lower-priority copy into the result.
-			if item.Subpath == selectedPath {
-				selected = append(selected, item)
-			}
-		}
-		if len(selected) != 1 {
+		selected := selectDistributionCandidates(items, selectedPath, skipped...)
+		if len(selected) == 0 {
 			os.RemoveAll(root)
 			return Preview{}, unavailableHubSkillError(spec.skill, "the selected skill could not be read")
 		}
 		items = selected
 	}
-	result := Preview{ID: id, Source: spec.source, Ref: resolvedRef, Subpath: spec.subpath, Revision: revision, Candidates: items, Skipped: skipped, Warnings: warnings}
-	c.previews[id] = previewRecord{preview: result, root: root, issues: issues}
+	result := Preview{ID: id, Source: spec.source, Ref: resolvedRef, Subpath: spec.subpath, Revision: revision, Candidates: groupDistributionCandidates(items, skipped...), Skipped: skipped, Warnings: warnings}
+	c.previews[id] = previewRecord{preview: result, root: root, issues: issues, candidates: items}
 	return result, nil
 }
 
 // Candidates accepts only subpaths offered by a successful preview. An empty
 // selection intentionally installs nothing; callers must select explicitly.
 func (c *Client) Candidates(previewID string, paths []string) ([]skillstore.Candidate, error) {
+	return c.candidatesForPreview(previewID, paths, nil)
+}
+
+// Source synchronization may retain the physical origin of an identical copy
+// that is intentionally omitted from the public variant picker.
+func (c *Client) candidatesForPreview(previewID string, paths []string, catalog []skillstore.SourceSkill) ([]skillstore.Candidate, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	record, ok := c.previews[previewID]
@@ -292,6 +293,11 @@ func (c *Client) Candidates(previewID string, paths []string) ([]skillstore.Cand
 	}
 	result := make([]skillstore.Candidate, 0, len(paths))
 	seen := make(map[string]bool)
+	groups := make(map[string]bool)
+	physicalKeys := distributionCandidateKeys(record.candidates, record.preview.Skipped...)
+	if catalog != nil {
+		physicalKeys = skillstore.DistributionCatalogKeys(catalog)
+	}
 	for _, selected := range paths {
 		cleaned, err := cleanSubpath(selected)
 		if err != nil {
@@ -301,16 +307,26 @@ func (c *Client) Candidates(previewID string, paths []string) ([]skillstore.Cand
 			continue
 		}
 		seen[cleaned] = true
-		var found *CandidateInfo
-		for i := range record.preview.Candidates {
-			if record.preview.Candidates[i].Subpath == cleaned {
-				found = &record.preview.Candidates[i]
-				break
+		found, group := findPreviewCandidate(record.preview.Candidates, cleaned)
+		if found == nil && catalog != nil {
+			for i := range record.candidates {
+				if record.candidates[i].Subpath == cleaned {
+					found = &record.candidates[i]
+					group = physicalKeys[cleaned]
+					break
+				}
 			}
 		}
 		if found == nil {
 			return nil, fmt.Errorf("skill %q was not offered by this preview", cleaned)
 		}
+		if catalog != nil && physicalKeys[cleaned] != "" {
+			group = physicalKeys[cleaned]
+		}
+		if groups[group] {
+			return nil, errors.New("select only one variant of each skill")
+		}
+		groups[group] = true
 		candidatePath := filepath.Join(record.root, filepath.FromSlash(cleaned))
 		if err := validateTree(candidatePath); err != nil {
 			return nil, err
@@ -346,7 +362,7 @@ func (c *Client) ReleaseCandidate(candidate skillstore.Candidate) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for id, record := range c.previews {
-		for _, offered := range record.preview.Candidates {
+		for _, offered := range recordPhysicalCandidates(record) {
 			expected := filepath.Join(record.root, filepath.FromSlash(offered.Subpath))
 			if candidate.Path == expected {
 				return c.releaseLocked(id)

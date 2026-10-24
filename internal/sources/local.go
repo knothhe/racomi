@@ -99,7 +99,7 @@ func (c *Client) PreviewLocal(ctx context.Context, path string) (Preview, error)
 		if readErr != nil {
 			return Preview{}, readErr
 		}
-		if cached != item {
+		if cached.ContentHash != item.ContentHash {
 			return Preview{}, errors.New("local skill directory changed while preparing preview")
 		}
 	}

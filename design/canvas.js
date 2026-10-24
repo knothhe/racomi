@@ -528,6 +528,30 @@ window.H2_DESIGN_CANVAS = {
       "y": 22800,
       "w": 760,
       "h": 900
+    },
+    {
+      "file": "skill-variants.html?theme=light",
+      "title": "同名技能 · 默认合并",
+      "x": 0,
+      "y": 24600,
+      "w": 1280,
+      "h": 760
+    },
+    {
+      "file": "skill-variants.html?theme=light&state=selected",
+      "title": "同名技能 · 选择变体",
+      "x": 1320,
+      "y": 24600,
+      "w": 640,
+      "h": 760
+    },
+    {
+      "file": "skill-variants.html?theme=dark&state=selected",
+      "title": "同名技能 · 深色变体",
+      "x": 2040,
+      "y": 24600,
+      "w": 1280,
+      "h": 760
     }
   ],
   "notes": [
@@ -608,6 +632,12 @@ window.H2_DESIGN_CANVAS = {
       "x": 0,
       "y": 22580,
       "w": 1920
+    },
+    {
+      "text": "Git 和 skills.sh 按同一规则合并同仓库的同名分发副本。内容相同只展示一份；有差异时在该技能下选择一个变体，计数和全选按技能计算。来源同步默认保留已安装变体，切换时保留技能 ID、预设与项目引用。",
+      "x": 0,
+      "y": 24500,
+      "w": 1280
     }
   ]
 };

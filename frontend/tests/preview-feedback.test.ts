@@ -4,10 +4,11 @@ import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 import { gitBackedHubSkill, recoverableHubSkill } from "../src/hub-recovery.ts";
+import { variantOptions } from "../src/skill-variants.ts";
 import { createHubAvailability } from "../src/hub-availability.ts";
 
 const source = ts.createSourceFile("main.ts", readFileSync(new URL("../src/main.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
-const names = new Set(["doPreview", "task", "previewRequestPanel", "previewWaitHint", "updatePreviewWait", "closePreview", "button", "iconButton", "captureListScroll", "restoreListScroll", "renderPreview", "scanWarnings", "checkVisibleHubAvailability"]);
+const names = new Set(["doPreview", "task", "previewRequestPanel", "previewWaitHint", "updatePreviewWait", "closePreview", "button", "iconButton", "captureListScroll", "restoreListScroll", "renderPreview", "scanWarnings", "checkVisibleHubAvailability", "previewCandidateRow", "variantPicker"]);
 const production = source.statements.filter((node) => ts.isFunctionDeclaration(node) && node.name && names.has(node.name.text)).map((node) => node.getText(source)).join("\n");
 const panelProduction = source.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "previewPanel")!.getText(source);
 const eventProduction = source.statements.filter((node) => ts.isExpressionStatement(node) && ts.isCallExpression(node.expression)
@@ -43,7 +44,7 @@ function harness(options: { previewOpen?: boolean; actualPanel?: boolean; locali
     return new Promise((resolve, reject) => pending.push({ resolve, reject }));
   }]));
   const context = vm.createContext({
-    api, Error, gitBackedHubSkill, recoverableHubSkill, hubAvailability: availability, localizeMessage: options.localizeMessage || ((value: string) => value), Date: { now: () => now },
+    api, Error, variantOptions, gitBackedHubSkill, recoverableHubSkill, hubAvailability: availability, localizeMessage: options.localizeMessage || ((value: string) => value), Date: { now: () => now },
     recordRender: () => { renders++; }, setThemePreference: () => {}, ensureHubResults: () => {},
     syncRenderedControls: (html: string) => { install.disabled = /data-action="install" disabled/.test(html); },
     window: { setInterval: (callback: () => void) => { const id = nextTimer++; timers.set(id, callback); return id; }, clearInterval: (id: number) => timers.delete(id) },
@@ -94,6 +95,7 @@ function harness(options: { previewOpen?: boolean; actualPanel?: boolean; locali
       return listeners.get("document:click")!({ target, preventDefault() {} });
     },
     choose: (value: string, checked: boolean) => listeners.get("app:change")!({ target: { name: "candidate", value, checked }, preventDefault() {} }),
+    chooseVariant: (candidate: string, value: string) => listeners.get("app:change")!({ target: { name: "candidate-variant", value, dataset: { candidate } }, preventDefault() {} }),
     run: context.run as (...args: unknown[]) => Promise<void>,
     snapshot: context.snapshot as () => { html: string; preview: unknown; request: { source: string; ref: string; subpath: string; loading: boolean; error: string; kind: string; selectionMode: string } | null; missing: string; selected: string[]; busy: number; page: string; tab: string; returnTo: unknown },
     leave: context.leave as () => void, returnToDiscover: context.returnToDiscover as () => void,
@@ -457,4 +459,29 @@ test("foreground previews and navigation cancel checks; closing resumes only unf
   h.checks[1].resolve([{ url: otherURL, state: "missing", revision: "old", checkedAt: "", reason: "" }]);
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(h.availability.get(otherURL)?.state, "unknown", "a canceled late result cannot mark another page's card missing");
+});
+
+
+test("changing a distribution variant keeps one selected skill at the chosen physical path", async () => {
+  const h = harness({ actualPanel: true });
+  const work = h.run("team/repo", "", "");
+  h.pending[0].resolve({ id: "variants", source: "team/repo", candidates: [{
+    name: "captions-overlay", description: "Agent build", subpath: ".agents/skills/captions-overlay", contentHash: "agents", variants: [{
+      name: "captions-overlay", description: "Claude build", subpath: ".claude/skills/captions-overlay", contentHash: "claude",
+    }],
+  }] });
+  await work;
+  assert.match(h.snapshot().html, /2 个变体/);
+  assert.deepEqual([...h.snapshot().selected], [".agents/skills/captions-overlay"]);
+  await h.chooseVariant(".agents/skills/captions-overlay", ".claude/skills/captions-overlay");
+  assert.deepEqual([...h.snapshot().selected], [".claude/skills/captions-overlay"]);
+  await h.click({ action: "select-all-candidates" });
+  assert.deepEqual([...h.snapshot().selected], []);
+  await h.click({ action: "select-all-candidates" });
+  assert.deepEqual([...h.snapshot().selected], [".claude/skills/captions-overlay"]);
+  await h.chooseVariant(".claude/skills/captions-overlay", ".agents/skills/captions-overlay");
+  assert.deepEqual([...h.snapshot().selected], [".agents/skills/captions-overlay"]);
+  await h.choose(".agents/skills/captions-overlay", false);
+  await h.chooseVariant(".agents/skills/captions-overlay", ".claude/skills/captions-overlay");
+  assert.deepEqual([...h.snapshot().selected], [], "choosing a variant must not check an unchecked skill");
 });

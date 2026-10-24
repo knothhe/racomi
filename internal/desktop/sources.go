@@ -135,25 +135,77 @@ func (s *Service) RefreshSource(ctx context.Context, id string) (AppState, error
 }
 
 func sourceSyncPaths(state skillstore.State, source skillstore.Source, selected []string) ([]string, error) {
-	paths := []string{}
-	wanted := map[string]bool{}
-	for _, path := range selected {
-		wanted[path] = true
-	}
+	catalog := append([]skillstore.SourceSkill{}, source.Catalog...)
+	known := map[string]bool{}
 	for _, item := range source.Catalog {
+		known[item.Subpath] = true
+	}
+	for _, skill := range state.Skills {
+		if skill.SourceID == source.ID && !known[skill.Subpath] {
+			catalog = append(catalog, skillstore.SourceSkill{Name: skill.Name, Subpath: skill.Subpath, Removed: skill.UpstreamRemoved})
+			known[skill.Subpath] = true
+		}
+	}
+	keys := skillstore.DistributionCatalogKeys(catalog)
+	installedCounts := map[string]int{}
+	for _, skill := range state.Skills {
+		if skill.SourceID == source.ID {
+			installedCounts[keys[skill.Subpath]]++
+		}
+	}
+	entries := map[string]skillstore.SourceSkill{}
+	for _, item := range source.Catalog {
+		entries[item.Subpath] = item
+	}
+	chosen := map[string]string{}
+	for _, path := range selected {
+		item, exists := entries[path]
+		if !exists || item.Removed {
+			return nil, errors.New("所选技能已不在来源清单中，请重新查看同步计划")
+		}
 		if item.SkipReason != "" {
-			if wanted[item.Subpath] {
-				return nil, fmt.Errorf("skill %q was skipped during refresh: %s", item.Subpath, item.SkipReason)
+			return nil, fmt.Errorf("skill %q was skipped during refresh: %s", item.Subpath, item.SkipReason)
+		}
+		key := keys[path]
+		if previous, exists := chosen[key]; exists && previous != path {
+			return nil, fmt.Errorf("select only one distribution variant of skill %q", item.Name)
+		}
+		chosen[key] = path
+	}
+	if source.Mode == skillstore.SourceModeAll {
+		// Keep the installed physical variant, even while removed or skipped.
+		// A different build is used only after the user explicitly selects it.
+		for _, skill := range state.Skills {
+			if skill.SourceID != source.ID {
+				continue
 			}
+			key := keys[skill.Subpath]
+			if _, exists := chosen[key]; !exists {
+				chosen[key] = skill.Subpath
+			}
+		}
+		defaults := map[string]string{}
+		for _, item := range source.Catalog {
+			if item.Removed || item.SkipReason != "" {
+				continue
+			}
+			key := keys[item.Subpath]
+			best, exists := defaults[key]
+			if !exists || skillstore.DistributionPriority(item.Subpath) < skillstore.DistributionPriority(best) || skillstore.DistributionPriority(item.Subpath) == skillstore.DistributionPriority(best) && item.Subpath < best {
+				defaults[key] = item.Subpath
+			}
+		}
+		for key, path := range defaults {
+			if _, exists := chosen[key]; !exists {
+				chosen[key] = path
+			}
+		}
+	}
+	paths := []string{}
+	for _, item := range source.Catalog {
+		if chosen[keys[item.Subpath]] != item.Subpath || item.Removed || item.SkipReason != "" {
 			continue
 		}
-		if item.Removed {
-			continue
-		}
-		if source.Mode != "all" && !wanted[item.Subpath] {
-			continue
-		}
-		delete(wanted, item.Subpath)
 		unchanged := false
 		for _, skill := range state.Skills {
 			if skill.SourceID == source.ID && skill.Subpath == item.Subpath {
@@ -161,12 +213,9 @@ func sourceSyncPaths(state skillstore.State, source skillstore.Source, selected 
 				break
 			}
 		}
-		if !unchanged {
+		if !unchanged || installedCounts[keys[item.Subpath]] > 1 {
 			paths = append(paths, item.Subpath)
 		}
-	}
-	if source.Mode != "all" && len(wanted) != 0 {
-		return nil, errors.New("所选技能已不在来源清单中，请重新查看同步计划")
 	}
 	return paths, nil
 }

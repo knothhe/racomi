@@ -1,21 +1,61 @@
 import type { Source, Skill, SourceSkill } from "./api";
+import { distributionKey, distributionPriority, distributionTier } from "./skill-variants.ts";
 
-export type SourceEntry = { item: SourceSkill; local?: Skill; kind: "install" | "update" | "current" | "removed" | "skipped" };
+export type SourceEntry = { key?: string; item: SourceSkill; variants?: SourceSkill[]; local?: Skill; kind: "install" | "update" | "current" | "removed" | "skipped" };
 
-export function catalogEntries(source: Source, skills: Skill[], locale = "zh-CN"): SourceEntry[] {
+export function catalogEntries(source: Source, skills: Skill[], locale = "zh-CN", choices?: ReadonlyMap<string, string>): SourceEntry[] {
   const installed = skills.filter((skill) => skill.sourceId === source.id);
-  const entries: SourceEntry[] = (source.catalog || []).map((item) => {
-    const local = installed.find((skill) => skill.subpath === item.subpath);
+  const catalog = [...(source.catalog || [])];
+  for (const local of installed) {
+    if (!catalog.some((item) => item.subpath === local.subpath) && local.upstreamRemoved) catalog.push({ ...local, removed: true, new: false });
+  }
+  const ambiguous = new Set<string>();
+  const tiers = new Map<string, Map<string, string>>();
+  for (const item of catalog) {
+    if (item.removed) continue;
+    const key = distributionKey(item.name, item.subpath);
+    const tier = distributionTier(item.subpath);
+    const paths = tiers.get(key) || new Map<string, string>();
+    if (paths.has(tier) && paths.get(tier) !== item.subpath) ambiguous.add(key);
+    paths.set(tier, item.subpath);
+    tiers.set(key, paths);
+  }
+  const groups = new Map<string, SourceSkill[]>();
+  for (const item of catalog) {
+    const family = distributionKey(item.name, item.subpath);
+    const key = ambiguous.has(family) ? `path\0${item.subpath}` : family;
+    const group = groups.get(key) || [];
+    group.push(item);
+    groups.set(key, group);
+  }
+  const entries: SourceEntry[] = [...groups.values()].map((group) => {
+    group.sort((a, b) => distributionPriority(a.subpath) - distributionPriority(b.subpath) || a.subpath.localeCompare(b.subpath, "en"));
+    const key = group[0].subpath;
+    const locals = installed.filter((skill) => group.some((item) => skill.subpath === item.subpath));
+    const preferred = choices?.get(key) || locals[0]?.subpath;
+    const item = group.find((item) => item.subpath === preferred) || group.find((item) => !item.removed && !item.skipReason) || group[0];
+    const local = locals.find((skill) => skill.subpath === item.subpath) || locals[0];
+    // Removed/skipped snapshots remain distinct from usable copies, including
+    // when they retain the same hash. This lets an explicit choice recover an
+    // installed path without silently replacing it on refresh.
+    const seen = new Set<string>();
+    const options = [item, ...group.filter((variant) => variant !== item)].filter((variant) => {
+      const content = variant.contentHash ? `hash\0${variant.contentHash}` : `path\0${variant.subpath}`;
+      const identity = `${content}\0${!!variant.removed}\0${variant.skipReason || ""}`;
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    });
     // A skipped item may retain its previous content and revision. It must never
     // be mistaken for an install, update or upstream removal in this refresh.
     // Imported metadata may differ from SKILL.md. Match the backend sync check:
-    // only a content or deployment-name change requires an update.
-    const kind = item.skipReason ? "skipped" : item.removed ? "removed" : !local ? "install" : local.contentHash !== item.contentHash || local.name !== item.name ? "update" : "current";
-    return { item, local, kind };
+    // content, deployment-name or an explicit physical-variant change requires
+    // an update.
+    // A sync also consolidates historical duplicate records into the selected
+    // variant while preserving their project and preset references.
+    const kind = item.skipReason ? "skipped" : item.removed ? "removed" : !local ? "install" : locals.length > 1 || local.contentHash !== item.contentHash || local.name !== item.name || local.subpath !== item.subpath ? "update" : "current";
+    return { key, item, local, kind, ...(options.length > 1 ? { variants: options.slice(1) } : {}) };
   });
-  for (const local of installed) {
-    if (!entries.some((entry) => entry.item.subpath === local.subpath) && local.upstreamRemoved) entries.push({ item: { ...local, removed: true, new: false }, local, kind: "removed" });
-  }
   return entries.sort((a, b) => Number(a.kind === "removed") - Number(b.kind === "removed") || a.item.name.localeCompare(b.item.name, locale, { numeric: true }));
 }
 

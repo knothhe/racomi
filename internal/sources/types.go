@@ -28,11 +28,12 @@ type HubAvailability struct {
 }
 
 type CandidateInfo struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Subpath     string `json:"subpath"`
-	Revision    string `json:"revision"`
-	ContentHash string `json:"contentHash"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Subpath     string          `json:"subpath"`
+	Revision    string          `json:"revision"`
+	ContentHash string          `json:"contentHash"`
+	Variants    []CandidateInfo `json:"variants,omitempty"`
 }
 
 // SkippedSkill identifies skill content that could not be safely read. Its
@@ -41,6 +42,7 @@ type SkippedSkill struct {
 	Subpath        string `json:"subpath"`
 	Reason         string `json:"reason"`
 	blockedSubtree bool   // A failed walk can hide previously known descendants.
+	name           string // Trusted metadata can survive an asset or budget skip.
 }
 
 type Preview struct {

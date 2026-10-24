@@ -315,20 +315,35 @@ func (l *Store) SyncSource(sourceID, expectedRevision string, candidates []Candi
 	if expectedRevision == "" || source.Revision != expectedRevision {
 		return errors.New("source changed; refresh the synchronization plan")
 	}
+	before := cloneState(s)
 	prepared := make([]Candidate, len(candidates))
-	paths := map[string]bool{}
 	for i, candidate := range candidates {
 		prepared[i], err = sourceCandidate(source, candidate)
 		if err != nil {
 			return err
 		}
+	}
+	distributionKeys := candidateDistributionKeys(s, prepared)[distributionOrigin(Skill{Source: source.Repository, Ref: source.Ref, SourceID: source.ID})]
+	paths := map[string]bool{}
+	groups := map[string]bool{}
+	for i, candidate := range prepared {
 		if paths[candidate.Skill.Subpath] {
 			return errors.New("duplicate source path in synchronization plan")
 		}
 		paths[candidate.Skill.Subpath] = true
-		previous := slices.IndexFunc(s.Skills, func(skill Skill) bool {
-			return skill.SourceID == sourceID && skill.Subpath == candidate.Skill.Subpath
-		})
+		key := distributionKeys[candidate.Skill.Subpath]
+		if groups[key] {
+			return fmt.Errorf("select only one distribution variant of skill %q", candidate.Skill.Name)
+		}
+		groups[key] = true
+		if keeperID := coalesceInstalledDistribution(&s, candidate.Skill, distributionKeys); keeperID != "" {
+			prepared[i].Skill.ID = keeperID
+			continue
+		}
+		previous, matchErr := installedDistributionMatch(s, candidate.Skill, distributionKeys)
+		if matchErr != nil {
+			return matchErr
+		}
 		if previous >= 0 {
 			prepared[i].Skill.ID = s.Skills[previous].ID
 		} else {
@@ -345,7 +360,6 @@ func (l *Store) SyncSource(sourceID, expectedRevision string, candidates []Candi
 	if len(prepared) == 0 {
 		return nil
 	}
-	before := cloneState(s)
 	if _, err = l.installCandidates(&s, prepared); err != nil {
 		return err
 	}
@@ -353,7 +367,7 @@ func (l *Store) SyncSource(sourceID, expectedRevision string, candidates []Candi
 		return err
 	}
 	for i := range s.Sources[index].Catalog {
-		if paths[s.Sources[index].Catalog[i].Subpath] {
+		if groups[distributionKeys[s.Sources[index].Catalog[i].Subpath]] {
 			s.Sources[index].Catalog[i].New = false
 		}
 	}

@@ -52,8 +52,15 @@ export function installSelects(root: Document = document) {
         close(true);
         sync(select);
         select.dispatchEvent(new Event("change", { bubbles: true }));
-        // A language change can replace the whole page. Keep keyboard focus.
-        root.querySelector<HTMLButtonElement>(`[data-select-trigger="${CSS.escape(select.name)}"]`)?.focus({ preventScroll: true });
+        // A variant or language change can replace the select. Let the new
+        // controls attach before restoring focus to the matching trigger.
+        queueMicrotask(() => {
+          const replacement = select.isConnected ? select : [...root.querySelectorAll<HTMLSelectElement>("select")].find((item) => item.name === select.name && item.dataset.selectKey === select.dataset.selectKey);
+          if (replacement) {
+            sync(replacement);
+            (replacement.nextElementSibling as HTMLButtonElement)?.focus({ preventScroll: true });
+          }
+        });
       });
       popup.append(item);
     }
@@ -81,7 +88,8 @@ export function installSelects(root: Document = document) {
     if (!trigger?.classList.contains("select-trigger")) {
       trigger = root.createElement("button"); trigger.type = "button";
       trigger.className = `select-trigger ${select.className}`;
-      trigger.dataset.selectTrigger = select.name;
+      // Repeated controls need an identity that survives value and label changes.
+      trigger.dataset.selectTrigger = select.dataset.selectKey === undefined ? select.name : JSON.stringify([select.name, select.dataset.selectKey]);
       trigger.setAttribute("aria-haspopup", "listbox");
       trigger.setAttribute("aria-expanded", "false");
       trigger.setAttribute("aria-controls", `select-menu-${++serial}`);

@@ -25,9 +25,10 @@ import "./source-filter.css";
 import "./markdown.css";
 import { defaultSkillFilters, filterSkills, pendingSkills, skillSource, skillStatusIDs, type SkillFilters, type SkillStatusFilter } from "./skill-filters";
 import { catalogEntries, sourceStatus, sourceStatusDetails, sourceSyncPaths, summarizeSource, type SourceEntry } from "./source-catalog";
+import { variantOptions } from "./skill-variants";
 import { defaultSettings, projectDirectories, settingsPage } from "./settings";
 import { enableNativeThemeSync, getThemePreference, setThemePreference, type ThemePreference } from "./theme";
-import { api, type AppSettings, type AppState, type ApplyPlan, type CloudBackup, type SyncConflict, type Source, type ImportResult, type Preset, type Preview, type SearchResult, type SkillListPage, type Skill, type SkillsManagerPreview, type Target, type Update } from "./api";
+import { api, type AppSettings, type AppState, type ApplyPlan, type CloudBackup, type SyncConflict, type Source, type ImportResult, type Preset, type Preview, type PreviewCandidate, type SearchResult, type SkillListPage, type Skill, type SkillsManagerPreview, type Target, type Update } from "./api";
 
 type Page = "skills" | "sources" | "discover" | "presets" | "projects" | "global" | "settings" | "guide";
 const nav: { id: Page; title: string; icon: string }[] = [
@@ -64,6 +65,7 @@ let sourceListScroll: ListScroll = [];
 let selectedPreset = "";
 let sourceCatalogFilter: "changes" | "all" = "changes";
 const sourceSelections = new Map<string, Set<string>>();
+const sourceVariantChoices = new Map<string, Map<string, string>>();
 let skillsQuery = "";
 let skillsFilter: SkillStatusFilter = "all";
 let skillsSort: "asc" | "desc" = "asc";
@@ -713,7 +715,7 @@ async function loadSkillDocument(id: string) {
   }
 }
 function sourceEntries(source: Source): SourceEntry[] {
-  return catalogEntries(source, skills(), getLocale());
+  return catalogEntries(source, skills(), getLocale(), sourceVariantChoices.get(source.id));
 }
 function sourceSelection(id: string) {
   if (!sourceSelections.has(id)) sourceSelections.set(id, new Set());
@@ -788,7 +790,7 @@ function sourceCatalogRow(source: Source, entry: SourceEntry, removedLocals: Ski
   const selectable = kind === "install" || kind === "update";
   const checked = selectable && (source.mode === "all" || sourceSelection(source.id).has(item.subpath));
   const label = kind === "skipped" ? t("本次跳过") : kind === "removed" ? local ? t("上游移除 · 本地保留") : t("上游移除") : kind === "update" ? t("可更新") : kind === "current" ? t("已同步") : item.new ? t("新增 · 可安装") : t("可安装");
-  return `<div class="source-catalog-row ${kind === "removed" ? "source-removed" : ""}"><label class="source-catalog-choice"><input type="checkbox" name="source-candidate" data-source="${e(source.id)}" value="${e(item.subpath)}" aria-label="${t("选择")}${e(item.name)}" ${checked ? "checked" : ""} ${!selectable || source.mode === "all" || source.lastError ? "disabled" : ""}><span><strong>${e(item.name)}</strong>${item.description ? `<small>${e(item.description)}</small>` : ""}<code>${e(item.subpath || ".")}</code>${local && local.name !== item.name ? `<small>${t("本地名称：")}${e(local.name)}</small>` : ""}${kind === "skipped" ? `<small class="source-skip-reason">${e(tMessage(item.skipReason))}</small>${local ? `<small>${t("已保留本地版本。")}</small>` : ""}` : ""}</span></label><div class="source-catalog-status"><span class="badge ${kind === "update" || kind === "removed" || kind === "skipped" ? "amber" : kind === "current" ? "green" : ""}">${label}</span>${kind === "install" && removedLocals.length ? button(t("重新关联…"), "relink-source-skill", "quiet small", `data-id="${e(source.id)}" data-subpath="${e(item.subpath)}" ${source.lastError ? "disabled" : ""}`) : ""}${(kind === "removed" || kind === "skipped") && local ? button(t("查看本地"), "view-local-skill", "quiet small", `data-id="${e(local.id)}"`) : ""}</div></div>`;
+  return `<div class="source-catalog-row ${kind === "removed" ? "source-removed" : ""}"><div class="source-catalog-body"><label class="source-catalog-choice"><input type="checkbox" name="source-candidate" data-source="${e(source.id)}" value="${e(item.subpath)}" aria-label="${t("选择")}${e(item.name)}" ${checked ? "checked" : ""} ${!selectable || source.mode === "all" || source.lastError ? "disabled" : ""}><span><strong>${e(item.name)}</strong>${item.description ? `<small>${e(item.description)}</small>` : ""}<code>${e(item.subpath || ".")}</code>${local && local.name !== item.name ? `<small>${t("本地名称：")}${e(local.name)}</small>` : ""}${kind === "skipped" ? `<small class="source-skip-reason">${e(tMessage(item.skipReason))}</small>${local ? `<small>${t("已保留本地版本。")}</small>` : ""}` : ""}</span></label>${variantPicker([item, ...arr(entry.variants)], item.subpath, "source-variant", JSON.stringify([source.id, entry.key || item.subpath]), `data-source="${e(source.id)}" data-group="${e(entry.key || item.subpath)}"`, !!source.lastError || activeTasks.has("正在同步来源中的技能…"))}</div><div class="source-catalog-status"><span class="badge ${kind === "update" || kind === "removed" || kind === "skipped" ? "amber" : kind === "current" ? "green" : ""}">${label}</span>${kind === "install" && removedLocals.length ? button(t("重新关联…"), "relink-source-skill", "quiet small", `data-id="${e(source.id)}" data-subpath="${e(item.subpath)}" ${source.lastError ? "disabled" : ""}`) : ""}${(kind === "removed" || kind === "skipped") && local ? button(t("查看本地"), "view-local-skill", "quiet small", `data-id="${e(local.id)}"`) : ""}</div></div>`;
 }
 function sourceEditor(id = "") {
   const source = sources().find((item) => item.id === id);
@@ -917,9 +919,17 @@ function previewRequestPanel() {
   const title = request.loading ? request.kind === "hub-repository" ? t("正在读取仓库技能…") : t("正在准备预览…") : missingSkill ? t("未找到技能") : timedOut ? t("预览超时") : t("未能完成预览");
   return `<section class="panel preview-panel preview-request" aria-labelledby="preview-request-title" aria-busy="${request.loading}"><div class="preview-heading"><h3 id="preview-request-title">${request.loading ? '<span class="spinner" aria-hidden="true"></span>' : icon("alert")}${title}</h3>${iconButton(t("关闭"), "close-preview", "close", "", "", `${t("关闭")} (Esc)`)}</div><p class="mono preview-request-source">${e(request.source)}</p>${request.loading ? `<p id="preview-elapsed" class="preview-elapsed" role="timer" aria-live="off">${t("已等待 {0} 秒", { 0: seconds })}</p><p id="preview-wait-hint" role="status">${previewWaitHint(request, seconds)}</p><p class="muted">${t("可以切换到其他页面，预览会继续进行。")}</p>` : `<div class="preview-request-error" role="alert"><p>${skillSelectionError ? e(tMessage(request.error)) : request.kind === "local" ? t("请检查目录是否存在且可读取，然后重试。") : timedOut ? t("获取仓库或读取技能内容超过等待时限。仓库大小、传输速度或代理连接都可能影响耗时，请稍后重试。") : t("请检查网络、仓库地址和访问权限后重试。")}</p></div><div class="preview-recovery-actions">${missingSkill ? button(t("查看仓库可用技能"), "preview-hub-repository", "primary", "", "search") : ""}${button(t("重试预览"), "retry-preview", missingSkill ? "" : "primary", "", "refresh")}</div><details class="preview-error-details"><summary>${t("错误详情")}</summary><pre>${e(tMessage(request.error))}</pre></details>`}</section>`;
 }
+function variantPicker(options: { name: string; subpath: string; removed?: boolean; skipReason?: string }[], selected: string, name: string, key: string, attributes: string, disabled = false) {
+  if (options.length < 2) return "";
+  return `<label class="variant-control"><span>${t("选择变体")}</span><select name="${name}" data-select-key="${e(key)}" ${attributes} aria-label="${e(options[0].name)} · ${t("选择变体")}" ${disabled ? "disabled" : ""}>${options.map((option) => `<option value="${e(option.subpath)}" ${option.subpath === selected ? "selected" : ""} ${option.removed || option.skipReason ? "disabled" : ""}>${e(option.subpath || ".")}${option.removed ? ` · ${t("上游移除")}` : option.skipReason ? ` · ${t("本次跳过")}` : ""}</option>`).join("")}</select><small>${t("不同变体的内容有所区别。")}</small></label>`;
+}
+function previewCandidateRow(candidate: PreviewCandidate) {
+  const options = variantOptions(candidate);
+  return `<div class="candidate-group"><label class="selection-row"><input type="checkbox" name="candidate" value="${e(candidate.subpath)}" ${selectedCandidates.has(candidate.subpath) ? "checked" : ""}><span><strong>${e(candidate.name)}${options.length > 1 ? ` <span class="badge">${t("{0} 个变体", { 0: options.length })}</span>` : ""}</strong>${candidate.description ? `<small>${e(candidate.description)}</small>` : ""}<code>${e(candidate.subpath || ".")}</code></span></label>${variantPicker(options, candidate.subpath, "candidate-variant", JSON.stringify(options.map((option) => option.subpath).sort()), `data-candidate="${e(candidate.subpath)}"`, activeTasks.has("正在导入所选技能…"))}</div>`;
+}
 function previewPanel() {
   const skipped = arr(preview!.skipped);
-  return `<section class="panel preview-panel" data-preserve-scroll="discover-preview:${e(preview!.id)}"><div class="preview-heading"><div><h3>${t("选择要导入的技能 ")}<span class="badge">${arr(preview!.candidates).length}</span></h3><p class="mono" title="${e(preview!.source)}">${e(preview!.local ? globalPath(preview!.source) : preview!.source)}${preview!.local ? "" : ` · ${e(short(preview!.revision))}`}</p></div><div class="preview-actions">${button(selectedCandidates.size === arr(preview!.candidates).length ? t("取消全选") : t("全选"), "select-all-candidates", "quiet small", arr(preview!.candidates).length ? "" : "disabled")}${iconButton(t("关闭"), "close-preview", "close", "", "", `${t("关闭")} (Esc)`)}</div></div>${previewRepositoryRecovery ? `<p class="preview-recovery-note" role="status">${e(previewMissingSkill ? t("未找到 {0}，请选择当前仓库中的技能。", { 0: previewMissingSkill }) : t("请选择当前仓库中的技能。"))}</p>` : ""}${scanWarnings(preview!.warnings)}${skipped.length ? `<div class="preview-skipped" role="status"><strong>${t("本次跳过 {0} 个技能", { 0: skipped.length })}</strong><ul>${skipped.map((item) => `<li><code>${e(item.subpath || ".")}</code><span>${e(tMessage(item.reason))}</span></li>`).join("")}</ul></div>` : ""}${arr(preview!.candidates).length ? `<div class="selection-list" data-preserve-scroll="discover-candidates:${e(preview!.id)}" tabindex="0" role="region" aria-label="${t("选择要导入的技能 ")}">${arr(preview!.candidates).map((candidate) => `<label class="selection-row"><input type="checkbox" name="candidate" value="${e(candidate.subpath)}" ${selectedCandidates.has(candidate.subpath) ? "checked" : ""}><span><strong>${e(candidate.name)}</strong>${candidate.description ? `<small>${e(candidate.description)}</small>` : ""}<code>${e(candidate.subpath || ".")}</code></span></label>`).join("")}</div><div class="form-footer"><span class="muted" id="candidate-count">${t("已选择 ")}${selectedCandidates.size}${t(" 个技能")}</span>${button(t("导入所选技能"), "install", "primary", selectedCandidates.size ? "" : "disabled", "download")}</div>` : `<div class="small-empty">${t(preview!.local ? "没有发现有效的 SKILL.md，请检查所选目录。" : preview!.hosted ? "没有发现有效的 SKILL.md，请检查来源。" : "没有发现有效的 SKILL.md，请检查仓库与子目录。")}</div>`}</section>`;
+  return `<section class="panel preview-panel" data-preserve-scroll="discover-preview:${e(preview!.id)}"><div class="preview-heading"><div><h3>${t("选择要导入的技能 ")}<span class="badge">${arr(preview!.candidates).length}</span></h3><p class="mono" title="${e(preview!.source)}">${e(preview!.local ? globalPath(preview!.source) : preview!.source)}${preview!.local ? "" : ` · ${e(short(preview!.revision))}`}</p></div><div class="preview-actions">${button(selectedCandidates.size === arr(preview!.candidates).length ? t("取消全选") : t("全选"), "select-all-candidates", "quiet small", arr(preview!.candidates).length ? "" : "disabled")}${iconButton(t("关闭"), "close-preview", "close", "", "", `${t("关闭")} (Esc)`)}</div></div>${previewRepositoryRecovery ? `<p class="preview-recovery-note" role="status">${e(previewMissingSkill ? t("未找到 {0}，请选择当前仓库中的技能。", { 0: previewMissingSkill }) : t("请选择当前仓库中的技能。"))}</p>` : ""}${scanWarnings(preview!.warnings)}${skipped.length ? `<div class="preview-skipped" role="status"><strong>${t("本次跳过 {0} 个技能", { 0: skipped.length })}</strong><ul>${skipped.map((item) => `<li><code>${e(item.subpath || ".")}</code><span>${e(tMessage(item.reason))}</span></li>`).join("")}</ul></div>` : ""}${arr(preview!.candidates).length ? `<div class="selection-list" data-preserve-scroll="discover-candidates:${e(preview!.id)}" tabindex="0" role="region" aria-label="${t("选择要导入的技能 ")}">${arr(preview!.candidates).map(previewCandidateRow).join("")}</div><div class="form-footer"><span class="muted" id="candidate-count">${t("已选择 ")}${selectedCandidates.size}${t(" 个技能")}</span>${button(t("导入所选技能"), "install", "primary", selectedCandidates.size ? "" : "disabled", "download")}</div>` : `<div class="small-empty">${t(preview!.local ? "没有发现有效的 SKILL.md，请检查所选目录。" : preview!.hosted ? "没有发现有效的 SKILL.md，请检查来源。" : "没有发现有效的 SKILL.md，请检查仓库与子目录。")}</div>`}</section>`;
 }
 function closePreview() {
   if (activeTasks.has("正在导入所选技能…")) return;
@@ -1541,6 +1551,32 @@ app.addEventListener("keydown", (event) => {
 });
 app.addEventListener("change", async (ev) => {
   const input = ev.target as HTMLInputElement;
+  if (input.name === "candidate-variant") {
+    if (!preview || activeTasks.has("正在导入所选技能…")) return;
+    const index = preview.candidates.findIndex((candidate) => candidate.subpath === input.dataset.candidate);
+    if (index < 0) return;
+    const current = preview.candidates[index];
+    const options = variantOptions(current);
+    const chosen = options.find((option) => option.subpath === input.value);
+    if (!chosen) return;
+    if (selectedCandidates.delete(current.subpath)) selectedCandidates.add(chosen.subpath);
+    preview.candidates[index] = { ...chosen, variants: options.filter((option) => option.subpath !== chosen.subpath).map(({ variants: _variants, ...option }) => option) };
+    renderPreview();
+    return;
+  }
+  if (input.name === "source-variant") {
+    const source = sources().find((source) => source.id === input.dataset.source);
+    if (!source || source.lastError || activeTasks.has("正在同步来源中的技能…")) return;
+    const entry = sourceEntries(source).find((entry) => (entry.key || entry.item.subpath) === input.dataset.group);
+    const chosen = entry && [entry.item, ...arr(entry.variants)].find((option) => option.subpath === input.value && !option.removed && !option.skipReason);
+    if (!entry || !chosen) return;
+    if (!sourceVariantChoices.has(source.id)) sourceVariantChoices.set(source.id, new Map());
+    sourceVariantChoices.get(source.id)!.set(entry.key || entry.item.subpath, chosen.subpath);
+    const selection = sourceSelection(source.id);
+    if (selection.delete(entry.item.subpath)) selection.add(chosen.subpath);
+    render();
+    return;
+  }
   if (input.name === "bulk-project" || input.name === "bulk-projects-all") {
     if (applicationBusy()) { render(); return; }
     if (input.name === "bulk-projects-all") bulkProjectSelection = changeSelection(bulkProjectSelection, filteredProjects().map((project) => project.id), "toggle-all");
@@ -2043,7 +2079,7 @@ document.addEventListener("click", async (ev) => {
       if (source && source.revision && !source.lastError) {
         const paths = sourceSyncPaths(source, sourceEntries(source), sourceSelection(id));
         const next = await task("正在同步来源中的技能…", () => api.syncSource(id, source.revision, paths));
-        if (next) { updates = null; sourceSelections.delete(id); accept(next); toast(t("技能已同步。上游移除的技能已保留，相关项目与全局配置需手动应用。")); }
+        if (next) { updates = null; sourceSelections.delete(id); sourceVariantChoices.delete(id); accept(next); toast(t("技能已同步。上游移除的技能已保留，相关项目与全局配置需手动应用。")); }
       }
     } else if (action === "delete-source") {
       const source = sources().find((item) => item.id === id);

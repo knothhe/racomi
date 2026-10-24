@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>发现 · 同名技能与变体</title>
+<link rel="stylesheet" href="board.css">
+<script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script>
+<style>
+.page{max-width:960px}.panel{padding:16px}.preview-heading,.form-footer{display:flex;justify-content:space-between;align-items:center;gap:12px}.preview-heading{margin-bottom:14px}.preview-heading p{margin-top:5px}.selection-list{border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:12px 0}.selection-row{display:flex;gap:10px;padding:14px;border-bottom:1px solid var(--line)}.selection-row:last-child{border-bottom:0}.selection-row>span{min-width:0;flex:1}.selection-row strong,.selection-row small,.selection-row code{display:block}.selection-row small{color:var(--muted);margin-top:4px}.selection-row code{font-size:11px;color:var(--muted);overflow-wrap:anywhere;margin-top:6px}.variant-control{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:0 14px 14px 40px}.variant-control select{font:11px var(--code);color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px;max-width:100%;min-width:0}.variant-control small{color:var(--muted);font-size:11px}.choice{border-bottom:1px solid var(--line)}.choice:last-child{border:0}.choice .selection-row{border:0}.variant-hint{font-size:11px;color:var(--muted);line-height:1.6}.badge{margin-left:6px}@media(max-width:640px){.page{padding:10px}.panel{padding:12px}.preview-heading{align-items:flex-start}.variant-control{padding-left:38px}.form-footer{flex-wrap:wrap}}
+</style>
+<header class="header"><span class="brand">◈ Racomi</span><nav class="nav"><span>技能</span><span>来源</span><span class="active">发现</span></nav></header>
+<main class="page"><div class="page-heading"><h1>发现</h1></div><section class="panel">
+<div class="preview-heading"><div><h3>选择要导入的技能 <span class="badge">2</span></h3><p class="mono muted">team/video-skills · 9e8d7c6b</p></div><button class="button quiet">取消全选</button></div>
+<p class="variant-hint">同名分发副本已合并；内容不同的变体可单独选择，每个技能只导入一份。</p>
+<div class="selection-list">
+<div class="choice"><label class="selection-row"><input type="checkbox" checked><span><strong>captions-overlay <span class="badge">2 个变体</span></strong><small id="description">为视频添加字幕，调整样式与显示位置。</small><code id="path">.agents/skills/captions-overlay</code></span></label><label class="variant-control"><span>选择变体</span><select aria-label="captions-overlay：选择变体"><option value="agents">.agents/skills/captions-overlay</option><option value="claude">.claude/skills/captions-overlay</option></select><small>不同变体的内容有所区别。</small></label></div>
+<label class="selection-row"><input type="checkbox" checked><span><strong>video-export</strong><small>按指定分辨率导出视频。</small><code>skills/video-export</code></span></label>
+</div><div class="form-footer"><span class="muted">已选择 2 个技能</span><button class="button primary">↓ 导入所选技能</button></div>
+</section></main>
+<script>
+const choice=document.querySelector('select');
+function update(){document.querySelector('#path').textContent=`.${choice.value}/skills/captions-overlay`;document.querySelector('#description').textContent=choice.value==='claude'?'为 Claude 工作流生成字幕叠加，附带专用脚本。':'为视频添加字幕，调整样式与显示位置。'}
+if(new URLSearchParams(location.search).get('state')==='selected')choice.value='claude';
+choice.addEventListener('change',update);update();
+</script>
+</html>

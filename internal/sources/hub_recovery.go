@@ -45,10 +45,12 @@ func (c *Client) PreviewHubRepository(ctx context.Context, input, ref, subpath s
 	if err != nil {
 		return Preview{}, err
 	}
+	record := c.previews[preview.ID]
+	preview.Candidates = record.candidates
 	preview = filterHubRepositoryPreview(preview)
 	// Candidates checks this stored allowlist, so hidden generated copies and
 	// fixtures cannot be installed by submitting their paths directly.
-	record := c.previews[preview.ID]
+	record.candidates = filterHubRepositoryCandidates(record.candidates, preview.Subpath)
 	record.preview = preview
 	c.previews[preview.ID] = record
 	return preview, nil
@@ -56,24 +58,12 @@ func (c *Client) PreviewHubRepository(ctx context.Context, input, ref, subpath s
 
 func filterHubRepositoryPreview(preview Preview) Preview {
 	fallback := len(hubSkillDirectories) + 2
-	best := make(map[string]int)
 	hasStandard := false
 	for _, candidate := range preview.Candidates {
 		priority := hubSkillPriority(preview.Subpath, candidate.Subpath)
-		if previous, ok := best[candidate.Name]; !ok || priority < previous {
-			best[candidate.Name] = priority
-		}
 		hasStandard = hasStandard || priority < fallback
 	}
-	candidates := make([]CandidateInfo, 0, len(preview.Candidates))
-	for _, candidate := range preview.Candidates {
-		priority := hubSkillPriority(preview.Subpath, candidate.Subpath)
-		if priority == best[candidate.Name] && (!hasStandard || priority < fallback) {
-			// Equal-priority paths remain separate choices for explicit review.
-			candidates = append(candidates, candidate)
-		}
-	}
-	preview.Candidates = candidates
+	preview.Candidates = groupDistributionCandidates(filterHubRepositoryCandidates(preview.Candidates, preview.Subpath), preview.Skipped...)
 	if hasStandard {
 		skipped := make([]SkippedSkill, 0, len(preview.Skipped))
 		for _, candidate := range preview.Skipped {
@@ -84,4 +74,19 @@ func filterHubRepositoryPreview(preview Preview) Preview {
 		preview.Skipped = skipped
 	}
 	return preview
+}
+
+func filterHubRepositoryCandidates(items []CandidateInfo, scope string) []CandidateInfo {
+	fallback := len(hubSkillDirectories) + 2
+	hasStandard := false
+	for _, candidate := range items {
+		hasStandard = hasStandard || hubSkillPriority(scope, candidate.Subpath) < fallback
+	}
+	result := make([]CandidateInfo, 0, len(items))
+	for _, candidate := range items {
+		if !hasStandard || hubSkillPriority(scope, candidate.Subpath) < fallback {
+			result = append(result, candidate)
+		}
+	}
+	return result
 }

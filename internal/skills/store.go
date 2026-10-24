@@ -399,6 +399,19 @@ func (l *Store) Install(candidates []Candidate) ([]Skill, error) {
 	if len(candidates) == 0 {
 		return []Skill{}, nil
 	}
+	distributionKeys := candidateDistributionKeys(s, candidates)
+	groups := map[string]bool{}
+	for _, candidate := range candidates {
+		skill := candidate.Skill
+		if skill.Source == "" {
+			continue
+		}
+		key := distributionOrigin(skill) + "\x00" + distributionKeys[distributionOrigin(skill)][skill.Subpath]
+		if groups[key] {
+			return nil, fmt.Errorf("select only one distribution variant of skill %q", skill.Name)
+		}
+		groups[key] = true
+	}
 	before := cloneState(s)
 	installed, err := l.installCandidates(&s, candidates)
 	if err != nil {
@@ -422,6 +435,7 @@ func (l *Store) Install(candidates []Candidate) ([]Skill, error) {
 func (l *Store) installCandidates(s *State, candidates []Candidate) ([]Skill, error) {
 	installed := []Skill{}
 	seen := map[string]bool{}
+	distributionKeys := candidateDistributionKeys(*s, candidates)
 	for _, candidate := range candidates {
 		skill := candidate.Skill
 		if !validName(skill.Name) {
@@ -439,6 +453,15 @@ func (l *Store) installCandidates(s *State, candidates []Candidate) ([]Skill, er
 			}
 			if len(matches) == 1 {
 				skill.ID = matches[0].ID
+			}
+			if len(matches) == 0 {
+				index, matchErr := installedDistributionMatch(*s, skill, distributionKeys[distributionOrigin(skill)])
+				if matchErr != nil {
+					return nil, matchErr
+				}
+				if index >= 0 {
+					skill.ID = s.Skills[index].ID
+				}
 			}
 		}
 		if skill.ID == "" {

@@ -828,4 +828,34 @@ if (testParameters.has("hub-availability")) {
     },
   } satisfies Partial<typeof api>);
 }
+if (testParameters.has("skill-variants")) {
+  const revision = "9e8d7c6b5a40";
+  const repository = "https://github.com/team/video-skills.git";
+  const agents = { name: "captions-overlay", description: "为视频添加字幕，调整样式与显示位置。", subpath: ".agents/skills/captions-overlay", revision, contentHash: "agent-content" };
+  const claude = { ...agents, description: "为 Claude 工作流生成字幕叠加，附带专用脚本。", subpath: ".claude/skills/captions-overlay", contentHash: "claude-content" };
+  const exportSkill = { name: "video-export", description: "按指定分辨率导出视频。", subpath: "skills/video-export", revision, contentHash: "export-content" };
+  const source = { id: "video-source", name: "Video skills", repository, ref: "main", subpath: ".", mode: (testParameters.has("all") ? "all" : "selected") as "all" | "selected", revision, refreshedAt: "2026-10-22T00:00:00Z", lastError: "", catalog: [agents, claude, exportSkill].map((item) => ({ ...item, new: false, removed: false })) };
+  state.state.sources = [source];
+  state.state.skills = [{ ...state.state.skills[0], ...agents, id: "captions-installed", sourceId: source.id, source: repository, ref: "main", upstreamRemoved: false }];
+  state.state.presets = [{ id: "video-preset", name: "Video workflow", description: "", skillIds: ["captions-installed"] }];
+  Object.assign(api, {
+    listSkills: async (page: number) => ({ skills: page ? [] : [{ name: agents.name, slug: "team/video-skills/captions-overlay", source: "team/video-skills", installs: 123, url: "https://skills.sh/team/video-skills/captions-overlay", supported: true }], total: 1, hasMore: false, page }),
+    checkHubAvailability: async (urls: string[]) => urls.map((url) => ({ url, state: "available" as const, revision, checkedAt: "", reason: "" })),
+    preview: async (input: string) => ({ id: "variants-preview", source: repository, ref: "main", revision, candidates: input.includes("skills.sh/") ? [{ ...agents, variants: [claude] }] : [{ ...agents, variants: [claude] }, exportSkill], skipped: [], warnings: [] }),
+    previewHubRepository: async () => ({ id: "variants-preview", source: repository, ref: "main", revision, candidates: [{ ...agents, variants: [claude] }, exportSkill], skipped: [], warnings: [] }),
+    install: async (_id: string, paths: string[]) => {
+      document.documentElement.dataset.variantInstalledPaths = JSON.stringify(paths);
+      for (const item of [agents, claude, exportSkill].filter((item) => paths.includes(item.subpath))) {
+        const existing = state.state.skills.find((skill) => skill.name === item.name);
+        const skill = { ...state.state.skills[0], ...item, id: existing?.id || item.name, sourceId: source.id, source: repository, ref: "main", upstreamRemoved: false };
+        state.state.skills = [...state.state.skills.filter((skill) => skill.id !== existing?.id), skill];
+      }
+      return copy();
+    },
+    syncSource: async (_id: string, _revision: string, paths: string[]) => {
+      document.documentElement.dataset.variantSyncedPaths = JSON.stringify(paths);
+      return api.install("variants-preview", paths);
+    },
+  } satisfies Partial<typeof api>);
+}
 await import("../src/main");

@@ -29,7 +29,8 @@ const maxRepositoryEntries = 20000
 type repositoryIssue struct {
 	Path      string
 	Reason    string
-	SkillOnly bool // A valid data file can still be an invalid nested skill marker.
+	SkillOnly bool   // A valid data file can still be an invalid nested skill marker.
+	SkillName string // Populated only after strict frontmatter validation.
 }
 
 func extractCommit(parent context.Context, repo, revision, root string, spec sourceSpec, priorityPaths ...string) ([]repositoryIssue, string, error) {
@@ -290,9 +291,13 @@ func scanSkills(root, subpath, revision string, issues []repositoryIssue, allowE
 	relevant := make([]bool, len(scanIssues))
 	for _, path := range paths {
 		reason := ""
+		name := ""
 		for i, issue := range scanIssues {
 			if repositoryIssueAffectsSkill(issue, path) {
 				relevant[i] = true
+				if issue.SkillOnly && filepath.ToSlash(filepath.Dir(issue.Path)) == path && issue.SkillName != "" {
+					name = issue.SkillName
+				}
 				if reason == "" {
 					reason = fmt.Sprintf("unsupported skill content at %q: %s", issue.Path, issue.Reason)
 				}
@@ -306,7 +311,7 @@ func scanSkills(root, subpath, revision string, issues []repositoryIssue, allowE
 			}
 			reason = skillErr.Error()
 		}
-		skipped = append(skipped, SkippedSkill{Subpath: path, Reason: reason})
+		skipped = append(skipped, SkippedSkill{Subpath: path, Reason: reason, name: name})
 	}
 	for i, issue := range scanIssues {
 		if !relevant[i] && (repositoryPathWithin(subpath, issue.Path) || repositoryPathWithin(issue.Path, subpath)) {

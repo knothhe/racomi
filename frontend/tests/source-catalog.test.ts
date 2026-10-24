@@ -111,3 +111,128 @@ test("skipped status takes precedence over retained removal flags and old snapsh
   assert.equal(entries.find((item) => item.item.subpath === "current")?.kind, "current");
   assert.equal(entries.some((item) => item.item.subpath === "foreign"), false);
 });
+
+test("distribution copies count as one catalog skill and identical content has one choice", () => {
+  const data = source([
+    entry(".claude/skills/captions-overlay", { name: "captions-overlay", contentHash: "same" }),
+    entry(".agents/skills/captions-overlay", { name: "captions-overlay", contentHash: "same" }),
+  ]);
+  const entries = catalogEntries(data, []);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].key, ".agents/skills/captions-overlay");
+  assert.equal(entries[0].item.subpath, ".agents/skills/captions-overlay");
+  assert.equal(entries[0].variants, undefined);
+  assert.equal(summarizeSource(entries).installs, 1);
+  assert.deepEqual(sourceSyncPaths({ ...data, mode: "all" }, entries, new Set()), [".agents/skills/captions-overlay"]);
+});
+
+test("different distributions keep selectable content variants and the installed physical default", () => {
+  const canonical = entry(".agents/skills/captions-overlay", { name: "captions-overlay", contentHash: "agents" });
+  const alternate = entry(".claude/skills/copy", { name: "captions-overlay", contentHash: "claude" });
+  const data = source([alternate, canonical]);
+  const installed = [local(alternate.subpath, { name: alternate.name, contentHash: alternate.contentHash })];
+  const entries = catalogEntries(data, installed);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].item.subpath, alternate.subpath);
+  assert.equal(entries[0].kind, "current");
+  assert.equal(entries[0].local?.id, alternate.subpath);
+  assert.deepEqual(entries[0].variants?.map((item) => item.subpath), [canonical.subpath]);
+  assert.equal(summarizeSource(entries).installed, 1);
+  assert.equal(summarizeSource(entries).installs, 0);
+
+  const chosen = catalogEntries(data, installed, "zh-CN", new Map([[canonical.subpath, canonical.subpath]]));
+  assert.equal(chosen[0].item.subpath, canonical.subpath);
+  assert.equal(chosen[0].kind, "update");
+  assert.equal(chosen[0].local?.id, alternate.subpath);
+  assert.deepEqual(sourceSyncPaths(data, chosen, new Set([canonical.subpath])), [canonical.subpath]);
+  assert.deepEqual(sourceSyncPaths({ ...data, mode: "all" }, chosen, new Set()), [canonical.subpath]);
+});
+
+test("identical installed variants stay at their selected path through refresh", () => {
+  const data = source([
+    entry(".agents/skills/shared", { name: "shared", contentHash: "same" }),
+    entry(".claude/skills/shared", { name: "shared", contentHash: "same" }),
+  ]);
+  const entries = catalogEntries(data, [local(".claude/skills/shared", { name: "shared", contentHash: "same" })]);
+  assert.equal(entries[0].item.subpath, ".claude/skills/shared");
+  assert.equal(entries[0].kind, "current");
+  assert.equal(entries[0].variants, undefined);
+});
+
+test("same-tier ambiguity and separate repository scopes remain separate catalog skills", () => {
+  const ambiguous = catalogEntries(source([
+    entry("skills/first", { name: "shared" }),
+    entry("skills/second", { name: "shared" }),
+    entry(".agents/skills/shared", { name: "shared" }),
+  ]), []);
+  assert.equal(ambiguous.length, 3);
+  assert.equal(ambiguous.every((entry) => !entry.variants), true);
+  const scoped = catalogEntries(source([
+    entry("skills/one/shared", { name: "shared" }),
+    entry("skills/two/shared", { name: "shared" }),
+    entry("tests/.agents/skills/shared", { name: "shared" }),
+    entry(".agents/skills/shared", { name: "shared" }),
+  ]), []);
+  assert.equal(scoped.length, 4);
+  const firstSource = source([entry(".agents/skills/shared", { name: "shared" })]);
+  const secondSource = source([entry(".claude/skills/shared", { name: "shared" })], { id: "another", repository: "another/repo" });
+  const installed = [local(".agents/skills/shared", { name: "shared" })];
+  assert.equal(catalogEntries(firstSource, installed)[0].kind, "current");
+  assert.equal(catalogEntries(secondSource, installed)[0].kind, "install");
+});
+
+test("removed and skipped installed variants are preserved until a usable copy is chosen", () => {
+  for (const retained of [{ removed: true }, { skipReason: "unsafe" }]) {
+    const canonical = entry(".agents/skills/shared", { name: "shared", contentHash: "same" });
+    const alternate = entry(".claude/skills/shared", { name: "shared", contentHash: "same", ...retained });
+    const data = source([canonical, alternate]);
+    const installed = [local(alternate.subpath, { name: "shared", contentHash: "same", upstreamRemoved: !!alternate.removed })];
+    const entries = catalogEntries(data, installed);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].item.subpath, alternate.subpath);
+    assert.equal(entries[0].kind, alternate.skipReason ? "skipped" : "removed");
+    assert.deepEqual(entries[0].variants?.map((item) => item.subpath), [canonical.subpath]);
+    assert.deepEqual(sourceSyncPaths({ ...data, mode: "all" }, entries, new Set()), []);
+    const chosen = catalogEntries(data, installed, "zh-CN", new Map([[canonical.subpath, canonical.subpath]]));
+    assert.equal(chosen[0].kind, "update");
+    assert.deepEqual(sourceSyncPaths(data, chosen, new Set([canonical.subpath])), [canonical.subpath]);
+  }
+});
+
+test("missing removed physical paths join their retained distribution family", () => {
+  const canonical = entry(".agents/skills/shared", { name: "shared", contentHash: "new" });
+  const installed = local(".claude/skills/shared", { name: "shared", contentHash: "old", upstreamRemoved: true });
+  const entries = catalogEntries(source([canonical]), [installed]);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].kind, "removed");
+  assert.equal(entries[0].local?.id, installed.id);
+  assert.deepEqual(entries[0].variants?.map((item) => item.subpath), [canonical.subpath]);
+});
+
+test("historical duplicate installations remain a single selectable update for consolidation", () => {
+  const canonical = entry(".agents/skills/shared", { name: "shared", contentHash: "same" });
+  const alternate = entry(".claude/skills/shared", { name: "shared", contentHash: "same" });
+  const data = source([canonical, alternate]);
+  const installed = [local(canonical.subpath, { name: "shared", contentHash: "same" }), local(alternate.subpath, { name: "shared", contentHash: "same" })];
+  const entries = catalogEntries(data, installed);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].kind, "update");
+  assert.equal(summarizeSource(entries).installed, 1);
+  assert.equal(summarizeSource(entries).changed, 1);
+  assert.deepEqual(sourceSyncPaths(data, entries, new Set([canonical.subpath])), [canonical.subpath]);
+  assert.deepEqual(sourceSyncPaths({ ...data, mode: "all" }, entries, new Set()), [canonical.subpath]);
+
+  const chosen = catalogEntries(data, installed, "zh-CN", new Map([[canonical.subpath, alternate.subpath]]));
+  assert.equal(chosen[0].kind, "update");
+  assert.equal(chosen[0].local?.id, alternate.subpath);
+  assert.equal(chosen[0].item.subpath, alternate.subpath);
+});
+
+test("two same-tier installations remain independent current skills", () => {
+  const data = source([entry("skills/first", { name: "shared" }), entry("skills/second", { name: "shared" })]);
+  const installed = [local("skills/first", { name: "shared" }), local("skills/second", { name: "shared" })];
+  const entries = catalogEntries(data, installed);
+  assert.equal(entries.length, 2);
+  assert.equal(entries.every((entry) => entry.kind === "current"), true);
+  assert.deepEqual(sourceSyncPaths({ ...data, mode: "all" }, entries, new Set()), []);
+});
