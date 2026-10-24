@@ -20,7 +20,9 @@ type DesktopPreferences struct {
 }
 
 // Lightweight mode and open at login are native integrations on these platforms.
-func desktopIntegrationSupported() bool { return runtime.GOOS == "darwin" || runtime.GOOS == "linux" }
+func desktopIntegrationSupported() bool {
+	return runtime.GOOS == "darwin" || runtime.GOOS == "linux" || runtime.GOOS == "windows"
+}
 
 type desktopRuntime struct{ lightweight atomic.Bool }
 
@@ -49,7 +51,7 @@ func (s *Service) desktopPreferences() DesktopPreferences {
 
 func (s *Service) SetLightweight(on bool) (AppState, error) {
 	if !desktopIntegrationSupported() {
-		return AppState{}, errors.New("This setting is available only on macOS and Linux")
+		return AppState{}, errors.New("This setting is available only on macOS, Linux and Windows")
 	}
 	s.mu.Lock()
 	b, err := json.Marshal(struct {

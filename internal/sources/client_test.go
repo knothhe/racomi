@@ -48,7 +48,7 @@ func TestGitCommandDistinguishesTimeoutAndCancellation(t *testing.T) {
 
 func testGit(t *testing.T, repo string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	cmd := exec.Command("git", append([]string{"-c", "core.longpaths=true", "-C", repo}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_NAME=Racomi test", "GIT_AUTHOR_EMAIL=test@example.invalid", "GIT_COMMITTER_NAME=Racomi test", "GIT_COMMITTER_EMAIL=test@example.invalid")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

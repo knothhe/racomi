@@ -20,8 +20,8 @@ func updateEligibility(info buildinfo.Info) string {
 	if info.Channel != "stable" {
 		return "Preview builds are updated manually."
 	}
-	if !(info.OS == "darwin" && info.Arch == "arm64") && !(info.OS == "linux" && info.Arch == "amd64") {
-		return "Application updates are currently available on macOS Apple Silicon and Linux x86_64 only."
+	if !(info.OS == "darwin" && info.Arch == "arm64") && !(info.OS == "linux" && info.Arch == "amd64") && !(info.OS == "windows" && info.Arch == "amd64") {
+		return "Application updates are currently available on macOS Apple Silicon, Linux x86_64 and Windows x64 only."
 	}
 	if info.Executor != "ci" || info.Dirty {
 		return "This source build is updated using make install."

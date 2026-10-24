@@ -58,6 +58,9 @@ func main() {
 		_ = json.NewEncoder(os.Stdout).Encode(buildinfo.Current())
 		return
 	}
+	if desktop.RunUpdateHelper() {
+		return
+	}
 	// A process relaunched by the Linux updater waits for its predecessor to
 	// release the single-instance name before application.New claims it.
 	desktop.WaitForUpdatedInstance()
@@ -80,6 +83,7 @@ func main() {
 		// Closing the window decides whether to quit, as on macOS: a released
 		// lightweight window must leave the app running.
 		Linux:          application.LinuxOptions{ApplicationID: info.ID, DisableQuitOnLastWindowClosed: true},
+		Windows:        application.WindowsOptions{DisableQuitOnLastWindowClosed: true},
 		SingleInstance: &application.SingleInstanceOptions{UniqueID: singleInstanceID(info.ID, os.Getenv("RACOMI_DATA_DIR")), OnSecondInstanceLaunch: func(application.SecondInstanceData) { service.OpenWindow() }},
 	})
 	desktop.UseIcon(service, appIconFor())

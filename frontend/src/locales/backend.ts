@@ -5,7 +5,7 @@ const messages: ReadonlyArray<readonly [string, string, string, string]> = [
   ["missing login executable", "The login registration has no executable.", "自启登记缺少程序路径，已保留原文件。", "登入啟動登記缺少程式路徑，已保留原檔案。"],
   ["Development builds do not connect to the release update feed.","Development builds do not connect to the release update feed.","开发版不连接正式更新源。","開發版不連接正式更新來源。"],
   ["Preview builds are updated manually.","Preview builds are updated manually.","预览版请手动更新。","預覽版請手動更新。"],
-  ["Application updates are currently available on macOS Apple Silicon and Linux x86_64 only.","Application updates are currently available on macOS Apple Silicon and Linux x86_64 only.","应用内更新目前仅支持 macOS Apple Silicon 和 Linux x86_64。","應用程式內更新目前僅支援 macOS Apple Silicon 與 Linux x86_64。"],
+  ["Application updates are currently available on macOS Apple Silicon, Linux x86_64 and Windows x64 only.","Application updates are currently available on macOS Apple Silicon, Linux x86_64 and Windows x64 only.","应用内更新目前支持 macOS Apple Silicon、Linux x86_64 和 Windows x64。","應用程式內更新目前支援 macOS Apple Silicon、Linux x86_64 與 Windows x64。"],
   ["Move racomi to a folder you can write before enabling updates.","Move racomi to a folder you can write before enabling updates.","请将 racomi 放到当前用户可写入的目录后使用应用内更新。","請將 racomi 放到目前使用者可寫入的資料夾後使用程式內更新。"],
   ["Install racomi before enabling open at login","Install racomi before enabling open at login.","请先安装 racomi，再开启开机自启。","請先安裝 racomi，再開啟登入時啟動。"],
   ["The racomi executable path contains characters a login entry cannot represent","The racomi executable path contains characters a login entry cannot represent.","racomi 程序路径含有自启项无法表示的字符。","racomi 程式路徑含有登入啟動項目無法表示的字元。"],

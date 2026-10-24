@@ -29,6 +29,14 @@ func TestUpdaterRejectsDevLocalDirtyAndUnsupportedBuilds(t *testing.T) {
 	if updateEligibility(linux) == "" {
 		t.Fatal("unpublished Linux architecture accepted")
 	}
+	windows := buildinfo.Info{Channel: "stable", Executor: "ci", OS: "windows", Arch: "amd64"}
+	if reason := updateEligibility(windows); reason != "" {
+		t.Fatal(reason)
+	}
+	windows.Arch = "arm64"
+	if updateEligibility(windows) == "" {
+		t.Fatal("unpublished Windows architecture accepted")
+	}
 	buildinfo.PublicKey = ""
 	if updateEligibility(valid) == "" {
 		t.Fatal("missing trust root accepted")

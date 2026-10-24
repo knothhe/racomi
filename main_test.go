@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"racomi/internal/buildinfo"
+	"racomi/internal/testutil"
 )
 
 func TestSingleInstanceProfiles(t *testing.T) {
@@ -38,7 +39,7 @@ func TestSingleInstanceProfiles(t *testing.T) {
 		}
 	}
 	alias := filepath.Join(t.TempDir(), "alias")
-	if err := os.Symlink(root, alias); err != nil {
+	if err := testutil.Symlink(t, root, alias); err != nil {
 		t.Fatal(err)
 	}
 	if profile != singleInstanceID(identity, alias) {

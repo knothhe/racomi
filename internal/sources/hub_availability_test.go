@@ -126,6 +126,9 @@ func TestCheckHubAvailabilityCachesRepositorySnapshotsAcrossSelectorsAndRestarts
 	writeTestSkill(t, repo, "skills/polish", "polish", "Newly restored skill", "New content")
 	testGit(t, repo, "add", ".")
 	testGit(t, repo, "commit", "-m", "Restore an indexed skill")
+	// receive-pack is a separate process; the sending Git's -c options do not
+	// enable long paths for this deeply nested temporary bare repository.
+	testGit(t, availabilityCacheRepo(client, recoveryGitSource), "config", "core.longpaths", "true")
 	testGit(t, repo, "push", "--", availabilityCacheRepo(client, recoveryGitSource), "main")
 	third, err := restarted.checkHubAvailability(context.Background(), []string{availabilityLink("polish")}, clock, fetch)
 	if err != nil || third[0].State != "available" || third[0].Revision == revision || calls != 2 {

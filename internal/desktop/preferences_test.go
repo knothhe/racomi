@@ -99,8 +99,8 @@ func TestInstalledInterfaceFontsHaveUsableStyles(t *testing.T) {
 }
 
 func TestLightweightPreferenceIsLocalAndSurvivesRestart(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("macOS setting")
+	if !desktopIntegrationSupported() {
+		t.Skip("desktop integration unavailable")
 	}
 	root := t.TempDir()
 	s, err := New(root)
