@@ -43,7 +43,7 @@ make release VERSION_BUMP=patch RELEASE_FLAGS=--apply   # 正式执行
 若标签已创建但推送失败，核对状态并解决原因后，按已有精确版本续推，不再次升级：
 
 ```sh
-make release VERSION_BUMP=0.2.0 RELEASE_FLAGS="--resume --apply"
+make release VERSION_BUMP=0.1.2 RELEASE_FLAGS="--resume --apply"
 ```
 
 续推要求版本一致、annotated tag 仍指向当前 HEAD；首次标签须保留初始发布标记，升级须保留对应版本提交。可用 `make test-release` 在临时 Git 仓库中验证发布流程。更多命令见 `make help`。
@@ -58,13 +58,21 @@ macOS 本地 Make 默认 `CHANNEL=dev`，输出位于 `bin/dev/`。`CHANNEL=stab
 
 CI 先完成包签名检查，再使用 Sparkle 的 `generate_appcast --maximum-deltas 0` 对完整 ZIP 签名，生成并签署 `appcast.xml`。发布前以嵌入的公钥校验 ZIP 的 Ed25519 签名、版本、构建号、下载地址和大小。发布 job 收齐确切附件后创建草稿，全部就绪才公开，并回读公开附件比较内容。重跑仅恢复同 tag 的草稿，已存在的附件内容不同或 Release 已公开时停止，不覆盖历史资产。稳定 Feed 使用最新稳定 Release 的 `appcast.xml` 附件，预览 Release 不参与。
 
-更新签名独立于 Apple Developer ID／公证。当前宿主包仍为 ad-hoc 签名，尚未接入 Developer ID 和公证。公开链路、实际替换及升级重启需要发布首个包含更新器的稳定版本后再验收；没有更新器的历史版本需手动安装一次。
+更新签名独立于 Apple Developer ID／公证。当前宿主包仍为 ad-hoc 签名，尚未接入 Developer ID 和公证。没有更新器的历史版本需手动安装一次。
 
 ## 本地验证
 
-`make check` 覆盖前端、字典、保存队列、Go 服务、安装归属与失败回退、Dev／正式共存、自启登记清理及更新签名拒绝。安装测试使用临时 HOME 和目标目录。原生验证显式指定 `RACOMI_DATA_DIR` 的临时资料，独立资料目录使用独立单实例锁，避免唤起日常实例；系统偏好与缓存还需通过测试子进程的 `CFFIXED_USER_HOME` 隔离。浏览器内存工作空间只能验证前端。原生关于入口不依赖技能库初始化成功，损坏数据不会被自动重置。
+`make check` 覆盖前端、字典、保存队列、Go 服务、安装归属与失败回退、Dev／正式共存、自启登记清理及更新签名拒绝。安装测试使用临时 HOME 和目标目录。原生验证显式指定 `RACOMI_DATA_DIR` 的临时资料，独立资料目录使用独立单实例锁，避免唤起日常实例；主应用的系统偏好与缓存还需通过测试子进程的 `CFFIXED_USER_HOME` 隔离。Sparkle 独立安装助手仍可能使用系统用户缓存中的随机暂存目录，按安装日志确认归属。浏览器内存工作空间只能验证前端。原生关于入口不依赖技能库初始化成功，损坏数据不会被自动重置。
 
-Launch Services 不保留自定义资料环境。使用 `RACOMI_DATA_DIR` 或 `CFFIXED_USER_HOME` 的实例完成更新后只退出，须用原来的环境重新启动；普通正式安装仍自动重启。
+Launch Services 不保留自定义资料环境。使用 `RACOMI_DATA_DIR` 或 `CFFIXED_USER_HOME` 的实例会禁止自动重启；Sparkle 2.9.5 也会因此推迟立即安装。隔离验收时下载并确认更新后，正常退出以完成已暂存更新的安装，再用原来的环境重新启动。普通正式安装仍使用 Sparkle 的安装与自动重启流程。
+
+2026-10-24 已完成 macOS Apple Silicon 的公开发布与隔离升级验收：
+
+- [v0.1.2 发布 CI](https://github.com/knothhe/racomi/actions/runs/40089737596) 的检查、arm64 构建、签名和发布均通过；[正式 Release](https://github.com/knothhe/racomi/releases/tag/v0.1.2) 包含完整 ZIP、SHA-256 和签名 Feed。
+- 基线来自 [手动 CI artifact](https://github.com/knothhe/racomi/actions/runs/40088558429)：0.1.1、build 4、提交 `b1c2f84`，包含原生状态 JSON 布尔值修复。它不是较早发布的 v0.1.1 包。
+- 在 `.cache/update-verification/` 的独立 HOME、偏好及资料中，通过应用默认公开 Feed 检出 0.1.2，下载并由 Sparkle 验签、解包、暂存；确认后正常退出，安装到同一隔离应用路径。
+- 安装后构建信息为 0.1.2、build 5、提交 `e011bd0`、`stable / ci / darwin / arm64`，深层代码签名校验通过。另用固定公钥独立验证公开 Feed 与同一 ZIP 的 Ed25519 签名、版本、构建号、地址和大小，并确认篡改后的 Feed 验签失败。
+- 用原环境重新启动后，关于页显示新版本，Light 主题、125% 字体及完整测试状态保持一致，再次检查提示已是最新。验收未覆盖普通资料环境的自动重启、Developer ID 或公证。
 
 Dev 图标由 `scripts/dev_icon.py` 从正式 PNG 派生，提交的生成资源供无 Python 环境的普通构建使用。修改图源时在有 Python 3.9+／Pillow 10.1+ 的环境运行：
 
