@@ -2,5 +2,6 @@
   "sparkleVersion": "2.9.5",
   "sparkleSHA256": "015336b601493e05c237964954bff6191370003d94edefe663724c88840d73cc",
   "publicKey": "//HflqKuj0MIku53ZDFvGk4lUjU9H92NxieT51dznVw=",
-  "feedURL": "https://github.com/knothhe/racomi/releases/latest/download/appcast.xml"
+  "feedURL": "https://github.com/knothhe/racomi/releases/latest/download/appcast.xml",
+  "linuxFeedURL": "https://github.com/knothhe/racomi/releases/latest/download/linux-update.json"
 }

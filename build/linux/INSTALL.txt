@@ -15,7 +15,16 @@ This build is unsigned; check the download source before opening it.
 To update, quit racomi and replace the executable.
 To uninstall, quit racomi and delete the extracted files.
 User data in ~/.config/racomi (Dev: ~/.config/racomi-dev) and deployed skills
-are preserved. Linux has no automatic updates or open-at-login yet.
+are preserved.
+
+Official stable builds check for signed updates once a day and from
+Settings -> About. An update replaces the executable in place, so keep it in
+a folder you can write, such as ~/.local/bin, then restarts after saving.
+
+Settings -> Lightweight mode keeps racomi in the system tray after the window
+closes; click the tray icon or launch racomi again to reopen it. Open at login
+writes ~/.config/autostart/com.knothhe.racomi.desktop for desktop sessions
+that support XDG autostart.
 
 Source installation:
   make install

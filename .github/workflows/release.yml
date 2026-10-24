@@ -14,8 +14,65 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  linux:
+    name: Linux x86_64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Validate release identity
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            test "$GITHUB_REF" = refs/heads/main
+            RELEASE_TAG="v$(node -p "require('./frontend/package.json').version")"
+            export RELEASE_TAG
+          fi
+          test "${RELEASE_TAG:0:1}" = v
+          node --input-type=module -e 'import { parse } from "./scripts/release.mjs"; parse(process.env.RELEASE_TAG.slice(1));'
+          test "$(node -p "require('./frontend/package.json').version")" = "${RELEASE_TAG#v}"
+          test -z "$(git status --porcelain --untracked-files=normal)"
+          test "$(go env GOARCH)" = amd64
+          channel=stable
+          if [[ "${RELEASE_TAG%%+*}" == *-* ]]; then channel=preview; fi
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "RELEASE_CHANNEL=$channel" >> "$GITHUB_ENV"
+      # GTK 3 with WebKit2GTK 4.1 is the most widely packaged runtime pair.
+      - name: Install GTK and WebKitGTK
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libgtk-3-dev libwebkit2gtk-4.1-dev
+      - name: Install dependencies and verify
+        run: |
+          make deps GTK=3
+          make check GTK=3
+      - name: Package exact release
+        run: |
+          test -z "$(git status --porcelain --untracked-files=normal)"
+          make dist GTK=3 CHANNEL="$RELEASE_CHANNEL" BUILD_EXECUTOR=ci VERSION="${RELEASE_TAG#v}" BUILD_NUMBER="$GITHUB_RUN_NUMBER" GOARCH=amd64 SOURCE_COMMIT="$GITHUB_SHA" SOURCE_DIRTY=false
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: racomi-linux-x86_64
+          path: |
+            bin/releases/racomi-*-x86_64-linux.tar.gz
+            bin/releases/racomi-*-x86_64-linux.tar.gz.sha256
+          if-no-files-found: error
+
   build:
     name: macOS Apple Silicon
+    # The macOS job holds Sparkle's signing tools, so it also signs the Linux feed.
+    needs: linux
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7.0.1
@@ -64,6 +121,18 @@ jobs:
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: sh scripts/create-appcast.sh "${RELEASE_TAG#v}" "$GITHUB_RUN_NUMBER"
+      - uses: actions/download-artifact@v8.0.1
+        if: env.RELEASE_CHANNEL == 'stable' && startsWith(github.ref, 'refs/tags/')
+        with:
+          name: racomi-linux-x86_64
+          path: bin/releases
+      - name: Sign stable Linux archive and feed
+        if: env.RELEASE_CHANNEL == 'stable' && startsWith(github.ref, 'refs/tags/')
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          (cd bin/releases && shasum -a 256 -c "racomi-${RELEASE_TAG#v}-x86_64-linux.tar.gz.sha256")
+          sh scripts/create-linux-feed.sh "${RELEASE_TAG#v}" "$GITHUB_SHA"
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: racomi-macos-arm64
@@ -71,6 +140,7 @@ jobs:
             bin/releases/racomi-*-aarch64-macos.zip
             bin/releases/racomi-*-aarch64-macos.zip.sha256
             bin/releases/appcast.xml
+            bin/releases/linux-update.json
           if-no-files-found: error
 
   publish:
@@ -87,7 +157,8 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@v8.0.1
         with:
-          name: racomi-macos-arm64
+          pattern: racomi-*
+          merge-multiple: true
           path: release-assets
       - name: Verify, stage and publish
         env:
@@ -101,16 +172,22 @@ jobs:
           make --silent release-notes RELEASE_REPO="$GH_REPO" RELEASE_TAG="$RELEASE_TAG" >> "$RUNNER_TEMP/release-notes.md"
           cd release-assets
           archive="racomi-${RELEASE_TAG#v}-aarch64-macos.zip"
-          test -f "$archive"
-          test -f "$archive.sha256"
-          sha256sum --check "$archive.sha256"
-          assets=("$archive" "$archive.sha256")
+          linux_archive="racomi-${RELEASE_TAG#v}-x86_64-linux.tar.gz"
+          assets=()
+          for file in "$archive" "$linux_archive"; do
+            test -f "$file"
+            test -f "$file.sha256"
+            sha256sum --check "$file.sha256"
+            assets+=("$file" "$file.sha256")
+          done
           args=()
           if [[ "${RELEASE_TAG%%+*}" == *-* ]]; then
             args+=(--prerelease)
           else
             test -s appcast.xml
-            assets+=(appcast.xml)
+            test -s linux-update.json
+            node ../scripts/verify-linux-feed.mjs verify linux-update.json "${RELEASE_TAG#v}" "$GITHUB_SHA" .
+            assets+=(appcast.xml linux-update.json)
           fi
           # Retried jobs may resume this exact draft; refuse published releases.
           gh api --paginate --slurp "repos/$GH_REPO/releases" > release-pages.json

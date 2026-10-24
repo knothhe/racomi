@@ -8,7 +8,7 @@
 - 提供本地快照、ZIP 备份恢复和 skills-manager 数据导入。
 - 可选 S3 / Cloudflare R2 加密双向同步，跨设备共享来源、技能、预设及设置，并支持云端历史恢复。
 - 支持侧边栏／顶部导航切换、明暗主题、文字缩放、界面字体，以及简体中文、繁體中文和 English。
-- macOS 可开启轻量模式与开机自启。
+- macOS 与 Linux 可开启轻量模式与开机自启，正式版支持应用内更新。
 
 ## macOS 安装
 
@@ -87,7 +87,21 @@ Windows 的 `make check` 和 `make test` 显式使用 `-ldflags="-s=false -w=fal
 
 ## Linux 构建与安装
 
-当前没有 Linux 发布包，需要从源码构建。需要 **Go 1.26.8+、Node.js 22.12+、npm、GNU Make、Git、C 编译器、pkg-config**，以及 GTK 和 WebKitGTK 开发文件，二选一即可：
+### 发布包
+
+[最新 Release](https://github.com/knothhe/racomi/releases/latest) 提供 `racomi-*-x86_64-linux.tar.gz` 及同名 `.sha256`，基于 GTK 3 + WebKit2GTK 4.1 构建，运行时需安装对应库（Arch `webkit2gtk-4.1`，Debian／Ubuntu `libwebkit2gtk-4.1-0`，Fedora `webkit2gtk4.1`）。校验并解压后，将 `racomi` 放到当前用户可写的目录（如 `~/.local/bin`）运行：
+
+```sh
+sha256sum -c racomi-*-x86_64-linux.tar.gz.sha256
+tar -xzf racomi-*-x86_64-linux.tar.gz
+install -m 755 racomi-*-x86_64-linux/racomi ~/.local/bin/racomi
+```
+
+正式版在“设置 → 关于”中检查更新：下载 Release 附带的 `linux-update.json`，以内嵌公钥校验压缩包的 Ed25519 签名、大小和 SHA-256，并核对解压后程序的版本、提交与发布身份，原生窗口确认并保存更改后原地替换可执行文件并重启。所在目录需当前用户可写；默认每天自动检查一次，可在关于页关闭。预览版、Dev 与本地源码构建不连接更新源。
+
+### 从源码构建
+
+需要 **Go 1.26.8+、Node.js 22.12+、npm、GNU Make、Git、C 编译器、pkg-config**，以及 GTK 和 WebKitGTK 开发文件，二选一即可：
 
 | 发行版 | GTK 3 + WebKit2GTK 4.1 | GTK 4 + WebKitGTK 6.0 |
 | --- | --- | --- |
@@ -107,7 +121,9 @@ make dist        # 生成 bin/releases 下的 tar.gz 和 SHA-256
 
 默认安装 `~/.local/bin/racomi-dev`，并在 `~/.local/share/applications` 和 `~/.local/share/icons/hicolor` 写入桌面入口与图标；资料位于 `~/.config/racomi-dev`。`CHANNEL=stable` 安装正式身份 `~/.local/bin/racomi`，资料位于 `~/.config/racomi`。可通过 `BIN_DIR`、`DESKTOP_DIR`、`ICON_DIR` 自定义位置，卸载时使用相同参数。安装只替换带有 racomi 管理标记的桌面入口所对应的文件，拒绝覆盖无关命令或软链接；更新后需重启正在运行的应用。
 
-构建时若检测到 GTK 4 开发文件则使用 GTK 4，否则使用 GTK 3（Wails 的 `gtk3` 构建标签），可用 `GTK=3` 或 `GTK=4` 指定，`make check`、`make dev` 同样适用。生成的可执行文件依赖构建时的系统 GTK／WebKitGTK 库。Linux 暂不提供轻量模式、开机自启和自动更新。
+构建时若检测到 GTK 4 开发文件则使用 GTK 4，否则使用 GTK 3（Wails 的 `gtk3` 构建标签），可用 `GTK=3` 或 `GTK=4` 指定，`make check`、`make dev` 同样适用。生成的可执行文件依赖构建时的系统 GTK／WebKitGTK 库。
+
+设置中的“轻量模式”在关闭窗口一分钟后释放页面，应用保留在系统托盘（需桌面提供 StatusNotifierItem 托盘，如 KDE、waybar），点击托盘图标或再次启动 racomi 即可重新打开，托盘菜单也可退出。“开机自启”写入 `~/.config/autostart/<应用标识>.desktop`，由支持 XDG 自启的桌面会话（GNOME、KDE、uwsm 等）在登录时启动；只识别并删除记录本程序路径的登记，临时 `go run` 构建无法开启。
 
 ## 开发与发布
 

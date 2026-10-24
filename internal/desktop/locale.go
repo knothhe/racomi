@@ -11,6 +11,7 @@ func (s *Service) SetLocale(locale string) error {
 	defer s.themeMu.Unlock()
 	s.locale = locale
 	go s.configureMenu()
+	go s.syncTray()
 	return nil
 }
 

@@ -26,8 +26,13 @@ case "$dirty" in true|false) ;; *) echo 'invalid source state' >&2; exit 1 ;; es
 if [ "$executor" = ci ]; then
  [ "$channel" != dev ] && [ "$dirty" = false ] && [ "$commit" != unknown ] || { echo 'CI release requires a clean release identity' >&2; exit 1; }
 fi
-# Linux has no native updater, so no feed or signing key is embedded.
+feed=''
+key=''
+if [ "$channel" = stable ]; then
+ feed=$(node -p 'require("./build/updates.json").linuxFeedURL')
+ key=$(node -p 'require("./build/updates.json").publicKey')
+fi
 mkdir -p "bin/$channel"
-flags="-s -w -X racomi/internal/buildinfo.Version=$version -X racomi/internal/buildinfo.Number=$number -X racomi/internal/buildinfo.Commit=$commit -X racomi/internal/buildinfo.Dirty=$dirty -X racomi/internal/buildinfo.Channel=$channel -X racomi/internal/buildinfo.Executor=$executor"
+flags="-s -w -X racomi/internal/buildinfo.Version=$version -X racomi/internal/buildinfo.Number=$number -X racomi/internal/buildinfo.Commit=$commit -X racomi/internal/buildinfo.Dirty=$dirty -X racomi/internal/buildinfo.Channel=$channel -X racomi/internal/buildinfo.Executor=$executor -X racomi/internal/buildinfo.FeedURL=$feed -X racomi/internal/buildinfo.PublicKey=$key"
 CGO_ENABLED=1 GOARCH="$architecture" "${GO:-go}" build -trimpath -tags "$tags" -ldflags="$flags" -o "bin/$channel/racomi" .
 printf 'Built bin/%s/racomi (%s, GTK %s).\n' "$channel" "$version" "$gtk"

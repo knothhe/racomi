@@ -1,4 +1,4 @@
-//go:build !darwin
+//go:build !darwin && !linux
 
 package desktop
 
@@ -8,3 +8,6 @@ func nativeUpdaterState() UpdaterState {
 }
 func nativeCheckUpdates()            {}
 func nativeSetAutomaticUpdates(bool) {}
+
+func RelaunchAfterUpdate()    {}
+func WaitForUpdatedInstance() {}

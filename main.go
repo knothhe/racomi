@@ -58,6 +58,9 @@ func main() {
 		_ = json.NewEncoder(os.Stdout).Encode(buildinfo.Current())
 		return
 	}
+	// A process relaunched by the Linux updater waits for its predecessor to
+	// release the single-instance name before application.New claims it.
+	desktop.WaitForUpdatedInstance()
 	info := buildinfo.Current()
 	service := desktop.NewApplicationService(os.Getenv("RACOMI_DATA_DIR"))
 	app := application.New(application.Options{
@@ -74,9 +77,12 @@ func main() {
 			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
 		// The id doubles as the Wayland app_id, matching the installed desktop entry.
-		Linux:          application.LinuxOptions{ApplicationID: info.ID},
+		// Closing the window decides whether to quit, as on macOS: a released
+		// lightweight window must leave the app running.
+		Linux:          application.LinuxOptions{ApplicationID: info.ID, DisableQuitOnLastWindowClosed: true},
 		SingleInstance: &application.SingleInstanceOptions{UniqueID: singleInstanceID(info.ID, os.Getenv("RACOMI_DATA_DIR")), OnSecondInstanceLaunch: func(application.SecondInstanceData) { service.OpenWindow() }},
 	})
+	desktop.UseIcon(service, appIconFor())
 	desktop.Attach(service, app)
 
 	desktop.OpenMainWindow(service, app)
@@ -84,6 +90,7 @@ func main() {
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
+	desktop.RelaunchAfterUpdate()
 }
 
 // Explicit data profiles need separate locks so an isolated verification app
@@ -106,5 +113,6 @@ func singleInstanceID(identity, root string) string {
 		return identity
 	}
 	digest := sha256.Sum256([]byte(root))
-	return fmt.Sprintf("%s.profile.%x", identity, digest[:12])
+	// Linux claims this as a D-Bus name, whose elements may not start with a digit.
+	return fmt.Sprintf("%s.profile.p%x", identity, digest[:12])
 }

@@ -9,7 +9,8 @@ import (
 )
 
 // All window and timer state is accessed on Wails' main thread. Closing an
-// ordinary window quits; lightweight mode keeps the app reachable from its Dock.
+// ordinary window quits; lightweight mode keeps the app reachable from its Dock
+// on macOS and from its tray icon or launcher on Linux.
 func OpenMainWindow(s *Service, app *application.App) {
 	var window *application.WebviewWindow
 	var release *time.Timer

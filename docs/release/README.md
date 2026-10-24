@@ -36,7 +36,7 @@ make release VERSION_BUMP=patch RELEASE_FLAGS=--apply   # 正式执行
 
 手动运行 Desktop Release workflow 会检查并构建 `main` 当前版本，只上传 CI artifact，不签署 Feed、不创建 Release，可用于升级验证的旧版本基线。正式发布仍由版本 tag 触发。
 
-推送 `vX.Y.Z`（也支持预发布及 build metadata）标签后，[Release workflow](../../.github/workflows/release.yml) 校验标签与版本一致，检查、构建并发布 macOS Apple Silicon 包；Intel、Windows 和 Linux 暂不进入此工作流；带 `-` 预发布标识的标签发布为预发布版。`.release.json` 中 `github_release: false`，GitHub Release 与附件均由 Actions 创建，请保留此配置并避免使用本地 `--github-release` 覆盖它。`make install` 仍只构建并安装本机应用。
+推送 `vX.Y.Z`（也支持预发布及 build metadata）标签后，[Release workflow](../../.github/workflows/release.yml) 校验标签与版本一致，检查、构建并发布 macOS Apple Silicon 与 Linux x86_64 包；Intel、Windows 和 Linux arm64 暂不进入此工作流；带 `-` 预发布标识的标签发布为预发布版。`.release.json` 中 `github_release: false`，GitHub Release 与附件均由 Actions 创建，请保留此配置并避免使用本地 `--github-release` 覆盖它。`make install` 仍只构建并安装本机应用。
 
 ## 失败后续推
 
@@ -57,6 +57,8 @@ macOS 本地 Make 默认 `CHANNEL=dev`，输出位于 `bin/dev/`。`CHANNEL=stab
 `SPARKLE_PRIVATE_KEY` 已配置为仓库 Actions Secret，只交给 tag 构建中的签名步骤。公钥可以提交；私钥不得加入源码、artifact 或日志。本机备份在 macOS 钥匙串的 Sparkle `com.knothhe.racomi` account 中，不依赖共享默认签名账户。更换密钥须设计旧客户端的信任迁移，不能直接覆盖公钥。
 
 CI 先完成包签名检查，再使用 Sparkle 的 `generate_appcast --maximum-deltas 0` 对完整 ZIP 签名，生成并签署 `appcast.xml`。发布前以嵌入的公钥校验 ZIP 的 Ed25519 签名、版本、构建号、下载地址和大小。发布 job 收齐确切附件后创建草稿，全部就绪才公开，并回读公开附件比较内容。重跑仅恢复同 tag 的草稿，已存在的附件内容不同或 Release 已公开时停止，不覆盖历史资产。稳定 Feed 使用最新稳定 Release 的 `appcast.xml` 附件，预览 Release 不参与。
+
+Linux job 在 Ubuntu 24.04 上以 GTK 3 + WebKit2GTK 4.1 运行 `make check` 并打包 `racomi-*-x86_64-linux.tar.gz`。Sparkle 签名工具只在 macOS 上提供，因此 macOS job 依赖 Linux job：稳定 tag 时下载 Linux 包，用同一私钥经 `sign_update` 签名，由 `scripts/verify-linux-feed.mjs` 生成并以嵌入公钥校验 `linux-update.json`（版本、提交、下载地址、大小、SHA-256 与签名）。发布 job 再次校验后与 `appcast.xml` 一并上传；Linux 客户端读取最新稳定 Release 的 `linux-update.json`，下载地址固定为对应 tag 的附件。
 
 更新签名独立于 Apple Developer ID／公证。当前宿主包仍为 ad-hoc 签名，尚未接入 Developer ID 和公证。没有更新器的历史版本需手动安装一次。
 

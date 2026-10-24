@@ -13,10 +13,14 @@ import (
 )
 
 type DesktopPreferences struct {
-	Lightweight bool `json:"lightweight"`
-	OpenAtLogin bool `json:"openAtLogin"`
-	Supported   bool `json:"supported"`
+	Lightweight bool   `json:"lightweight"`
+	OpenAtLogin bool   `json:"openAtLogin"`
+	Supported   bool   `json:"supported"`
+	Platform    string `json:"platform"`
 }
+
+// Lightweight mode and open at login are native integrations on these platforms.
+func desktopIntegrationSupported() bool { return runtime.GOOS == "darwin" || runtime.GOOS == "linux" }
 
 type desktopRuntime struct{ lightweight atomic.Bool }
 
@@ -40,12 +44,12 @@ func loadDesktopPreferences(root string) (*desktopRuntime, error) {
 }
 
 func (s *Service) desktopPreferences() DesktopPreferences {
-	return DesktopPreferences{Lightweight: s.desktop.lightweight.Load(), OpenAtLogin: openAtLoginEnabled(), Supported: runtime.GOOS == "darwin"}
+	return DesktopPreferences{Lightweight: s.desktop.lightweight.Load(), OpenAtLogin: openAtLoginEnabled(), Supported: desktopIntegrationSupported(), Platform: runtime.GOOS}
 }
 
 func (s *Service) SetLightweight(on bool) (AppState, error) {
-	if runtime.GOOS != "darwin" {
-		return AppState{}, errors.New("This setting is available only on macOS")
+	if !desktopIntegrationSupported() {
+		return AppState{}, errors.New("This setting is available only on macOS and Linux")
 	}
 	s.mu.Lock()
 	b, err := json.Marshal(struct {
@@ -62,6 +66,9 @@ func (s *Service) SetLightweight(on bool) (AppState, error) {
 		s.desktop.lightweight.Store(on)
 	}
 	s.mu.Unlock()
+	if err == nil {
+		s.syncTray()
+	}
 	if err != nil {
 		return AppState{}, err
 	}
