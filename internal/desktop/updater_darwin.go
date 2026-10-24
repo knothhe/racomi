@@ -26,6 +26,9 @@ static void (^racomiInstallHandler)(void);
 @interface RacomiUpdaterDelegate : NSObject
 @end
 @implementation RacomiUpdaterDelegate
+// Launch Services does not preserve these profile environments. An explicit
+// profile can install and exit, then be started again with its original profile.
+- (BOOL)updaterShouldRelaunchApplication:(id)updater { return getenv("RACOMI_DATA_DIR") == NULL && getenv("CFFIXED_USER_HOME") == NULL; }
 - (void)updater:(id)updater didAbortWithError:(NSError *)error { if(racomiInstallHandler) { [racomiInstallHandler release]; racomiInstallHandler=nil; } racomiUpdateAborted(); }
 - (NSString *)feedURLStringForUpdater:(id)updater { return racomiTrustedFeed; }
 - (BOOL)updater:(id)updater shouldPostponeRelaunchForUpdate:(id)item untilInvokingBlock:(void (^)(void))handler {

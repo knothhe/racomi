@@ -64,6 +64,8 @@ CI 先完成包签名检查，再使用 Sparkle 的 `generate_appcast --maximum-
 
 `make check` 覆盖前端、字典、保存队列、Go 服务、安装归属与失败回退、Dev／正式共存、自启登记清理及更新签名拒绝。安装测试使用临时 HOME 和目标目录。原生验证显式指定 `RACOMI_DATA_DIR` 的临时资料，独立资料目录使用独立单实例锁，避免唤起日常实例；系统偏好与缓存还需通过测试子进程的 `CFFIXED_USER_HOME` 隔离。浏览器内存工作空间只能验证前端。原生关于入口不依赖技能库初始化成功，损坏数据不会被自动重置。
 
+Launch Services 不保留自定义资料环境。使用 `RACOMI_DATA_DIR` 或 `CFFIXED_USER_HOME` 的实例完成更新后只退出，须用原来的环境重新启动；普通正式安装仍自动重启。
+
 Dev 图标由 `scripts/dev_icon.py` 从正式 PNG 派生，提交的生成资源供无 Python 环境的普通构建使用。修改图源时在有 Python 3.9+／Pillow 10.1+ 的环境运行：
 
 ```sh
