@@ -24,7 +24,10 @@ function fixture(t, { versionFile = 'frontend/package.json', lockVersion = 3, sh
   fs.mkdirSync(repo);
   // Ignore the user's Git configuration and environment; every push is to this
   // fixture's local bare repository, and only fixture commits/tags are created.
-  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')));
+  // A real `make release ... --apply` exports its Make flags into child tests.
+  // Never let the parent release turn a fixture's preview into an apply run.
+  const parentMakeVariables = new Set(['MAKEFLAGS', 'MFLAGS', 'MAKELEVEL', 'MAKEOVERRIDES', 'RELEASE_FLAGS', 'RELEASE_COMMAND', 'VERSION_BUMP']);
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_') && !parentMakeVariables.has(name)));
   Object.assign(env, {
     GIT_CONFIG_GLOBAL: emptyGitConfig, GIT_CONFIG_NOSYSTEM: '1',
     GIT_AUTHOR_NAME: 'Release test', GIT_AUTHOR_EMAIL: 'release-test@example.invalid',
