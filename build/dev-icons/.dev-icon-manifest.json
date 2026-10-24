@@ -1,13 +1,15 @@
 {
   "files": {
-    "app-icon-dev-1024.png": "3df961e9b63a87689636180e37c55d507bec82bb1e68240577e84199df1908a5",
-    "app-icon-dev.icns": "61d5f5f58addb1790c9ee054d5d4961d0cb120733f88ab47a40f697ed1c5365d",
-    "app-icon-dev.png": "3df961e9b63a87689636180e37c55d507bec82bb1e68240577e84199df1908a5"
+    "app-icon-dev-1024.png": "36ee2268895c6b071f91f4cea0a0d29bf8d0ef39f746cbb9322304d52261a26b",
+    "app-icon-dev.icns": "131aabf2caab1a6ea07e55233f6879201d10e6a74296274ac2ad3e33ffc8b62c",
+    "app-icon-dev.png": "36ee2268895c6b071f91f4cea0a0d29bf8d0ef39f746cbb9322304d52261a26b"
   },
   "formats": [
     "icns",
     "png"
   ],
+  "generator_sha256": "4b76029eb943405c5694dcc0275909d752ec7531fcb3f3316777fb0b4593393c",
+  "name": "app-icon-dev",
   "png_sizes": [
     1024
   ],

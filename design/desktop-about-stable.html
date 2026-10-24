@@ -1,1 +1,25 @@
-<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="board.css"><title>关于 racomi</title><style>body{padding:32px;overflow:auto}main{max-width:720px;margin:auto}.group{border:1px solid var(--line,#ddd);border-radius:8px;padding:18px;background:var(--panel,#fff)}.row{display:flex;justify-content:space-between;gap:24px;align-items:center;padding:12px 0}p{line-height:1.7;color:var(--muted,#666)}code{overflow-wrap:anywhere}.actions{display:flex;gap:8px;justify-content:flex-end}</style><script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script><main><p>设置　 /　备份与迁移　 /　<strong>关于</strong></p><h1>关于 racomi</h1><div class="group"><div class="row"><strong>racomi</strong><span>0.1.0 · 正式版</span></div><p>轻量本地 Agent Skill 管理器</p><div class="row"><span>构建</span><code>128 · 74b30cb · CI</code></div><div class="row"><span>平台</span><code>darwin / arm64</code></div><div class="row"><a>项目主页</a><a>第三方许可</a></div></div><h2>应用更新</h2><div class="group"><div class="row"><div><strong>自动检查更新</strong><p>发现新版本后提示，安装前会保存并确认重启。</p></div><input type="checkbox" checked></div><div class="actions"><button class="button">检查应用更新…</button></div></div></main></html>
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="../frontend/src/style.css">
+<link rel="stylesheet" href="desktop-about.css">
+<title>关于 racomi</title>
+<script>const params = new URLSearchParams(location.search); document.documentElement.dataset.theme = params.get('theme') || 'light'; const scale = Number(params.get('scale')); if ([100, 125, 150].includes(scale)) document.documentElement.style.setProperty('--browser-scale', String(scale / 100));</script>
+<main class="settings-page about-page">
+  <header class="page-heading"><h2>关于 racomi</h2></header>
+  <section class="settings-section"><div class="settings-group">
+    <div class="settings-row about-product">
+      <div class="settings-row-copy"><strong class="about-product-name">racomi</strong><p class="settings-row-description">轻量本地 Agent Skill 管理器</p></div>
+      <span class="about-version">0.1.2 · 正式版</span>
+    </div>
+    <div class="settings-row"><span>构建</span><code>5 · e011bd0c64dd2fad6a1120e9f159191f7d0442a0 · ci</code></div>
+    <div class="settings-row"><span>平台</span><code>darwin / arm64</code></div>
+    <div class="settings-row"><a href="https://github.com/knothhe/racomi">项目主页</a><details class="about-notices"><summary>第三方许可</summary><pre>应用内可离线查看依赖的许可文本。</pre></details></div>
+  </div></section>
+  <section class="settings-section"><h2 class="settings-section-title">应用更新</h2><div class="settings-group">
+    <label class="settings-row"><span class="settings-row-copy"><strong>自动检查更新</strong><span class="settings-row-description">发现新版本后提示，安装前会保存并确认重启。</span></span><input class="settings-toggle" type="checkbox" role="switch" checked></label>
+    <div class="settings-row"><span></span><button class="button" >检查应用更新…</button></div>
+  </div></section>
+</main>
+</html>

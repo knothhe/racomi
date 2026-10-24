@@ -115,10 +115,13 @@ def source_frame(frames, edge):
 def badge(image):
     """Render each size independently; preserve pixels outside the badge rectangle."""
     edge = image.width
-    scale = 4
-    font = ImageFont.load_default(size=max(6, round(edge * 0.14)) * scale)
-    bounds = font.getbbox("Dev")
-    pad_x, pad_y = max(1, round(edge * 0.035)) * scale, max(1, round(edge * 0.02)) * scale
+    # Keep tiny lettering pixel-aligned; shrinking extra strokes blurs the counters.
+    scale = 1 if edge <= 32 else 4
+    minimum_font = 6 if edge < 20 else 7
+    font = ImageFont.load_default(size=max(minimum_font, round(edge * 0.21)) * scale)
+    stroke = 0 if scale == 1 else max(1, round(edge * scale * 0.002))
+    bounds = font.getbbox("Dev", stroke_width=stroke)
+    pad_x, pad_y = max(1, round(edge * 0.045)) * scale, max(1, round(edge * 0.03)) * scale
     width = bounds[2] - bounds[0] + pad_x * 2
     height = bounds[3] - bounds[1] + pad_y * 2
     layer = Image.new("RGBA", (width, height))
@@ -130,7 +133,8 @@ def badge(image):
         outline=(255, 255, 255, 245),
         width=max(scale, round(edge * 0.006) * scale),
     )
-    drawing.text((pad_x - bounds[0], pad_y - bounds[1]), "Dev", font=font, fill="white")
+    drawing.text((pad_x - bounds[0], pad_y - bounds[1]), "Dev", font=font, fill="white",
+                 stroke_width=stroke, stroke_fill="white")
     layer = layer.resize((round(width / scale), round(height / scale)), Image.Resampling.LANCZOS)
     margin = max(1, round(edge * 0.035))
     left, top = edge - margin - layer.width, edge - margin - layer.height
@@ -275,7 +279,9 @@ def generate(args):
             stage.mkdir()
         files = write_resources(stage, frames, args, formats, sizes, required)
         record = {"schema": 1, "tool": TOOL, "source": source.name, "source_sha256": source_hash,
-                  "formats": sorted(formats), "png_sizes": sizes if "png" in formats else [], "files": files}
+                  "generator_sha256": digest(Path(__file__).read_bytes()),
+                  "name": args.name, "formats": sorted(formats),
+                  "png_sizes": sizes if "png" in formats else [], "files": files}
         (stage / MANIFEST).write_text(json.dumps(record, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
         # Recheck ownership after rendering; don't overwrite a concurrent manual edit.
         if output.exists():

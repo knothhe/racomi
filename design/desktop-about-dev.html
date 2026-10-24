@@ -1,1 +1,25 @@
-<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="board.css"><title>关于 racomi Dev</title><style>body{padding:32px;overflow:auto}main{max-width:720px;margin:auto}.group{border:1px solid var(--line,#ddd);border-radius:8px;padding:18px;background:var(--panel,#fff)}.row{display:flex;justify-content:space-between;gap:24px;align-items:center;padding:12px 0}p{line-height:1.7;color:var(--muted,#666)}code{overflow-wrap:anywhere}.actions{display:flex;gap:8px;justify-content:flex-end}</style><script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script><main><p>设置　 /　备份与迁移　 /　<strong>关于</strong></p><h1>关于 racomi Dev</h1><div class="group"><div class="row"><strong>racomi Dev</strong><span>0.1.0 · 开发版</span></div><div class="row"><span>构建</span><code>1 · 74b30cb · 本地 · 有未提交修改</code></div><p>开发版使用独立资料和应用身份。</p></div><h2>应用更新</h2><div class="group"><p>开发版不连接正式更新源。</p><button class="button" disabled>检查应用更新…</button></div></main></html>
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="../frontend/src/style.css">
+<link rel="stylesheet" href="desktop-about.css">
+<title>About racomi</title>
+<script>const params = new URLSearchParams(location.search); document.documentElement.dataset.theme = params.get('theme') || 'light'; const scale = Number(params.get('scale')); if ([100, 125, 150].includes(scale)) document.documentElement.style.setProperty('--browser-scale', String(scale / 100));</script>
+<main class="settings-page about-page">
+  <header class="page-heading"><h2>About racomi</h2></header>
+  <section class="settings-section"><div class="settings-group">
+    <div class="settings-row about-product">
+      <div class="settings-row-copy"><strong class="about-product-name">racomi Dev</strong><p class="settings-row-description">A lightweight local agent skill manager</p></div>
+      <span class="about-version">0.1.2 · Development build</span>
+    </div>
+    <div class="settings-row"><span>Build</span><code>1 · b58b43e23b45697a560dc13b7809f62cb5f71e31 · local</code></div>
+    <div class="settings-row"><span>Platform</span><code>darwin / arm64</code></div>
+    <div class="settings-row"><a href="https://github.com/knothhe/racomi">Project home</a><details class="about-notices"><summary>Third-party notices</summary><pre>Dependency licenses are available offline in the application.</pre></details></div>
+  </div></section>
+  <section class="settings-section"><h2 class="settings-section-title">Application updates</h2><div class="settings-group">
+    <p>Development builds do not connect to the release update feed.</p>
+    <div class="settings-row"><span></span><button class="button" disabled>Check application updates…</button></div>
+  </div></section>
+</main>
+</html>
