@@ -11,7 +11,7 @@ BUILD_NUMBER ?= 1
 CHANNEL ?= dev
 BUILD_EXECUTOR ?= local
 SOURCE_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
-SOURCE_DIRTY := $(shell git status --porcelain --untracked-files=normal 2>/dev/null | awk 'END { print NR == 0 ? "false" : "true" }')
+SOURCE_DIRTY := $(shell git status --porcelain --untracked-files=normal 2>/dev/null | awk 'END { print (NR == 0 ? "false" : "true") }')
 export SOURCE_COMMIT SOURCE_DIRTY
 export BUILD_EXECUTOR
 RELEASE_COMMAND ?= $(NODE) scripts/release.mjs
