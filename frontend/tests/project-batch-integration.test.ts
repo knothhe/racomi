@@ -112,6 +112,7 @@ function harness(options: { plan?: TestPlan; deferPlan?: boolean; failApplyOnce?
       save: (id, value) => saveApplicationSelection("project", id, value),
       accept, review: () => reviewedProjectBatch,
       selection: () => [...bulkProjectSelection],
+      clearSelection: () => { bulkProjectSelection.clear(); reviewedProjectBatch = null; },
     });`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const runtime = vm.runInNewContext(compiled, {
     initial: plain(backend), api, events, createProjectSelectionAutosave, applicationPlanDisposition, hasApplicationChanges,
@@ -130,6 +131,7 @@ type Runtime = {
   accept: (next: unknown) => void;
   review: () => { ids: string[]; plan: TestPlan; revision: number } | null;
   selection: () => string[];
+  clearSelection: () => void;
 };
 
 test("project batch flushes each project's own configuration before preview and normal application", async () => {
@@ -171,6 +173,23 @@ test("failed project selection save prevents any batch preview or application", 
   assert.equal(h.runtime.review(), null);
   assert.deepEqual(plain(h.runtime.selectionAutosave.state("project:first").draft), selection("gamma", "preset-first", "source-first"));
   assert.ok(h.toasts.some((toast) => toast.error && /选择未能自动保存/.test(toast.message)));
+});
+
+test("leaving project selection during autosave cancels the pending batch preview", async () => {
+  const h = harness();
+  h.runtime.save("first", selection("gamma", "preset-first", "source-first"));
+  const preview = h.runtime.previewProjectBatch();
+  await nextTurn();
+  assert.equal(h.saves.length, 1);
+  h.runtime.clearSelection();
+  h.saves[0].gate.resolve();
+  await preview;
+  await h.runtime.applyReviewedProjectBatch();
+  assert.equal(h.plans.length, 0, "an abandoned batch must not start planning after saving");
+  assert.equal(h.dialogs.length, 0);
+  assert.equal(h.runtime.review(), null);
+  assert.equal(h.applications.length, 0);
+  assert.deepEqual(h.savedSelections()[0], selection("gamma", "preset-first", "source-first"), "leaving batch selection must not cancel configuration autosave");
 });
 
 test("workspace changes while planning discard the batch review", async () => {

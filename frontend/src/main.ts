@@ -79,6 +79,7 @@ let discoverTab: DiscoverTab = "hub";
 const pageQueries = { sources: "", presets: "", projects: "", global: "" };
 let selectedProject = "";
 let bulkProjectSelection = new Set<string>();
+let projectSelectionMode = false;
 let projectsSort: ProjectSort = "manual";
 try { const stored = localStorage.getItem("racomi.projects-sort"); if (["manual", "name-asc", "name-desc", "updated", "created"].includes(stored || "")) projectsSort = stored as ProjectSort; } catch { /* Keep the default if storage is unavailable. */ }
 let draggedProject = "";
@@ -199,7 +200,7 @@ const formTasks: Record<string, string> = {
   "skills-manager-import": "正在预览 skills-manager 数据库…",
   "cloud-sync-editor": "Saving sync settings…", "cloud-conflicts-editor": "Resolving sync conflicts…",
 };
-const applicationActions = ["plan-projects", "apply-projects", "apply-reviewed-projects", "clear-project-selection", "move-project", "plan-project", "apply-project", "plan-global", "apply-global", "clear-application", "retry-selection", "select-global-directories", "default-global-directories", "new-global-directory", "edit-global-directory", "delete-global-directory", "new-project-directory", "edit-project-directory", "delete-project-directory"];
+const applicationActions = ["plan-projects", "apply-projects", "apply-reviewed-projects", "clear-project-selection", "toggle-project-selection", "move-project", "plan-project", "apply-project", "plan-global", "apply-global", "clear-application", "retry-selection", "select-global-directories", "default-global-directories", "new-global-directory", "edit-global-directory", "delete-global-directory", "new-project-directory", "edit-project-directory", "delete-project-directory"];
 const applicationBusy = () => hasPendingMutation() || ["正在检查项目变化…", "正在检查全局变化…"].some((label) => activeTasks.has(label));
 const discoveryBusy = () => ["正在读取来源并发现技能…", "正在读取仓库技能…", "正在读取本地目录并发现技能…", "正在选择技能目录…", "正在导入所选技能…"].some((label) => activeTasks.has(label));
 const settingsControlsBusy = () => selectionAutosave.busy || [...activeTasks].some((label) => label !== "正在保存设置…" && (stateChangingTasks.has(label) || ["正在检查项目变化…", "正在检查全局变化…"].includes(label)));
@@ -974,7 +975,7 @@ function presetDetail(preset: Preset) {
 }
 function targetPaths(target: Target | null) { return arr(target?.paths).length ? arr(target?.paths) : target?.path ? [target.path] : []; }
 async function reorderProject(id: string, anchor: string, after = false) {
-  if (projectsSort !== "manual" || applicationBusy() || selectionAutosave.busy) return;
+  if (projectSelectionMode || projectsSort !== "manual" || applicationBusy() || selectionAutosave.busy) return;
   const order = moveProject(projects().map((project) => project.id), id, anchor, after);
   if (sameIDs(order, projects().map((project) => project.id)) && order.every((value, index) => value === projects()[index].id)) return;
   const next = await task("正在保存项目顺序…", () => api.reorderProjects(order));
@@ -986,7 +987,7 @@ async function previewProjectBatch() {
   try { for (const id of ids) await selectionAutosave.flush(applicationKey("project", id)); }
   catch { toast(t("选择未能自动保存，请重试后再预览或应用。"), true); return; }
   await selectionAutosave.idle();
-  if (applicationBusy() || ids.some((id) => { const target = projects().find((project) => project.id === id); return !target || applicationDirty("project", id, target); })) return;
+  if (!sameIDs(ids, [...bulkProjectSelection]) || applicationBusy() || ids.some((id) => { const target = projects().find((project) => project.id === id); return !target || applicationDirty("project", id, target); })) return;
   const revision = stateRevision, generation = modalGeneration;
   const plan = await task("正在检查项目变化…", () => api.planProjects(ids));
   if (!plan) return;
@@ -1029,7 +1030,7 @@ function projectsPage() {
   // Keep the explicit selection while searching; clearing the search restores it.
   const selectedID = selected?.id || "";
   visibleProject = selectedID;
-  return `${header}${bulkProjectSelection.size ? `<div class="projects-bulk-bar" role="region" aria-label="${e(t("应用所选项目"))}"><div><strong>${t("已选 {0} 个项目", { 0: bulkProjectSelection.size })}</strong><span>${t("各项目保留自己的技能配置。")}</span></div><div class="actions">${button(t("清除项目选择"), "clear-project-selection", "quiet small")}${button(t("批量预览"), "plan-projects", "small", "", "eye")}${button(t("应用所选项目"), "apply-projects", "primary small", "", "arrow")}</div></div>` : ""}<div class="projects-layout"><section class="panel projects-browser" aria-label="${e(t("项目列表"))}"><div class="projects-browser-toolbar">${pageSearch("projects", t("搜索项目、路径或技能"))}<div class="projects-list-controls"><div class="projects-filters" role="group" aria-label="${e(t("项目筛选"))}">${([["all", t("全部"), projects().length], ["pending", t("待应用"), projects().filter((project) => project.pending).length]] as const).map(([filter, label, count]) => `<button type="button" class="filter-chip ${projectsFilter === filter ? "active" : ""}" data-action="filter-projects" data-filter="${filter}" aria-pressed="${projectsFilter === filter}">${label}<span class="filter-count">${count}</span></button>`).join("")}</div><div class="projects-list-tools"><label class="project-select-all"><input type="checkbox" name="bulk-projects-all" aria-label="${e(t(list.length && list.every((project) => bulkProjectSelection.has(project.id)) ? "取消全选当前项目" : "全选当前项目"))}" ${list.length && list.every((project) => bulkProjectSelection.has(project.id)) ? "checked" : ""} ${!list.length ? "disabled" : ""}><span>${t("全选")}</span></label><select name="projects-sort" aria-label="${e(t("项目排序"))}">${([["manual", t("手动排序")], ["name-asc", t("名称 A → Z")], ["name-desc", t("名称 Z → A")], ["updated", t("最近更新")], ["created", t("最近添加")]] as const).map(([value, label]) => `<option value="${value}" ${projectsSort === value ? "selected" : ""}>${e(label)}</option>`).join("")}</select></div></div></div><div class="project-list" data-preserve-scroll="project-list">${list.map((project) => projectRow(project, selectedID)).join("") || `<div class="small-empty">${t("没有匹配的项目")}</div>`}</div><div class="projects-list-footer">${t("显示 {0} / {1} 个项目", { 0: list.length, 1: projects().length })}</div></section>${selected ? projectCard(selected) : `<section class="panel project-detail project-detail-empty">${empty(t("没有匹配的项目"), t("试试其他筛选条件或关键词。"), button(t("清除筛选"), "clear-project-filters", "small", "", "close"), "search")}</section>`}</div>`;
+  return `${header}${projectSelectionMode ? `<div class="projects-bulk-bar" role="region" aria-label="${e(t("应用所选项目"))}"><div><strong>${t("已选 {0} 个项目", { 0: bulkProjectSelection.size })}</strong><span>${t("各项目保留自己的技能配置。")}</span></div><div class="actions">${button(t("清除项目选择"), "clear-project-selection", "quiet small", bulkProjectSelection.size ? "" : "disabled")}${button(t("批量预览"), "plan-projects", "small", bulkProjectSelection.size ? "" : "disabled", "eye")}${button(t("应用所选项目"), "apply-projects", "primary small", bulkProjectSelection.size ? "" : "disabled", "arrow")}</div></div>` : ""}<div class="projects-layout"><section class="panel projects-browser" aria-label="${e(t("项目列表"))}"><div class="projects-browser-toolbar">${pageSearch("projects", t("搜索项目、路径或技能"))}<div class="projects-list-controls"><div class="projects-filters" role="group" aria-label="${e(t("项目筛选"))}">${([["all", t("全部"), projects().length], ["pending", t("待应用"), projects().filter((project) => project.pending).length]] as const).map(([filter, label, count]) => `<button type="button" class="filter-chip ${projectsFilter === filter ? "active" : ""}" data-action="filter-projects" data-filter="${filter}" aria-pressed="${projectsFilter === filter}">${label}<span class="filter-count">${count}</span></button>`).join("")}</div><div class="projects-list-tools"><div class="projects-selection-controls">${projectSelectionMode ? `<label class="project-select-all"><input type="checkbox" name="bulk-projects-all" aria-label="${e(t(list.length && list.every((project) => bulkProjectSelection.has(project.id)) ? "取消全选当前项目" : "全选当前项目"))}" ${list.length && list.every((project) => bulkProjectSelection.has(project.id)) ? "checked" : ""} ${!list.length ? "disabled" : ""}><span>${t("全选")}</span></label>` : ""}${button(t(projectSelectionMode ? "完成" : "选择"), "toggle-project-selection", "small", `aria-pressed="${projectSelectionMode}" aria-label="${e(t(projectSelectionMode ? "完成项目选择" : "选择项目"))}"`)}</div><select name="projects-sort" aria-label="${e(t("项目排序"))}">${([["manual", t("手动排序")], ["name-asc", t("名称 A → Z")], ["name-desc", t("名称 Z → A")], ["updated", t("最近更新")], ["created", t("最近添加")]] as const).map(([value, label]) => `<option value="${value}" ${projectsSort === value ? "selected" : ""}>${e(label)}</option>`).join("")}</select></div></div></div><div class="project-list" data-preserve-scroll="project-list">${list.map((project) => projectRow(project, selectedID)).join("") || `<div class="small-empty">${t("没有匹配的项目")}</div>`}</div><div class="projects-list-footer">${t("显示 {0} / {1} 个项目", { 0: list.length, 1: projects().length })}</div></section>${selected ? projectCard(selected) : `<section class="panel project-detail project-detail-empty">${empty(t("没有匹配的项目"), t("试试其他筛选条件或关键词。"), button(t("清除筛选"), "clear-project-filters", "small", "", "close"), "search")}</section>`}</div>`;
 }
 function globalBatchKeys(id = selectedGlobalKey) { return id.startsWith("batch:") ? id.slice(6).split(",").filter(Boolean) : id ? [id] : []; }
 function globalBatchID() { return `batch:${[...selectedGlobalKeys].sort().join(",")}`; }
@@ -1108,7 +1109,7 @@ function projectRow(project: Target, selectedID: string) {
   const dirty = applicationDirty("project", project.id, project);
   const count = effectiveSkillIDs(applicationSelection("project", project.id, project)).size;
   const root = project.projectRoot || projectRoot(project.path);
-  return `<div class="project-list-item ${selectedID === project.id ? "selected" : ""} ${bulkProjectSelection.has(project.id) ? "checked" : ""}" data-project-row="${e(project.id)}"><label class="project-checkbox"><input type="checkbox" name="bulk-project" value="${e(project.id)}" aria-label="${e(t("选择项目 {0}", { 0: project.name }))}" ${bulkProjectSelection.has(project.id) ? "checked" : ""}></label>${projectsSort === "manual" ? `<button type="button" class="project-drag-handle" draggable="true" data-action="move-project" data-id="${e(project.id)}" aria-label="${e(t("拖动排序 {0}；按上、下方向键移动", { 0: project.name }))}" title="${e(t("拖动排序 {0}；按上、下方向键移动", { 0: project.name }))}">⠿</button>` : ""}<button type="button" class="project-row" data-action="select-project" data-id="${e(project.id)}" aria-pressed="${selectedID === project.id}"><span class="project-row-top"><span class="project-row-name">${icon(projectIconName(project.icon))}<strong title="${e(project.name)}">${e(project.name)}</strong></span>${dirty ? `<span class="badge">${selectionSaveStatus("project", project.id)}</span>` : applicationStatus(project)}</span><code title="${e(root)}">${e(globalPath(root))}</code><span class="project-row-meta">${t("{0} 个技能 · {1} 个目录", { 0: count, 1: targetPaths(project).length })}</span></button></div>`;
+  return `<div class="project-list-item ${selectedID === project.id ? "selected" : ""} ${bulkProjectSelection.has(project.id) ? "checked" : ""}" data-project-row="${e(project.id)}">${projectSelectionMode ? `<label class="project-checkbox"><input type="checkbox" name="bulk-project" value="${e(project.id)}" aria-label="${e(t("选择项目 {0}", { 0: project.name }))}" ${bulkProjectSelection.has(project.id) ? "checked" : ""}></label>` : projectsSort === "manual" ? `<button type="button" class="project-drag-handle" draggable="true" data-action="move-project" data-id="${e(project.id)}" aria-label="${e(t("拖动排序 {0}；按上、下方向键移动", { 0: project.name }))}" title="${e(t("拖动排序 {0}；按上、下方向键移动", { 0: project.name }))}">⠿</button>` : ""}<button type="button" class="project-row" data-action="select-project" data-id="${e(project.id)}" aria-pressed="${selectedID === project.id}"><span class="project-row-top"><span class="project-row-name">${icon(projectIconName(project.icon))}<strong title="${e(project.name)}">${e(project.name)}</strong></span>${dirty ? `<span class="badge">${selectionSaveStatus("project", project.id)}</span>` : applicationStatus(project)}</span><code title="${e(root)}">${e(globalPath(root))}</code><span class="project-row-meta">${t("{0} 个技能 · {1} 个目录", { 0: count, 1: targetPaths(project).length })}</span></button></div>`;
 }
 function projectDisclosure(id: string, section: string) { return projectDetailsOpen.get(id)?.has(section) ? "open" : ""; }
 function projectCard(project: Target) {
@@ -1519,14 +1520,14 @@ app.addEventListener("keydown", (ev) => {
 app.addEventListener("dragstart", (event) => {
   const handle = (event.target as Element).closest<HTMLElement>('[data-action="move-project"]');
   if (!handle) return;
-  if (projectsSort !== "manual" || applicationBusy() || selectionAutosave.busy) { event.preventDefault(); return; }
+  if (projectSelectionMode || projectsSort !== "manual" || applicationBusy() || selectionAutosave.busy) { event.preventDefault(); return; }
   draggedProject = handle.dataset.id!;
   event.dataTransfer?.setData("text/plain", draggedProject);
   if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
 });
 app.addEventListener("dragover", (event) => {
   const row = (event.target as Element).closest<HTMLElement>("[data-project-row]");
-  if (!draggedProject || !row || projectsSort !== "manual") return;
+  if (projectSelectionMode || !draggedProject || !row || projectsSort !== "manual") return;
   event.preventDefault();
   for (const item of app.querySelectorAll<HTMLElement>("[data-drop]")) delete item.dataset.drop;
   row.dataset.drop = event.clientY >= row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2 ? "after" : "before";
@@ -1578,7 +1579,7 @@ app.addEventListener("change", async (ev) => {
     return;
   }
   if (input.name === "bulk-project" || input.name === "bulk-projects-all") {
-    if (applicationBusy()) { render(); return; }
+    if (!projectSelectionMode || applicationBusy()) { render(); return; }
     if (input.name === "bulk-projects-all") bulkProjectSelection = changeSelection(bulkProjectSelection, filteredProjects().map((project) => project.id), "toggle-all");
     else if (input.checked) bulkProjectSelection.add(input.value); else bulkProjectSelection.delete(input.value);
     render();
@@ -1898,6 +1899,17 @@ document.addEventListener("click", async (ev) => {
   }
   if (action === "open-cloud-settings") { currentPage = "settings"; settingsBackups = true; render(); document.querySelector<HTMLElement>("#settings-tab-panel")?.focus({ preventScroll: true }); document.querySelector("#settings-cloud-title")?.scrollIntoView({ block: "start" }); return; }
   if (action === "configure-cloud-sync") { cloudSyncEditor(); return; }
+  if (action === "toggle-project-selection") {
+    if (!applicationBusy()) {
+      projectSelectionMode = !projectSelectionMode;
+      bulkProjectSelection.clear();
+      draggedProject = "";
+      reviewedProjectBatch = null;
+      render();
+      app.querySelector<HTMLButtonElement>('[data-action="toggle-project-selection"]')?.focus({ preventScroll: true });
+    }
+    return;
+  }
   if (action === "clear-project-selection") { if (!applicationBusy()) { bulkProjectSelection.clear(); render(); } return; }
   if (action === "plan-projects" || action === "apply-projects") { await previewProjectBatch(); return; }
   if (action === "apply-reviewed-projects") { await applyReviewedProjectBatch(); return; }
