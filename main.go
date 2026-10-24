@@ -73,6 +73,8 @@ func main() {
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
+		// The id doubles as the Wayland app_id, matching the installed desktop entry.
+		Linux:          application.LinuxOptions{ApplicationID: info.ID},
 		SingleInstance: &application.SingleInstanceOptions{UniqueID: singleInstanceID(info.ID, os.Getenv("RACOMI_DATA_DIR")), OnSecondInstanceLaunch: func(application.SecondInstanceData) { service.OpenWindow() }},
 	})
 	desktop.Attach(service, app)

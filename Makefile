@@ -1,5 +1,7 @@
 ifeq ($(OS),Windows_NT)
 include scripts/windows.mk
+else ifeq ($(shell uname -s),Linux)
+include scripts/linux.mk
 else
 
 GO ?= go

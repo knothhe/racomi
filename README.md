@@ -52,7 +52,7 @@ make uninstall   # 默认卸载 Dev 版，保留数据与部署
 
 ## Windows 安装与构建
 
-当前发布 CI 仅构建 macOS Apple Silicon。Windows 本地脚本暂时保留，Windows／Linux 的新桌面能力与发行验证另行处理。
+当前发布 CI 仅构建 macOS Apple Silicon。Windows 本地脚本暂时保留，Windows 的新桌面能力与发行验证另行处理。
 
 支持 **Windows 10/11 x64**，运行需要 Microsoft Edge WebView2 Runtime；缺少时从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。导入和刷新 Git 来源仍需 Git。Windows 版暂不提供 macOS 专属的轻量模式与开机自启。
 
@@ -79,11 +79,35 @@ make install     # 自动安装依赖、构建、安装并创建开始菜单快�
 make uninstall   # 卸载已安装应用与快捷方式，保留数据和技能部署
 ```
 
-`make` 根据当前操作系统自动选择 Windows 或 macOS 流程。Windows 默认安装路径为 `%LOCALAPPDATA%\Programs\racomi\racomi.exe`，可用 `make install APP_DIR="D:/Apps/racomi"` 自定义，卸载时使用相同参数。安装更新前请先退出应用。Windows 当前构建架构为 `amd64`，保留 CGO 以支持 SQLite 数据导入；EXE 已嵌入图标、版本信息和 DPI／长路径清单，无需附带 MinGW DLL。
+`make` 根据当前操作系统自动选择 Windows、Linux 或 macOS 流程。Windows 默认安装路径为 `%LOCALAPPDATA%\Programs\racomi\racomi.exe`，可用 `make install APP_DIR="D:/Apps/racomi"` 自定义，卸载时使用相同参数。安装更新前请先退出应用。Windows 当前构建架构为 `amd64`，保留 CGO 以支持 SQLite 数据导入；EXE 已嵌入图标、版本信息和 DPI／长路径清单，无需附带 MinGW DLL。
 
 没有 Make 时也可直接执行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 -Action install`，其他目标通过 `-Action build`、`-Action dist` 等选择。软链接部署需要 Windows 开发者模式或相应权限，普通账号可使用默认的复制部署；`make check` 在无软链接权限时会跳过对应测试。
 
 Windows 的 `make check` 和 `make test` 显式使用 `-ldflags="-s=false -w=false"`，保留测试程序的符号表与 DWARF 调试信息。本机排查发现，Go 默认剥离调试信息的临时测试 EXE 会触发 Smart App Control 拦截，保留调试信息后可以通过检查。此设置仅用于测试构建，不修改系统安全策略或增加排除项；发布 EXE 仍使用原来的体积优化参数。其他设备若仍提示应用控制拦截，可检查事件查看器的 `Microsoft-Windows-CodeIntegrity/Operational` 日志（事件 3077）；这不是所有应用控制策略的通用放行保证，详见 [Microsoft 的说明](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/overview)。
+
+## Linux 构建与安装
+
+当前没有 Linux 发布包，需要从源码构建。需要 **Go 1.26.8+、Node.js 22.12+、npm、GNU Make、Git、C 编译器、pkg-config**，以及 GTK 和 WebKitGTK 开发文件，二选一即可：
+
+| 发行版 | GTK 3 + WebKit2GTK 4.1 | GTK 4 + WebKitGTK 6.0 |
+| --- | --- | --- |
+| Arch | `webkit2gtk-4.1` | `webkitgtk-6.0` |
+| Debian／Ubuntu | `libgtk-3-dev libwebkit2gtk-4.1-dev` | `libgtk-4-dev libwebkitgtk-6.0-dev` |
+| Fedora | `gtk3-devel webkit2gtk4.1-devel` | `gtk4-devel webkitgtk6.0-devel` |
+
+在仓库目录运行：
+
+```sh
+make doctor      # 检查构建环境与 GTK 版本
+make run         # 构建 bin/dev/racomi 并启动
+make install     # 默认构建并安装独立 Dev 版
+make uninstall   # 默认卸载 Dev 版，保留数据与部署
+make dist        # 生成 bin/releases 下的 tar.gz 和 SHA-256
+```
+
+默认安装 `~/.local/bin/racomi-dev`，并在 `~/.local/share/applications` 和 `~/.local/share/icons/hicolor` 写入桌面入口与图标；资料位于 `~/.config/racomi-dev`。`CHANNEL=stable` 安装正式身份 `~/.local/bin/racomi`，资料位于 `~/.config/racomi`。可通过 `BIN_DIR`、`DESKTOP_DIR`、`ICON_DIR` 自定义位置，卸载时使用相同参数。安装只替换带有 racomi 管理标记的桌面入口所对应的文件，拒绝覆盖无关命令或软链接；更新后需重启正在运行的应用。
+
+构建时若检测到 GTK 4 开发文件则使用 GTK 4，否则使用 GTK 3（Wails 的 `gtk3` 构建标签），可用 `GTK=3` 或 `GTK=4` 指定，`make check`、`make dev` 同样适用。生成的可执行文件依赖构建时的系统 GTK／WebKitGTK 库。Linux 暂不提供轻量模式、开机自启和自动更新。
 
 ## 开发与发布
 
