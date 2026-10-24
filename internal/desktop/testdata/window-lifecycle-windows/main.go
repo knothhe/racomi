@@ -43,9 +43,11 @@ func check(app *application.App, service *desktop.Service) error {
 		return err
 	}
 	for i := 0; i < 10; i++ {
+		fmt.Printf("Windows close/reopen cycle %d/10\n", i+1)
 		application.InvokeSync(first.Close)
-		if err := waitFor("window hide", 5*time.Second, func() bool { return !first.IsVisible() }); err != nil {
-			return err
+		// The frontend allows a current operation up to 20 seconds to finish.
+		if err := waitFor("window hide", 30*time.Second, func() bool { return !first.IsVisible() }); err != nil {
+			return fmt.Errorf("cycle %d: %w (%s)", i+1, err, desktop.NativeLifecycleStatus(service))
 		}
 		service.OpenWindow()
 		if err := waitFor("window reopen", 5*time.Second, func() bool { return len(app.Window.GetAll()) == 1 && first.IsVisible() }); err != nil {
@@ -90,7 +92,7 @@ func main() {
 	if _, err = os.Stat(filepath.Join(assets, "index.html")); err != nil {
 		log.Fatal("build the frontend first: ", err)
 	}
-	watchdog := time.AfterFunc(2*time.Minute, func() { fmt.Fprintln(os.Stderr, "FAIL: native lifecycle timeout"); os.Exit(1) })
+	watchdog := time.AfterFunc(3*time.Minute, func() { fmt.Fprintln(os.Stderr, "FAIL: native lifecycle timeout"); os.Exit(1) })
 	defer watchdog.Stop()
 	service, err := desktop.New(root)
 	if err != nil {

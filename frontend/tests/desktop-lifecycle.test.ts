@@ -38,7 +38,7 @@ class Element {
   }
 }
 
-function lifecycleHarness(url: string) {
+function lifecycleHarness(url: string, acknowledge?: (id: number, page: number, allow: boolean) => Promise<boolean>) {
   const handlers = new Map<string, (event: { data: unknown }) => unknown>();
   const requests: [number, number, boolean][] = [];
   const body = Object.assign(new Element(), { dataset: {} as Record<string, string> });
@@ -52,7 +52,7 @@ function lifecycleHarness(url: string) {
     "./desktop-runtime": { isDesktopRuntime: () => isDesktopRuntime(location) },
     "./api": { api: {
       frontendReady: async () => { ready++; return 1; },
-      completeLifecycle: async (id: number, page: number, allow: boolean) => { requests.push([id, page, allow]); return allow; },
+      completeLifecycle: async (id: number, page: number, allow: boolean) => { requests.push([id, page, allow]); return acknowledge ? acknowledge(id, page, allow) : allow; },
     } },
     "./i18n": { t: (value: string) => value },
   };
@@ -75,6 +75,7 @@ for (const url of nativeOrigins) {
     const handler = h.handlers.get("racomi:lifecycle");
     assert.ok(handler, "close/update events must have a frontend listener");
     const closing = handler({ data: { id: 7, page: 3, action: "quit" } });
+    await Promise.resolve();
     assert.equal(h.body.dataset.lifecycleBlocked, "true");
     assert.deepEqual(h.requests, [], "an unfinished save cannot authorize quitting");
     finishSave();
@@ -104,6 +105,64 @@ test("browser fixtures do not register native lifecycle calls", () => {
     assert.equal(h.ready(), 0);
     assert.equal(h.handlers.size, 0);
   }
+});
+
+test("a new close request survives while the previous backend acknowledgement is in flight", async () => {
+  let releaseAcknowledgement!: (value: boolean) => void;
+  const acknowledgement = new Promise<boolean>(resolve => { releaseAcknowledgement = resolve; });
+  const h = lifecycleHarness("http://wails.localhost/", async (id, _page, allow) => id === 1 ? acknowledgement : allow);
+  h.install({ flush: async () => {}, busy: () => false, failed: () => false, dirty: () => false, retry() {}, discard() {}, error: assert.fail });
+  const handler = h.handlers.get("racomi:lifecycle")!;
+  const first = handler({ data: { id: 1, page: 1, action: "hide" } });
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  assert.deepEqual(h.requests, [[1, 1, true]], "the backend has accepted the first close");
+  const second = handler({ data: { id: 2, page: 1, action: "hide" } });
+  releaseAcknowledgement(true);
+  await Promise.all([first, second]);
+  assert.deepEqual(h.requests, [[1, 1, true], [2, 1, true]], "the next close must not be dropped while the first IPC response returns");
+});
+
+test("reopening cancels a queued hide without authorizing a stale request", async () => {
+  let releaseAcknowledgement!: (value: boolean) => void;
+  const acknowledgement = new Promise<boolean>(resolve => { releaseAcknowledgement = resolve; });
+  const h = lifecycleHarness("http://wails.localhost/", async (id, _page, allow) => id === 1 ? acknowledgement : allow);
+  h.install({ flush: async () => {}, busy: () => false, failed: () => false, dirty: () => false, retry() {}, discard() {}, error: assert.fail });
+  const handler = h.handlers.get("racomi:lifecycle")!;
+  const first = handler({ data: { id: 1, page: 1, action: "hide" } });
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  const second = handler({ data: { id: 2, page: 1, action: "hide" } });
+  h.handlers.get("racomi:lifecycle-resumed")!({ data: null });
+  h.handlers.get("racomi:lifecycle-cancelled")!({ data: 2 });
+  releaseAcknowledgement(true);
+  await Promise.all([first, second]);
+  assert.deepEqual(h.requests, [[1, 1, true]]);
+  assert.equal(h.app.inert, false);
+});
+
+test("duplicate lifecycle delivery flushes and acknowledges only once", async () => {
+  const h = lifecycleHarness("http://wails.localhost/");
+  let saves = 0;
+  h.install({ flush: async () => { saves++; }, busy: () => false, failed: () => false, dirty: () => false, retry() {}, discard() {}, error: assert.fail });
+  const handler = h.handlers.get("racomi:lifecycle")!;
+  const request = { data: { id: 1, page: 1, action: "hide" } };
+  await Promise.all([handler(request), handler(request)]);
+  assert.equal(saves, 1);
+  assert.deepEqual(h.requests, [[1, 1, true]]);
+});
+
+test("a refused save does not prevent the next close from being processed", async () => {
+  const h = lifecycleHarness("http://wails.localhost/");
+  let saves = 0;
+  const errors: string[] = [];
+  h.install({ flush: async () => { if (++saves === 1) throw Error("disk full"); }, busy: () => false, failed: () => false, dirty: () => false, retry() {}, discard() {}, error: (message: string) => errors.push(message) });
+  const handler = h.handlers.get("racomi:lifecycle")!;
+  await Promise.all([
+    handler({ data: { id: 1, page: 1, action: "hide" } }),
+    handler({ data: { id: 2, page: 1, action: "quit" } }),
+  ]);
+  assert.deepEqual(h.requests, [[1, 1, false], [2, 1, true]]);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /disk full/);
 });
 
 test("Windows native text size uses the backend zoom while browser previews retain CSS scaling", () => {
