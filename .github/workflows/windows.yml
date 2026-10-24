@@ -75,7 +75,7 @@ jobs:
           CGO_ENABLED: '1'
           CC: gcc
         run: |
-          go run -tags production -ldflags="-s=false -w=false" ./internal/desktop/testdata/window-lifecycle-windows
+          go run -tags production,nativeintegration -ldflags="-s=false -w=false" ./internal/desktop/testdata/window-lifecycle-windows
           if ($LASTEXITCODE -ne 0) { throw 'Windows lifecycle verification failed' }
       - name: Package build
         env:

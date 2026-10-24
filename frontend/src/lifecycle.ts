@@ -1,6 +1,7 @@
 import { Events } from "@wailsio/runtime";
 import { api } from "./api";
 import { t } from "./i18n";
+import { isDesktopRuntime } from "./desktop-runtime";
 
 interface Options {
  flush: () => Promise<void>;
@@ -12,7 +13,7 @@ interface Options {
  error: (message: string) => void;
 }
 export function installLifecycle(options: Options): void {
- if (location.protocol !== "wails:") return;
+ if (!isDesktopRuntime()) return;
  let active = 0;
  let cancelled = false;
  let dialogResolve: ((value:boolean)=>void) | undefined;

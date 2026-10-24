@@ -1,14 +1,14 @@
-//go:build windows
+//go:build windows && nativeintegration
 
-// go run -tags production -ldflags="-s=false -w=false" ./internal/desktop/testdata/window-lifecycle-windows
+// go run -tags production,nativeintegration -ldflags="-s=false -w=false" ./internal/desktop/testdata/window-lifecycle-windows
 // Uses a temporary profile and never opens the user's racomi instance.
 package main
 
 import (
 	"fmt"
 	"log"
-	"net/http"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"time"
 
@@ -39,7 +39,9 @@ func check(app *application.App, service *desktop.Service) error {
 	}); err != nil {
 		return err
 	}
-	service.FrontendReady()
+	if err := waitFor("real frontend readiness", 20*time.Second, func() bool { return desktop.NativeFrontendReady(service) }); err != nil {
+		return err
+	}
 	for i := 0; i < 10; i++ {
 		application.InvokeSync(first.Close)
 		if err := waitFor("window hide", 5*time.Second, func() bool { return !first.IsVisible() }); err != nil {
@@ -63,7 +65,9 @@ func check(app *application.App, service *desktop.Service) error {
 		return err
 	}
 	fmt.Println("PASS: Windows stays running and reopens after the one-minute release")
-	service.FrontendReady()
+	if err := waitFor("recreated frontend readiness", 20*time.Second, func() bool { return desktop.NativeFrontendReady(service) }); err != nil {
+		return err
+	}
 	_, err := service.SetLightweight(false)
 	return err
 }
@@ -74,6 +78,18 @@ func main() {
 		log.Fatal(err)
 	}
 	defer os.RemoveAll(root)
+	// The real frontend must register FrontendReady and authorize saves. A Go
+	// event listener that acknowledges requests would hide origin/IPC failures.
+	if err = os.Setenv("WEBVIEW2_USER_DATA_FOLDER", filepath.Join(root, "webview")); err != nil {
+		log.Fatal(err)
+	}
+	assets, err := filepath.Abs(filepath.Join("frontend", "dist"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	if _, err = os.Stat(filepath.Join(assets, "index.html")); err != nil {
+		log.Fatal("build the frontend first: ", err)
+	}
 	watchdog := time.AfterFunc(2*time.Minute, func() { fmt.Fprintln(os.Stderr, "FAIL: native lifecycle timeout"); os.Exit(1) })
 	defer watchdog.Stop()
 	service, err := desktop.New(root)
@@ -85,15 +101,9 @@ func main() {
 	}
 	app := application.New(application.Options{
 		Name: "racomi Windows lifecycle verification", ShouldQuit: service.ShouldQuit,
-		Windows: application.WindowsOptions{DisableQuitOnLastWindowClosed: true},
-		Assets: application.AssetOptions{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, "<!doctype html><title>racomi isolated verification</title><p>Windows lifecycle regression</p>")
-		})},
-	})
-	app.Event.On("racomi:lifecycle", func(event *application.CustomEvent) {
-		if request, ok := event.Data.(desktop.LifecycleEvent); ok {
-			_, _ = service.CompleteLifecycle(request.ID, request.Page, true)
-		}
+		Windows:  application.WindowsOptions{DisableQuitOnLastWindowClosed: true},
+		Services: []application.Service{application.NewService(service)},
+		Assets:   application.AssetOptions{Handler: application.AssetFileServerFS(os.DirFS(assets))},
 	})
 	desktop.Attach(service, app)
 	desktop.OpenMainWindow(service, app)

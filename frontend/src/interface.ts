@@ -1,5 +1,6 @@
 import type { AppSettings, InterfaceFontFamily } from "./api";
 import { api } from "./api";
+import { isDesktopRuntime } from "./desktop-runtime";
 
 export const textSizes = [100, 110, 125, 150] as const;
 export const interfaceFonts = ["system", "sans", "serif", "mono"] as const;
@@ -32,7 +33,7 @@ export function applyInterfaceSettings(settings: AppSettings) {
   document.documentElement.style.setProperty("--font", family);
   document.documentElement.dataset.interfaceFont = font;
   document.documentElement.style.setProperty("--ui-scale", String(size / 100));
-  if (location.protocol === "wails:") {
+  if (isDesktopRuntime()) {
     if (size !== nativeSize) {
       nativeSize = size;
       void api.setTextSize(size).catch(() => { nativeSize = 0; });
