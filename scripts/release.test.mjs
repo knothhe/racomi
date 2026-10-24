@@ -350,7 +350,7 @@ test('project Make release and release-initial targets use preview mode by defau
   // path in argv so the copied script's CLI entry-point check runs main().
   const releaseCommand = `RELEASE_COMMAND=${shellQuote(process.execPath)} ${shellQuote(fs.realpathSync(fixtureReleaseScript))}`;
   for (const [target, releaseType] of [['release', 'upgrade'], ['release-initial', 'initial']]) {
-    const result = f.run('make', ['--silent', '-I', path.dirname(projectMakefile), '-f', projectMakefile, target, 'VERSION_BUMP=minor', releaseCommand]);
+    const result = f.run('make', ['--silent', '--no-print-directory', '-I', path.dirname(projectMakefile), '-f', projectMakefile, target, 'VERSION_BUMP=minor', releaseCommand]);
     assert.notEqual(result.stdout.trim(), '', `${target} must execute the release CLI and print its preview`);
     const plan = JSON.parse(result.stdout);
     assert.equal(plan.mode, 'preview');
