@@ -2,7 +2,6 @@ racomi — macOS installation / 安装说明
 
 Requires macOS 13 or newer. / 需要 macOS 13 或更新版本。
 Apple Silicon (M series): racomi-*-aarch64-macos.zip
-Intel: racomi-*-x86_64-macos.zip
 
 1. Download the ZIP and its matching .sha256 from the official release:
    https://github.com/knothhe/racomi/releases/latest
@@ -52,3 +51,14 @@ If you want to remove those skills, clear each target's selection in racomi,
 wait for autosave, then preview and apply before uninstalling.
 已部署到项目或 Agent 全局目录的技能会保留。如需移除，请在卸载前于
 racomi 清空对应选择，等待自动保存后预览并应用。
+
+Updates / 更新
+
+Official stable Apple Silicon builds include Sparkle. Use Settings > About
+(or the app menu) to check for application updates and change automatic checks.
+Downloads and installs are signed with the release update key. Installation
+asks for confirmation and coordinates pending saves before restarting.
+官方 Apple Silicon 稳定版在“设置 > 关于”或应用菜单检查应用更新。
+更新包与 Feed 均有签名，安装前确认并处理未保存编辑。
+Older builds without the updater need one manual installation.
+历史版本没有更新器时，需先手动安装一次新版本。

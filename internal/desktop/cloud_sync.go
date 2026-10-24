@@ -330,6 +330,9 @@ func (s *Service) runCloudSync(ctx context.Context, resolutions map[string]strin
 		return AppState{}, errors.New("cloud sync is already running")
 	}
 	defer c.runMu.Unlock()
+	if s.lifecycle.stopping.Load() {
+		return AppState{}, context.Canceled
+	}
 	// Configuration saves share runMu, keeping this session's destination stable
 	// without holding the application's local mutation lock across network I/O.
 	c.mu.Lock()
@@ -409,7 +412,7 @@ func (s *Service) startCloudSync(ctx context.Context) {
 			for {
 				c := s.cloud
 				c.mu.Lock()
-				due := c.config.AutoSync && !c.syncing && len(c.conflicts) == 0 &&
+				due := !s.lifecycle.stopping.Load() && c.config.AutoSync && !c.syncing && len(c.conflicts) == 0 &&
 					(c.lastAttempt.IsZero() || time.Since(c.lastAttempt) >= time.Duration(c.config.IntervalMinutes)*time.Minute)
 				c.mu.Unlock()
 				if due {

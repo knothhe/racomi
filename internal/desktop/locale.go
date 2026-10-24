@@ -10,6 +10,7 @@ func (s *Service) SetLocale(locale string) error {
 	s.themeMu.Lock()
 	defer s.themeMu.Unlock()
 	s.locale = locale
+	go s.configureMenu()
 	return nil
 }
 

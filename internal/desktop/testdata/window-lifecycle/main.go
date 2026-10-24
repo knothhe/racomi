@@ -23,6 +23,7 @@ import "C"
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"sync/atomic"
 	"time"
@@ -62,20 +63,21 @@ func check(app *application.App, service *desktop.Service) error {
 	}); err != nil {
 		return err
 	}
+	service.FrontendReady() // This harness has no editable frontend.
 	for i := 0; i < 100; i++ {
 		first.Close()
 		if err := waitFor("closed window to hide", 5*time.Second, func() bool { return !shown(first) }); err != nil {
 			return err
 		}
-		application.InvokeSync(func() { C.reopenFromDock() })
-		if err := waitFor("Dock reopen", 5*time.Second, func() bool {
+		service.OpenWindow()
+		if err := waitFor("service reopen", 5*time.Second, func() bool {
 			windows := app.Window.GetAll()
 			return len(windows) == 1 && windows[0] == first && shown(first)
 		}); err != nil {
 			return fmt.Errorf("cycle %d: %w", i+1, err)
 		}
 	}
-	fmt.Println("PASS: 100 close/immediate Dock reopen cycles reused the window")
+	fmt.Println("PASS: 100 close/immediate service reopen cycles reused the window")
 	// Let every canceled release deadline pass while this window stays open.
 	time.Sleep(65 * time.Second)
 	if !application.InvokeSyncWithResult(func() bool {
@@ -102,6 +104,7 @@ func check(app *application.App, service *desktop.Service) error {
 		return err
 	}
 	fmt.Println("PASS: Dock reopen created a new window after the one-minute release")
+	service.FrontendReady()
 	if _, err := service.SetLightweight(false); err != nil {
 		return err
 	}
@@ -129,7 +132,18 @@ func main() {
 	}
 	app := application.New(application.Options{
 		Name: "racomi window lifecycle check",
-		Mac:  application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: false},
+		Assets: application.AssetOptions{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, "<!doctype html><title>Native lifecycle check</title><p>Isolated window regression</p>")
+		})},
+		ShouldQuit: service.ShouldQuit,
+		Mac:        application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: false},
+	})
+	app.Event.On("racomi:lifecycle", func(event *application.CustomEvent) {
+		request, ok := event.Data.(desktop.LifecycleEvent)
+		if ok {
+			_, _ = service.CompleteLifecycle(request.ID, request.Page, true)
+		}
 	})
 	desktop.Attach(service, app)
 	desktop.OpenMainWindow(service, app)

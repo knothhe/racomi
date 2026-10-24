@@ -1346,3 +1346,14 @@ input.settings-toggle:checked::after { transform: translateX(12px); }
 .cloud-conflict-bulk-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .cloud-conflict-bulk p { color: var(--muted); margin: 8px 0 0; font-size: 11.5px; line-height: 1.6; }
 @container workspace (max-width: 620px) { #cloud-conflict-alert { margin: 8px 12px 0; } .cloud-conflict-banner { flex-wrap: wrap; } .cloud-conflict-banner-copy { flex-basis: 70%; } }
+
+.about-page code { overflow-wrap: anywhere; text-align: end; }
+.about-notices { max-width: 100%; }
+.about-notices pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 11px; }
+.about-page .settings-row { gap: 20px; }
+#lifecycle-root .modal-backdrop { z-index: 10000; }
+
+.about-page { display: flex; flex-direction: column; gap: 20px; user-select: text; }
+.about-page .settings-section { display: flex; flex-direction: column; gap: 8px; }
+.about-page .settings-group > p { margin: 0; padding: 12px 14px; color: var(--muted); }
+.about-page a { color: var(--accent); }

@@ -357,3 +357,14 @@ test("queued font and text size edits keep both preferences in later saves", asy
   assert.equal(h.settlements[0].result?.settings.textSize, 125);
   assert.equal(h.settlements[0].result?.settings.interfaceFont, "serif");
 });
+
+test("failed settings remain retryable without replaying fields superseded by later success", async () => {
+  let saved: AppSettings = { deploymentMode: "copy", defaultProjectDirectories: ["agents"], defaultGlobalDirectories: ["codex-user"], customProjectDirectories: [] };
+  let fail = true;
+  const queue = createSettingsAutosave({read:()=>saved, write:async(settings)=>{if(fail) throw Error("disk full"); saved=settings;return settings;},settings:value=>value,start:()=>{},error:()=>{},settled:()=>{}});
+  queue.save({theme:"dark"}); await queue.idle();
+  assert.deepEqual(queue.failed,{theme:"dark"});
+  fail=false; queue.save({locale:"en"}); await queue.idle();
+  assert.deepEqual(queue.failed,{theme:"dark"}); assert.equal(saved.locale,"en"); assert.equal(saved.theme,undefined);
+  queue.retry(); await queue.idle(); assert.deepEqual(queue.failed,{}); assert.equal(saved.theme,"dark"); assert.equal(saved.locale,"en");
+});

@@ -1,0 +1,14 @@
+racomi Dev — local development build
+
+This app uses com.knothhe.racomi.dev, a separate single instance, and
+~/Library/Application Support/racomi-dev. The lower-right Dev icon identifies
+this channel. It never connects to the stable release update feed.
+
+make install / make uninstall default to this channel. The application is
+~/Applications/racomi Dev.app and the launcher is ~/.local/bin/racomi-dev.
+Install and uninstall request a normal exit of the exact target application.
+A failed save or exit blocks replacement/removal. User data and credentials
+are kept; login registration is removed only if it belongs to this target.
+
+Use CHANNEL=stable explicitly for the existing stable application identity.
+A local stable source build is updated through Make, not the official updater.

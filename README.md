@@ -17,7 +17,6 @@
 | Mac | 下载文件 |
 | --- | --- |
 | Apple Silicon | `racomi-*-aarch64-macos.zip` |
-| Intel | `racomi-*-x86_64-macos.zip` |
 
 在下载目录校验后解压，将 **racomi.app** 拖入 `/Applications` 或 `~/Applications`：
 
@@ -45,13 +44,15 @@ xattr -dr com.apple.quarantine /Applications/racomi.app
 
 ```sh
 make doctor      # 检查构建环境
-make install     # 自动安装依赖、构建并安装应用
-make uninstall   # 卸载应用和启动命令，保留数据与部署
+make install     # 默认构建并安装独立 Dev 版
+make uninstall   # 默认卸载 Dev 版，保留数据与部署
 ```
 
-默认安装到 `~/Applications/racomi.app`，启动命令为 `~/.local/bin/racomi`。更新时退出应用后重新运行 `make install`。可通过 `APP_DIR` 和 `BIN_DIR` 自定义位置，卸载时使用相同参数。
+默认安装到 `~/Applications/racomi Dev.app`，启动命令为 `~/.local/bin/racomi-dev`，资料位于 `~/Library/Application Support/racomi-dev`。Dev 的应用标识、单实例、自启和图标均与正式版分开。`make install CHANNEL=stable` 可构建并安装本地正式身份，卸载同样传入 `CHANNEL=stable`；这种源码构建使用 Make 更新，不接入官方自动更新。可通过 `APP_DIR` 和 `BIN_DIR` 自定义位置，卸载时使用相同参数。安装／卸载会请求精确目标实例正常退出；保存失败或退出超时即停止，保留原安装。卸载仅清理属于该安装的自启登记，保留数据与凭据。开机自启和官方更新要求应用放在 `/Applications` 或 `~/Applications`。
 
 ## Windows 安装与构建
+
+当前发布 CI 仅构建 macOS Apple Silicon。Windows 本地脚本暂时保留，Windows／Linux 的新桌面能力与发行验证另行处理。
 
 支持 **Windows 10/11 x64**，运行需要 Microsoft Edge WebView2 Runtime；缺少时从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。导入和刷新 Git 来源仍需 Git。Windows 版暂不提供 macOS 专属的轻量模式与开机自启。
 
@@ -99,7 +100,7 @@ make check       # 前端构建、类型检查、Go vet 和测试
 
 本地打包、首次发版、版本升级及失败续推见 [发布指南](docs/release/README.md)。
 
-目前支持 macOS 和 Windows x64，没有自动升级。云同步使用用户自己的 S3 兼容存储，无需 racomi 账号。
+当前 CI 发布 macOS Apple Silicon。官方稳定版提供 Sparkle 自动检查与签名更新：在“设置 → 关于”手动检查或开关自动检查；发现新版本后提示，下载完成确认安装，退出前处理保存与草稿。Dev、预览版及本地源码构建不连接正式安装式更新。旧版没有更新器，须手动安装首个包含更新功能的版本。云同步使用用户自己的 S3 兼容存储，无需 racomi 账号。
 
 ## 更多资料
 

@@ -1,12 +1,16 @@
 package main
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 
+	"racomi/internal/buildinfo"
 	"racomi/internal/desktop"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -18,9 +22,15 @@ var assets embed.FS
 //go:embed build/appicon.png
 var appIcon []byte
 
+//go:embed build/dev-icons/app-icon-dev.png
+var devIcon []byte
+
 // Keep the bundle's asset catalog in control of macOS light and dark Dock icons.
 // A runtime image would replace that catalog with a fixed appearance.
 func appIconFor() []byte {
+	if buildinfo.DataDirectoryName() == "racomi-dev" {
+		return devIcon
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return appIcon
@@ -44,22 +54,26 @@ func appIconForExecutable(platform, executable string) []byte {
 }
 
 func main() {
-	service, err := desktop.New(os.Getenv("RACOMI_DATA_DIR"))
-	if err != nil {
-		log.Fatal(err)
+	if len(os.Args) == 2 && os.Args[1] == "--build-info" {
+		_ = json.NewEncoder(os.Stdout).Encode(buildinfo.Current())
+		return
 	}
+	info := buildinfo.Current()
+	service := desktop.NewApplicationService(os.Getenv("RACOMI_DATA_DIR"))
 	app := application.New(application.Options{
-		Name:        "racomi",
-		Description: "A lightweight local agent skill manager",
-		Icon:        appIconFor(),
-		Services:    []application.Service{application.NewService(service)},
+		Name:         info.Name,
+		ErrorHandler: func(err error) { log.Print(err) },
+		ShouldQuit:   service.ShouldQuit,
+		Description:  "A lightweight local agent skill manager",
+		Icon:         appIconFor(),
+		Services:     []application.Service{application.NewService(service)},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
-		SingleInstance: &application.SingleInstanceOptions{UniqueID: "com.knothhe.racomi", OnSecondInstanceLaunch: func(application.SecondInstanceData) { service.OpenWindow() }},
+		SingleInstance: &application.SingleInstanceOptions{UniqueID: singleInstanceID(info.ID, os.Getenv("RACOMI_DATA_DIR")), OnSecondInstanceLaunch: func(application.SecondInstanceData) { service.OpenWindow() }},
 	})
 	desktop.Attach(service, app)
 
@@ -68,4 +82,27 @@ func main() {
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// Explicit data profiles need separate locks so an isolated verification app
+// cannot route a launch into the user's everyday application.
+func singleInstanceID(identity, root string) string {
+	if root == "" {
+		return identity
+	}
+	canonical := func(value string) string {
+		if resolved, err := filepath.EvalSymlinks(value); err == nil {
+			value = resolved
+		}
+		if absolute, err := filepath.Abs(value); err == nil {
+			value = absolute
+		}
+		return filepath.Clean(value)
+	}
+	root = canonical(root)
+	if base, err := os.UserConfigDir(); err == nil && root == canonical(filepath.Join(base, buildinfo.DataDirectoryName())) {
+		return identity
+	}
+	digest := sha256.Sum256([]byte(root))
+	return fmt.Sprintf("%s.profile.%x", identity, digest[:12])
 }

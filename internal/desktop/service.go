@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"racomi/internal/backup"
+	"racomi/internal/buildinfo"
 	skillstore "racomi/internal/skills"
 	"racomi/internal/sources"
 
@@ -33,17 +34,29 @@ type AppState struct {
 }
 
 type Service struct {
-	desktop       *desktopRuntime
-	openWindow    func()
-	store         *skillstore.Store
-	sources       *sources.Client
-	mu            sync.Mutex
-	themeMu       sync.Mutex
-	theme         string
-	locale        string
-	app           *application.App
-	legacyPreview *skillsManagerSession
-	cloud         *cloudSyncRuntime
+	initializationError error
+	lifecycle           lifecycleState
+	desktop             *desktopRuntime
+	openWindow          func()
+	store               *skillstore.Store
+	sources             *sources.Client
+	mu                  sync.Mutex
+	themeMu             sync.Mutex
+	theme               string
+	locale              string
+	app                 *application.App
+	legacyPreview       *skillsManagerSession
+	cloud               *cloudSyncRuntime
+}
+
+// NewApplicationService keeps About, updates and error recovery reachable when
+// the library cannot open. It never resets or overwrites the failed data.
+func NewApplicationService(root string) *Service {
+	service, err := New(root)
+	if err == nil {
+		return service
+	}
+	return &Service{initializationError: err, desktop: &desktopRuntime{}, theme: "system", locale: "en"}
 }
 
 func New(root string) (*Service, error) {
@@ -52,7 +65,7 @@ func New(root string) (*Service, error) {
 		if err != nil {
 			return nil, err
 		}
-		root = filepath.Join(base, "racomi")
+		root = filepath.Join(base, buildinfo.DataDirectoryName())
 	}
 	root, err := expandPath(root)
 	if err != nil {
@@ -80,6 +93,11 @@ func Attach(service *Service, app *application.App) {
 	service.app = app
 	service.themeMu.Unlock()
 	if app != nil {
+		app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
+			service.lifecycle.started.Store(true)
+			service.configureMenu()
+			application.InvokeAsync(func() { service.startUpdater() })
+		})
 		app.Event.OnApplicationEvent(events.Common.ThemeChanged, func(_ *application.ApplicationEvent) {
 			service.themeMu.Lock()
 			defer service.themeMu.Unlock()
@@ -94,6 +112,10 @@ func Attach(service *Service, app *application.App) {
 // are opened, so the first native background follows the system appearance.
 func (s *Service) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
 	s.startCloudSync(ctx)
+	if s.app != nil {
+		application.InvokeAsync(func() { s.startUpdater() })
+	}
+	s.configureMenu()
 	s.themeMu.Lock()
 	defer s.themeMu.Unlock()
 	s.applyThemeLocked()
@@ -224,6 +246,9 @@ func (s *Service) ReadSkillDocument(skillID string) (string, error) {
 }
 
 func (s *Service) GetState() (AppState, error) {
+	if s.initializationError != nil {
+		return AppState{}, s.initializationError
+	}
 	// Sample completion before the library. A concurrent sync may make this
 	// marker older than the returned data, which polling can safely reload;
 	// sampling it afterward could acknowledge data this response never read.

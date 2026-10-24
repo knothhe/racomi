@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"racomi/internal/buildinfo"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -16,14 +17,16 @@ func OpenMainWindow(s *Service, app *application.App) {
 	width, height := 1200, 800
 	var open func()
 	open = func() {
+		s.cancelLifecycle("hide")
 		generation++
 		if release != nil {
 			release.Stop()
 			release = nil
 		}
 		if window == nil {
+			s.pageOpened()
 			w := app.Window.NewWithOptions(application.WebviewWindowOptions{
-				Name: "main", Title: "racomi", Width: width, Height: height,
+				Name: "main", Title: buildinfo.Current().Name, Width: width, Height: height,
 				MinWidth: 900, MinHeight: 620,
 				BackgroundColour: application.NewRGB(244, 244, 246),
 				Mac:              application.MacWindow{TitleBar: application.MacTitleBarHiddenInset}, URL: "/",
@@ -41,25 +44,32 @@ func OpenMainWindow(s *Service, app *application.App) {
 						app.Quit()
 						return
 					}
-					w.Hide()
-					generation++
-					closedGeneration := generation
-					if release != nil {
-						release.Stop()
-					}
-					release = time.AfterFunc(time.Minute, func() {
-						application.InvokeAsync(func() {
-							if generation != closedGeneration || window != w || w.IsVisible() {
-								return
-							}
-							if !s.desktop.lightweight.Load() {
-								app.Quit()
-								return
-							}
-							width, height = w.Size()
-							window = nil
-							releaseWebView(w)
-							w.Close()
+					closeGeneration := generation
+					s.requestLifecycle("hide", func() {
+						if window != w || generation != closeGeneration {
+							return
+						}
+						w.Hide()
+						generation++
+						closedGeneration := generation
+						if release != nil {
+							release.Stop()
+						}
+						release = time.AfterFunc(time.Minute, func() {
+							application.InvokeAsync(func() {
+								if generation != closedGeneration || window != w || w.IsVisible() {
+									return
+								}
+								if !s.desktop.lightweight.Load() {
+									app.Quit()
+									return
+								}
+								width, height = w.Size()
+								s.pageReleased()
+								window = nil
+								releaseWebView(w)
+								w.Close()
+							})
 						})
 					})
 				})

@@ -1,3 +1,6 @@
+import { Events } from "@wailsio/runtime";
+import { aboutPage } from "./about";
+import { installLifecycle } from "./lifecycle";
 import { installSelects } from "./select";
 import { renderMarkdownDocument } from "./markdown";
 import { applyInterfaceSettings, defaultFontStyle, loadInterfaceFonts, textSizes } from "./interface";
@@ -28,7 +31,7 @@ import { catalogEntries, sourceStatus, sourceStatusDetails, sourceSyncPaths, sum
 import { variantOptions } from "./skill-variants";
 import { defaultSettings, projectDirectories, settingsPage } from "./settings";
 import { enableNativeThemeSync, getThemePreference, setThemePreference, type ThemePreference } from "./theme";
-import { api, type AppSettings, type AppState, type ApplyPlan, type CloudBackup, type SyncConflict, type Source, type ImportResult, type Preset, type Preview, type PreviewCandidate, type SearchResult, type SkillListPage, type Skill, type SkillsManagerPreview, type Target, type Update } from "./api";
+import { api, type AppSettings, type BuildInfo, type UpdaterState, type AppState, type ApplyPlan, type CloudBackup, type SyncConflict, type Source, type ImportResult, type Preset, type Preview, type PreviewCandidate, type SearchResult, type SkillListPage, type Skill, type SkillsManagerPreview, type Target, type Update } from "./api";
 
 type Page = "skills" | "sources" | "discover" | "presets" | "projects" | "global" | "settings" | "guide";
 const nav: { id: Page; title: string; icon: string }[] = [
@@ -95,6 +98,9 @@ let selectedGlobalKey = "";
 let selectedGlobalKeys = new Set<string>();
 let globalDirectoriesInitialized = false;
 let settingsBackups = false;
+let settingsAbout = false;
+let buildInfo: BuildInfo | undefined;
+let updaterState: UpdaterState | undefined;
 let guideTab: GuideTab = "start";
 let settingsDraft: AppSettings | null = null;
 let settingsWriteRevision = 0;
@@ -211,9 +217,9 @@ const settingsAutosave = createSettingsAutosave<AppState>({
   start: () => { activeTasks.add("正在保存设置…"); status(); syncBusyControls(); },
   error: (err) => toast(t("设置保存失败：{0}", { 0: tMessage(err instanceof Error ? err.message : String(err)) }), true),
   settled: (next) => {
-    settingsDraft = null;
+    settingsDraft = Object.keys(settingsAutosave.failed).length ? { ...(next?.state.settings || data!.state.settings), ...settingsAutosave.failed } : null;
     activeTasks.delete("正在保存设置…");
-    if (next) accept(next); else { if (data) applyInterfaceSettings(data.state.settings); render(); }
+    if (next) accept(next); else { if (data) applyInterfaceSettings(settingsDraft || data.state.settings); render(); }
   },
 });
 const selectionAutosave = createProjectSelectionAutosave<AppState>({
@@ -338,7 +344,7 @@ function savePreference(patch: Partial<AppSettings>) {
 }
 function applySharedPreferences() {
   if (!data) return;
-  const settings = data.state.settings;
+  const settings = settingsDraft || data.state.settings;
   applyInterfaceSettings(settings);
   applyingSharedPreferences = true;
   try {
@@ -365,6 +371,7 @@ async function migrateSharedPreferences(patch: Partial<AppSettings>) {
   }
 }
 async function pollCloudSync() {
+ if(document.body.dataset.lifecycleBlocked === "true") return;
   if (!data || cloudPollBusy || hasPendingMutation() || settingsAutosave.busy || selectionAutosave.busy) return;
   cloudPollBusy = true;
   const revision = stateRevision, settingsRevision = settingsWriteRevision;
@@ -418,7 +425,7 @@ function navigationSubitems(page: Page) {
   if (page !== currentPage) return "";
   const subitem = (label: string, action: string, active: boolean, attrs = "", count?: number) => `<button type="button" class="nav-sub-item ${active ? "active cur" : ""}" data-action="${action}" ${attrs} aria-pressed="${active}"><span>${e(label)}</span>${count === undefined ? "" : `<em>${count}</em>`}</button>`;
   if (page === "discover") return `<div class="nav-sub" data-nav-section="discover">${subitem("Skill Hub", "discover-tab", discoverTab === "hub", 'data-tab="hub"')}${subitem(t("Git 仓库"), "discover-tab", discoverTab === "git", 'data-tab="git"')}${subitem(t("本地目录"), "discover-tab", discoverTab === "local", 'data-tab="local"')}</div>`;
-  if (page === "settings") return `<div class="nav-sub settings-nav-sub" data-nav-section="settings">${subitem(t("设置"), "close-backups", !settingsBackups)}${subitem(t("Backup and migration"), "open-backups", settingsBackups)}</div>`;
+  if (page === "settings") return `<div class="nav-sub settings-nav-sub" data-nav-section="settings">${subitem(t("设置"), "close-backups", !settingsBackups && !settingsAbout)}${subitem(t("Backup and migration"), "open-backups", settingsBackups)}${subitem(t("About"), "open-about", settingsAbout)}</div>`;
   if (page === "guide") return `<div class="nav-sub guide-nav-sub" data-nav-section="guide">${guideTabs.map((tab) => subitem(t(tab.label), "guide-tab", guideTab === tab.id, `data-tab="${tab.id}"`)).join("")}</div>`;
   return "";
 }
@@ -481,15 +488,16 @@ function changeNavigationLayout(change: () => void) {
   });
 }
 function settingsTabs() {
-  return `<div class="tabs settings-tabs" role="tablist" aria-label="${e(t("设置"))}"><button type="button" id="settings-tab-general" class="tab-button ${!settingsBackups ? "active" : ""}" data-action="close-backups" data-tab="settings" role="tab" aria-controls="settings-tab-panel" aria-selected="${!settingsBackups}" tabindex="${!settingsBackups ? 0 : -1}">${e(t("设置"))}</button><button type="button" id="settings-tab-backups" class="tab-button ${settingsBackups ? "active" : ""}" data-action="open-backups" data-tab="backups" role="tab" aria-controls="settings-tab-panel" aria-selected="${settingsBackups}" tabindex="${settingsBackups ? 0 : -1}">${e(t("Backup and migration"))}</button></div>`;
+  const tabs = [["general", "close-backups", "Settings", !settingsBackups && !settingsAbout], ["backups", "open-backups", "Backup and migration", settingsBackups], ["about", "open-about", "About", settingsAbout]] as const;
+  return `<div class="tabs settings-tabs" role="tablist" aria-label="${e(t("设置"))}">${tabs.map(([id, action, label, active]) => `<button type="button" id="settings-tab-${id}" class="tab-button ${active ? "active" : ""}" data-action="${action}" data-tab="${id}" role="tab" aria-controls="settings-tab-panel" aria-selected="${active}" tabindex="${active ? 0 : -1}">${e(t(label))}</button>`).join("")}</div>`;
 }
 function renderSettingsWorkspace(content: HTMLElement) {
   const tabs = content.querySelector(".settings-tabs");
   if (tabs) syncNavigationMarkup(tabs, settingsTabs());
   else content.innerHTML = `${settingsTabs()}<div id="settings-tab-panel" class="settings-tab-panel" role="tabpanel" tabindex="0"></div>`;
   const panel = content.querySelector<HTMLElement>("#settings-tab-panel")!;
-  panel.setAttribute("aria-labelledby", settingsBackups ? "settings-tab-backups" : "settings-tab-general");
-  panel.innerHTML = settingsBackups ? backupsPage() : settingsPage(settingsDraft || data!.state.settings, globalApplications(), data!.homeDir, data!.desktopPreferences);
+  panel.setAttribute("aria-labelledby", settingsAbout ? "settings-tab-about" : settingsBackups ? "settings-tab-backups" : "settings-tab-general");
+  panel.innerHTML = settingsAbout ? aboutPage(buildInfo, updaterState) : !data ? loadingPage() : settingsBackups ? backupsPage() : settingsPage(settingsDraft || data!.state.settings, globalApplications(), data!.homeDir, data!.desktopPreferences);
 }
 function guideTabNavigation() {
   return `<div class="tabs guide-tabs" role="tablist" aria-label="${e(t("指南"))}">${guideTabs.map((tab) => `<button type="button" id="guide-tab-${tab.id}" class="tab-button ${guideTab === tab.id ? "active" : ""}" data-action="guide-tab" data-tab="${tab.id}" role="tab" aria-controls="guide-tab-panel" aria-selected="${guideTab === tab.id}" tabindex="${guideTab === tab.id ? 0 : -1}">${e(t(tab.label))}</button>`).join("")}</div>`;
@@ -516,7 +524,7 @@ function syncCloudConflictBanner() {
 function render() {
   if (currentPage !== "discover" || discoverTab !== "hub") hubAvailability.cancel();
   const current = nav.find((item) => item.id === currentPage)!;
-  const view = currentPage === "guide" ? `guide-${guideTab}` : currentPage === "settings" && settingsBackups ? "backups" : currentPage;
+  const view = currentPage === "guide" ? `guide-${guideTab}` : currentPage === "settings" && settingsAbout ? "about" : currentPage === "settings" && settingsBackups ? "backups" : currentPage;
   const oldContent = document.querySelector<HTMLElement>(".workspace");
   const scrollTop = oldContent?.dataset.view === view ? oldContent.scrollTop : 0;
   const focused = document.activeElement instanceof HTMLInputElement && document.activeElement.dataset.pageSearch && oldContent?.dataset.page === currentPage ? { page: document.activeElement.dataset.pageSearch, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
@@ -553,8 +561,9 @@ function render() {
   const content = app.querySelector<HTMLElement>("#page-content")!;
   content.dataset.page = currentPage;
   if (currentPage === "guide") renderGuideWorkspace(content);
-  else if (currentPage === "settings" && data) renderSettingsWorkspace(content);
+  else if (currentPage === "settings") renderSettingsWorkspace(content);
   else content.innerHTML = !data ? loadingPage() : currentPage === "skills" ? skillsPage() : currentPage === "sources" ? sourcesPage() : currentPage === "discover" ? discoverPage() : currentPage === "presets" ? presetsPage() : currentPage === "projects" ? projectsPage() : currentPage === "global" ? globalPage() : "";
+  if (settingsDraft && Object.keys(settingsAutosave.failed).length && currentPage === "settings" && !settingsAbout && !settingsBackups) content.insertAdjacentHTML("afterbegin", `<div class="info-note" role="alert">${e(t("Changes have not been saved"))} ${button(t("Retry saving"), "retry-settings", "small")}</div>`);
   syncCloudConflictBanner();
   app.querySelector(".statusbar-meta > span")!.textContent = `${skills().length}${t(" 个技能 · ")}${presets().length}${t(" 个预设 · ")}${projects().length}${t(" 个项目")}`;
   const selectAll = app.querySelector<HTMLInputElement>('[name="bulk-skills-all"]');
@@ -1234,7 +1243,7 @@ function closeModal(result = false) {
   const previous = modalPreviousFocus;
   const resolve = confirmResolve;
   modalRoot.innerHTML = "";
-  app.inert = false;
+  app.inert = document.body.dataset.lifecycleBlocked === "true";
   modalPreviousFocus = null;
   confirmResolve = null;
   queueMicrotask(() => {
@@ -1617,6 +1626,11 @@ app.addEventListener("change", async (ev) => {
     skillsSort = input.value === "desc" ? "desc" : "asc";
     render();
   }
+  if (input.name === "automatic-app-updates") {
+    const previous = updaterState; input.disabled = true;
+    try { updaterState = await api.setAutomaticUpdates(input.checked); } catch (error) { updaterState=previous; toast(error instanceof Error ? error.message : String(error),true); }
+    render(); return;
+  }
   if (input.form?.id === "settings-editor") {
     if (settingsControlsBusy()) { render(); return; }
     const settings: AppSettings = { ...(settingsDraft || data!.state.settings), deploymentMode: field(input.form, "deploymentMode") === "symlink" ? "symlink" : "copy", defaultProjectDirectories: selectedIDs(input.form, "defaultProjectDirectories"), defaultGlobalDirectories: selectedIDs(input.form, "defaultGlobalDirectories") };
@@ -1897,7 +1911,7 @@ document.addEventListener("click", async (ev) => {
     if (textSizes.includes(size!)) { savePreference({ textSize: size }); applyInterfaceSettings(settingsDraft || data!.state.settings); render(); }
     return;
   }
-  if (action === "open-cloud-settings") { currentPage = "settings"; settingsBackups = true; render(); document.querySelector<HTMLElement>("#settings-tab-panel")?.focus({ preventScroll: true }); document.querySelector("#settings-cloud-title")?.scrollIntoView({ block: "start" }); return; }
+  if (action === "open-cloud-settings") { currentPage = "settings"; settingsAbout = false; settingsBackups = true; render(); document.querySelector<HTMLElement>("#settings-tab-panel")?.focus({ preventScroll: true }); document.querySelector("#settings-cloud-title")?.scrollIntoView({ block: "start" }); return; }
   if (action === "configure-cloud-sync") { cloudSyncEditor(); return; }
   if (action === "toggle-project-selection") {
     if (!applicationBusy()) {
@@ -1992,12 +2006,16 @@ document.addEventListener("click", async (ev) => {
     projectSkillFilters.set(id, { ...filters, selectedOnly: !filters.selectedOnly });
     render(); return;
   }
-  if (action === "open-backups" || action === "close-backups") {
+  if (action === "open-backups" || action === "close-backups" || action === "open-about") {
+    settingsAbout = action === "open-about";
+    if (settingsAbout) void refreshUpdater();
     settingsBackups = action === "open-backups";
     render();
     if (!target.isConnected) [...app.querySelectorAll<HTMLButtonElement>('.settings-tabs [aria-selected="true"], .settings-nav-sub [aria-pressed="true"]')].find((button) => button.getClientRects().length)?.focus({ preventScroll: true });
     return;
   }
+  if (action === "check-application-updates") { await task("Checking application updates…", () => api.checkApplicationUpdates()); await refreshUpdater(); return; }
+  if (action === "retry-settings") { settingsAutosave.retry(); return; }
   if (action === "clear-selected-skills") { bulkSkillSelection.clear(); render(); return; }
   if (action === "preview-hub-repository" && previewRequest && !previewRequest.loading && previewRequest.kind === "git") {
     const { source, ref, subpath, error } = previewRequest;
@@ -2329,9 +2347,10 @@ installSourceFilters();
 installSelects();
 installSidebarResize();
 installWorkspaceResize();
-void load();
+let initialLoad = true;
+void load().finally(()=>{ initialLoad=false; });
 void loadInterfaceFonts().then(() => { if (currentPage === "settings" && !settingsBackups) render(); }).catch(() => { /* Keep the saved font and the standard font choices available. */ });
-window.setInterval(() => { void pollCloudSync(); }, 5000);
+window.setInterval(() => { void pollCloudSync(); if(settingsAbout && document.body.dataset.lifecycleBlocked !== "true") void refreshUpdater(); }, 5000);
 
 window.addEventListener("keydown", (event) => {
   if (location.protocol !== "wails:" || !data || event.altKey || !(navigator.platform.includes("Mac") ? event.metaKey : event.ctrlKey)) return;
@@ -2341,4 +2360,25 @@ window.addEventListener("keydown", (event) => {
   const current = (settingsDraft || data.state.settings).textSize || 100;
   const size = step === 0 ? 100 : textSizes[Math.max(0, Math.min(textSizes.length - 1, textSizes.indexOf(current) + step))];
   savePreference({ textSize: size }); applyInterfaceSettings(settingsDraft || data.state.settings); render();
+});
+
+async function refreshUpdater() {
+ let next: UpdaterState;
+ try { next=await api.updaterState(); } catch { next={available:false,reason:"The desktop updater is unavailable.",automatic:false,canCheck:false}; }
+ const changed=JSON.stringify(next)!==JSON.stringify(updaterState); updaterState=next;
+ if(changed && currentPage === "settings" && settingsAbout) render();
+}
+void api.buildInfo().then(info=>{ buildInfo=info; if(currentPage === "settings" && settingsAbout) render(); }).catch(()=>{});
+void refreshUpdater();
+Events.On("racomi:show-about", ()=>{ currentPage="settings"; settingsAbout=true; settingsBackups=false; render(); void refreshUpdater(); });
+modalRoot.addEventListener("input", event=>{ const form=(event.target as HTMLElement).closest("form"); if(form) form.dataset.unsaved="true"; });
+modalRoot.addEventListener("change", event=>{ const form=(event.target as HTMLElement).closest("form"); if(form) form.dataset.unsaved="true"; });
+installLifecycle({
+ flush: async()=>{ await settingsAutosave.idle(); await selectionAutosave.flushAll(); await selectionAutosave.idle(); await settingsAutosave.idle(); },
+ busy: ()=>initialLoad || [...activeTasks].some(label=>stateChangingTasks.has(label) && label!=="正在保存设置…"),
+ failed: ()=>Object.keys(settingsAutosave.failed).length>0 || [...projectDrafts.keys()].some(id=>!!selectionAutosave.state(applicationKey("project",id)).error) || [...globalDrafts.keys()].some(id=>!!selectionAutosave.state(applicationKey("global",id)).error),
+ retry: ()=>{ settingsAutosave.retry(); for(const id of projectDrafts.keys()) selectionAutosave.retry(applicationKey("project",id)); for(const id of globalDrafts.keys()) selectionAutosave.retry(applicationKey("global",id)); },
+ dirty: ()=>!!modalRoot.querySelector('form[data-unsaved="true"]'),
+ discard: ()=>closeModal(),
+ error: message=>toast(message,true),
 });

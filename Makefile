@@ -8,6 +8,12 @@ NODE ?= node
 VITE_PORT ?= 9245
 VERSION ?= $(shell $(NODE) -p "require('./frontend/package.json').version")
 BUILD_NUMBER ?= 1
+CHANNEL ?= dev
+BUILD_EXECUTOR ?= local
+SOURCE_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+SOURCE_DIRTY := $(shell git status --porcelain --untracked-files=normal 2>/dev/null | awk 'END { print NR == 0 ? "false" : "true" }')
+export SOURCE_COMMIT SOURCE_DIRTY
+export BUILD_EXECUTOR
 RELEASE_COMMAND ?= $(NODE) scripts/release.mjs
 VERSION_BUMP ?= patch
 RELEASE_FLAGS ?=
@@ -22,19 +28,19 @@ export CGO_CFLAGS := $(CGO_CFLAGS) -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARG
 NATIVE_ICON_OUTPUTS := build/macos/Assets.car build/appicon.png build/appicon-dark.png build/macos/racomi.icns
 NATIVE_ICON_MISSING := $(filter-out $(wildcard $(NATIVE_ICON_OUTPUTS)),$(NATIVE_ICON_OUTPUTS))
 
-.PHONY: help doctor deps bootstrap install uninstall icons frontend frontend-dev dev check test test-install test-release build package dist release release-initial run force-native-icons
+.PHONY: help doctor deps bootstrap install uninstall icons frontend frontend-dev dev check test test-install test-release build package dist release release-initial release-notes run force-native-icons
 
 help:
 	@echo "deps          Install Go and frontend dependencies from lockfiles (alias: bootstrap)"
 	@echo "doctor        Check the macOS source-build requirements"
-	@echo "install       Build and install ~/Applications/racomi.app and ~/.local/bin/racomi"
-	@echo "uninstall     Remove the local app and launcher; preserve all user data"
+	@echo "install       Build and install ~/Applications/racomi Dev.app by default and ~/.local/bin/racomi-dev"
+	@echo "uninstall     Remove the selected channel app and launcher; preserve all user data"
 	@echo "icons         Generate macOS icons, appearance catalog and web icon"
 	@echo "frontend-dev  Start the Vite development server"
 	@echo "dev           Start the desktop shell (requires frontend-dev)"
 	@echo "check         Build frontend, check TypeScript, vet and test Go"
-	@echo "build         Build the macOS executable in bin/racomi"
-	@echo "package       Create the macOS app in bin/racomi.app (local ad-hoc signature)"
+	@echo "build         Build the macOS executable in bin/CHANNEL/racomi"
+	@echo "package       Create the macOS app in bin/CHANNEL/ (local ad-hoc signature)"
 	@echo "dist          Create a versioned macOS ZIP and SHA-256 checksum in bin/releases"
 	@echo "release       Preview a SemVer upgrade (VERSION_BUMP=patch|minor|major|version; RELEASE_FLAGS=--apply to publish)"
 	@echo "release-initial Preview publishing the current version (RELEASE_FLAGS=--apply to publish)"
@@ -51,10 +57,10 @@ deps bootstrap: doctor
 
 install: deps
 	$(MAKE) package
-	sh scripts/install-macos.sh install "$(CURDIR)/bin/racomi.app" "$(APP_DIR)" "$(BIN_DIR)"
+	CHANNEL=$(CHANNEL) sh scripts/install-macos.sh install "$(CURDIR)/bin/$(CHANNEL)/$(if $(filter dev,$(CHANNEL)),racomi Dev,racomi).app" "$(APP_DIR)" "$(BIN_DIR)"
 
 uninstall:
-	sh scripts/install-macos.sh uninstall "$(CURDIR)/bin/racomi.app" "$(APP_DIR)" "$(BIN_DIR)"
+	CHANNEL=$(CHANNEL) sh scripts/install-macos.sh uninstall "$(CURDIR)/bin/$(CHANNEL)/$(if $(filter dev,$(CHANNEL)),racomi Dev,racomi).app" "$(APP_DIR)" "$(BIN_DIR)"
 
 icons: $(NATIVE_ICON_OUTPUTS) frontend/public/appicon.png
 
@@ -83,7 +89,7 @@ frontend-dev: frontend/public/appicon.png
 	$(NPM) run dev --prefix frontend -- --port $(VITE_PORT)
 
 dev: frontend
-	FRONTEND_DEVSERVER_URL=http://127.0.0.1:$(VITE_PORT) $(GO) run -ldflags="-extldflags=-mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)" .
+	FRONTEND_DEVSERVER_URL=http://127.0.0.1:$(VITE_PORT) $(GO) run -ldflags="-extldflags=-mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET) -X racomi/internal/buildinfo.Version=$(VERSION) -X racomi/internal/buildinfo.Number=$(BUILD_NUMBER) -X racomi/internal/buildinfo.Commit=$(shell git rev-parse HEAD 2>/dev/null || echo unknown)" .
 
 check: frontend
 	$(NPM) test --prefix frontend
@@ -99,17 +105,17 @@ test-install:
 	sh scripts/install-macos.test.sh
 
 test-release:
-	$(NODE) --test scripts/release.test.mjs
+	$(NODE) --test scripts/release.test.mjs scripts/updates.test.mjs
 
 build: frontend
-	mkdir -p bin
-	CGO_ENABLED=1 GOARCH=$(GOARCH) $(GO) build -trimpath -tags production -ldflags="-s -w -extldflags=-mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)" -o bin/racomi .
+	GO="$(GO)" sh scripts/build-macos.sh "$(CHANNEL)" "$(VERSION)" "$(BUILD_NUMBER)" "$(GOARCH)" "$(MACOSX_DEPLOYMENT_TARGET)"
 
 package: build $(NATIVE_ICON_OUTPUTS)
-	sh scripts/package-macos.sh package "$(VERSION)" "$(BUILD_NUMBER)" "$(MACOSX_DEPLOYMENT_TARGET)" "$(GOARCH)"
+	@if [ "$(CHANNEL)" = stable ]; then sh scripts/prepare-sparkle.sh; fi
+	CHANNEL=$(CHANNEL) sh scripts/package-macos.sh package "$(VERSION)" "$(BUILD_NUMBER)" "$(MACOSX_DEPLOYMENT_TARGET)" "$(GOARCH)"
 
 dist: package
-	sh scripts/package-macos.sh release "$(VERSION)" "$(BUILD_NUMBER)" "$(MACOSX_DEPLOYMENT_TARGET)" "$(GOARCH)"
+	CHANNEL=$(CHANNEL) sh scripts/package-macos.sh release "$(VERSION)" "$(BUILD_NUMBER)" "$(MACOSX_DEPLOYMENT_TARGET)" "$(GOARCH)"
 
 release:
 	$(RELEASE_COMMAND) $(VERSION_BUMP) $(RELEASE_FLAGS)
@@ -117,7 +123,10 @@ release:
 release-initial:
 	$(RELEASE_COMMAND) initial $(RELEASE_FLAGS)
 
+release-notes:
+	@$(NODE) scripts/release-notes.mjs "$(RELEASE_REPO)" "$(RELEASE_TAG)"
+
 run: build
-	./bin/racomi
+	"./bin/$(CHANNEL)/racomi"
 
 endif

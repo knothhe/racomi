@@ -4,6 +4,7 @@ set -eu
 [ "$(uname -s)" = Darwin ] || { echo 'macOS install checks skipped on this platform'; exit 0; }
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 test_dir=$(mktemp -d "${TMPDIR:-/tmp}/racomi-install-test.XXXXXX")
+test_dir=$(CDPATH= cd -P -- "$test_dir" && pwd)
 trap 'rm -rf "$test_dir"' EXIT
 trap 'exit 1' HUP INT TERM
 source_app="$test_dir/source/racomi.app"
@@ -51,7 +52,7 @@ exec /bin/mv "$@"
 SH
 chmod 755 "$test_dir/failing-tools/mv"
 printf 'keep old bundle on failure\n' > "$app_dir/racomi.app/Contents/rollback-marker"
-if PATH="$test_dir/failing-tools:$PATH" invoke install > "$test_dir/rollback.log" 2>&1; then
+if (PATH="$test_dir/failing-tools:$PATH" invoke install > "$test_dir/rollback.log" 2>&1); then
   echo 'expected installation failure at launcher rename' >&2; exit 1
 fi
 test -f "$app_dir/racomi.app/Contents/rollback-marker"
@@ -80,3 +81,31 @@ expect_failure install 'symlink bundle on install'
 expect_failure uninstall 'symlink bundle on uninstall'
 test -x "$source_app/Contents/MacOS/racomi"
 printf 'macOS install checks passed (install, upgrade, rollback, path quoting, unrelated files, symlinks, idempotent uninstall, data retention).\n'
+
+# Dev must coexist with stable and may remove only its own login registration.
+rm "$app_dir/racomi.app"
+invoke install > "$test_dir/stable-install.log"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier com.knothhe.racomi.dev' "$source_app/Contents/Info.plist"
+CHANNEL=dev invoke install > "$test_dir/dev-install.log"
+test -d "$app_dir/racomi Dev.app"
+test -d "$app_dir/racomi.app"
+test -x "$bin_dir/racomi-dev"
+login_dir="$test_home/Library/LaunchAgents"
+mkdir -p "$login_dir"
+record="$login_dir/com.knothhe.racomi.dev.plist"
+node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ProgramArguments:[process.argv[2]]}))' "$record" "$app_dir/racomi Dev.app/Contents/MacOS/racomi"
+/usr/bin/plutil -convert xml1 "$record"
+printf 'preserve stable registration\n' > "$login_dir/com.knothhe.racomi.plist"
+CHANNEL=dev invoke uninstall > "$test_dir/dev-uninstall.log"
+test ! -e "$record"
+test ! -e "$app_dir/racomi Dev.app"
+test -d "$app_dir/racomi.app"
+test -x "$bin_dir/racomi"
+test -f "$login_dir/com.knothhe.racomi.plist"
+CHANNEL=dev invoke uninstall > "$test_dir/dev-uninstall-again.log"
+# A surviving record is still cleaned on retry even when the app is gone.
+node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ProgramArguments:[process.argv[2]]}))' "$record" "$app_dir/racomi Dev.app/Contents/MacOS/racomi"
+/usr/bin/plutil -convert xml1 "$record"
+CHANNEL=dev invoke uninstall > "$test_dir/orphan-cleanup.log"
+test ! -e "$record"
+printf 'Dev coexistence and owned registration cleanup checks passed.\n'

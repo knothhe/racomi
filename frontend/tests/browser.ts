@@ -400,6 +400,8 @@ const installLocal = async (id: string, paths: string[]) => {
   return copy();
 };
 Object.assign(api, {
+ buildInfo: async () => ({name:"racomi Dev",id:"com.knothhe.racomi.dev",version:"0.1.0",number:"1",commit:"0123456789abcdef",dirty:true,channel:"dev",executor:"local",os:"darwin",arch:"arm64",repository:"https://github.com/knothhe/racomi"}),
+ updaterState: async () => ({available:false,reason:"Development builds do not connect to the release update feed.",automatic:false,canCheck:false}),
   listInterfaceFonts: async () => [
     { family: "Avenir Next", styles: [{ name: "Regular", postscriptName: "AvenirNext-Regular" }, { name: "Medium", postscriptName: "AvenirNext-Medium" }, { name: "Italic", postscriptName: "AvenirNext-Italic" }] },
     { family: "Menlo", styles: [{ name: "Regular", postscriptName: "Menlo-Regular" }, { name: "Bold", postscriptName: "Menlo-Bold" }] },

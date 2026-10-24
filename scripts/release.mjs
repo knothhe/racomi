@@ -223,12 +223,15 @@ function main() {
   process.chdir(git('rev-parse', '--show-toplevel'));
   const config = fs.existsSync('.release.json') ? readJSON('.release.json') : {};
   requireThat(object(config), '.release.json must contain an object.');
-  requireThat(Object.keys(config).every(k => ['version_file', 'branch', 'remote', 'tag_prefix', 'checks', 'check_phase', 'github_release'].includes(k)), 'Unknown .release.json field.');
+  requireThat(Object.keys(config).every(k => ['version_file', 'branch', 'remote', 'tag_prefix', 'checks', 'check_phase', 'github_release', 'release_executor'].includes(k)), 'Unknown .release.json field.');
   const { branch = 'main', remote = 'origin', tag_prefix: prefix = 'v', checks = [], check_phase: checkPhase = 'before-bump' } = config;
   for (const [name, value] of [['branch', branch], ['remote', remote], ['tag_prefix', prefix]]) {
     requireThat(typeof value === 'string' && (value || name === 'tag_prefix') && !value.startsWith('-'), `Invalid ${name}.`);
   }
   const github = args.github ?? config.github_release ?? false;
+  const executor = config.release_executor ?? 'local';
+  requireThat(['local', 'github-actions'].includes(executor), 'release_executor must be local or github-actions.');
+  requireThat(executor !== 'github-actions' || !github, 'GitHub Actions owns Release publishing; local --github-release is disabled.');
   requireThat(typeof github === 'boolean', 'github_release must be boolean.');
   requireThat(!(github && args.noPush), 'GitHub Release requires pushing. Use --no-github-release with --no-push.');
   requireThat(Array.isArray(checks) && checks.every(c => Array.isArray(c) && c.length && c.every(s => typeof s === 'string' && s)), 'checks must be arrays of command arguments.');
@@ -271,7 +274,7 @@ function main() {
   if (initialRepo && !args.resume) requireUnpublishedRelease(initialRepo, tag);
   const phase = initial ? 'current-version' : checkPhase;
   const notes = github ? releaseNotes(repo, prefix, target, args.resume && !initial ? `${head}^` : head, tag) : null;
-  console.log(JSON.stringify({ mode: args.apply ? 'execute' : 'preview', release_type: initial ? 'initial' : 'upgrade', current, target, branch, remote, tag, files: initial ? [] : [...files.keys()], create_version_commit: !initial && !args.resume, checks: args.resume ? [] : checks, check_phase: args.resume ? null : phase, push: !args.noPush, github_release: github, github_repo: repo, release_notes: notes, resume: args.resume }, null, 2));
+  console.log(JSON.stringify({ mode: args.apply ? 'execute' : 'preview', release_type: initial ? 'initial' : 'upgrade', current, target, branch, remote, tag, files: initial ? [] : [...files.keys()], create_version_commit: !initial && !args.resume, checks: args.resume ? [] : checks, check_phase: args.resume ? null : phase, release_executor: executor, push: !args.noPush, github_release: github, github_repo: repo, release_notes: notes, resume: args.resume }, null, 2));
   if (!args.apply) return;
   if (github) run(['gh', 'auth', 'status', '--hostname', 'github.com']);
   if (!args.resume) {
@@ -300,7 +303,7 @@ function main() {
       console.log(run(command, true, false, notes).stdout.trim());
     }
   }
-  console.log(`Release complete: ${tag}${args.noPush ? ' (local only)' : ''}`);
+  console.log(`Git release complete: ${tag}${args.noPush ? ' (local only)' : executor === 'github-actions' ? ' (GitHub Actions build/publish pending)' : ''}`);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try { main(); }

@@ -15,11 +15,16 @@ printf '%s\n' "$build_number" | /usr/bin/grep -Eq '^[1-9][0-9]*$' || fail 'BUILD
 printf '%s\n' "$minimum_macos" | /usr/bin/grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$' || fail 'invalid MACOSX_DEPLOYMENT_TARGET'
 case "$architecture" in arm64) archive_arch=aarch64 ;; amd64) archive_arch=x86_64 ;; *) fail "unsupported macOS GOARCH: $architecture" ;; esac
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-app_path="$project_dir/bin/racomi.app"
-[ -x "$project_dir/bin/racomi" ] || fail 'build bin/racomi first (make package or make dist)'
-actual_arch=$(/usr/bin/lipo -archs "$project_dir/bin/racomi")
+channel=${CHANNEL:-dev}
+case "$channel" in dev) app_name="racomi Dev"; bundle_id=com.knothhe.racomi.dev ;; stable|preview) app_name=racomi; bundle_id=com.knothhe.racomi ;; *) fail "invalid CHANNEL" ;; esac
+output_dir="$project_dir/bin/$channel"
+app_path="$output_dir/$app_name.app"
+binary="$output_dir/racomi"
+[ -x "$binary" ] || fail 'build bin/racomi first (make package or make dist)'
+actual_arch=$(/usr/bin/lipo -archs "$binary")
 [ "$actual_arch" = "$archive_arch" ] || [ "$actual_arch" = "$architecture" ] || fail "binary architecture $actual_arch does not match GOARCH=$architecture"
-stage=$(mktemp -d "$project_dir/bin/.racomi-package.XXXXXX")
+mkdir -p "$output_dir"
+stage=$(mktemp -d "$output_dir/.racomi-package.XXXXXX")
 old_app_moved=false
 new_app_moved=false
 success=false
@@ -34,13 +39,23 @@ trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
 
 if [ "$action" = package ]; then
-  bundle="$stage/racomi.app"
+  bundle="$stage/$app_name.app"
   mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
-  cp "$project_dir/bin/racomi" "$bundle/Contents/MacOS/racomi"
+  cp "$binary" "$bundle/Contents/MacOS/racomi"
   cp "$project_dir/build/macos/Info.plist" "$bundle/Contents/Info.plist"
-  cp "$project_dir/build/macos/racomi.icns" "$bundle/Contents/Resources/racomi.icns"
-  cp "$project_dir/build/macos/Assets.car" "$bundle/Contents/Resources/Assets.car"
-  cp "$project_dir/build/appicon.png" "$bundle/Contents/Resources/NSApplicationIcon.png"
+  if [ "$channel" = dev ]; then icon="$project_dir/build/dev-icons/app-icon-dev.icns"; else icon="$project_dir/build/macos/racomi.icns"; fi
+  cp "$icon" "$bundle/Contents/Resources/racomi.icns"
+  if [ "$channel" != dev ]; then cp "$project_dir/build/macos/Assets.car" "$bundle/Contents/Resources/Assets.car"; fi
+  if [ "$channel" = dev ]; then icon_png="$project_dir/build/dev-icons/app-icon-dev.png"; else icon_png="$project_dir/build/appicon.png"; fi
+  cp "$icon_png" "$bundle/Contents/Resources/NSApplicationIcon.png"
+  "$binary" --build-info > "$stage/build-info.json"
+  node "$project_dir/scripts/package-metadata.mjs" "$stage/build-info.json" "$bundle/Contents/Info.plist" "$channel" "$version" "$build_number"
+  if [ "$channel" = stable ]; then
+    mkdir -p "$bundle/Contents/Frameworks"
+    /usr/bin/ditto "$project_dir/.cache/sparkle/Sparkle.framework" "$bundle/Contents/Frameworks/Sparkle.framework"
+    cp "$project_dir/.cache/sparkle/LICENSE" "$bundle/Contents/Resources/Sparkle-LICENSE.txt"
+  fi
+  cp "$project_dir/frontend/public/THIRD_PARTY_NOTICES.txt" "$bundle/Contents/Resources/THIRD_PARTY_NOTICES.txt"
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${version%%[-+]*}" "$bundle/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" "$bundle/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $minimum_macos" "$bundle/Contents/Info.plist"
@@ -49,12 +64,12 @@ if [ "$action" = package ]; then
   # Apple Silicon requires a valid code signature. Ad-hoc signing is local only;
   # it is not a Developer ID signature and does not provide notarization.
   /usr/bin/codesign --force --sign - "$bundle"
-  /usr/bin/codesign --verify --strict "$bundle"
+  /usr/bin/codesign --verify --strict --deep "$bundle"
   [ ! -L "$app_path" ] || fail "refusing to replace a symlink: $app_path"
   if [ -e "$app_path" ]; then
     existing_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Contents/Info.plist" 2>/dev/null) || fail 'invalid existing bin/racomi.app'
     case "$existing_id" in
-      com.knothhe.racomi|local.racomi.desktop) ;;
+      "$bundle_id") ;;
       *) fail 'refusing to replace an unrelated bin/racomi.app' ;;
     esac
     mv "$app_path" "$stage/previous.app"
@@ -70,12 +85,14 @@ fi
 [ -d "$app_path" ] || fail 'build bin/racomi.app first'
 packaged_version=$(/usr/libexec/PlistBuddy -c 'Print :RacomiReleaseVersion' "$app_path/Contents/Info.plist")
 [ "$packaged_version" = "$version" ] || fail 'app version differs from release version; rebuild with make dist'
-/usr/bin/codesign --verify --strict "$app_path"
-/usr/bin/ditto "$app_path" "$stage/racomi.app"
-cp "$project_dir/build/macos/INSTALL.txt" "$stage/INSTALL.txt"
+/usr/bin/codesign --verify --strict --deep "$app_path"
+/usr/bin/ditto "$app_path" "$stage/$app_name.app"
+if [ "$channel" = dev ]; then install_notes=INSTALL-DEV.txt; else install_notes=INSTALL.txt; fi
+cp "$project_dir/build/macos/$install_notes" "$stage/INSTALL.txt"
 release_dir="$project_dir/bin/releases"
 mkdir -p "$release_dir"
-archive_name="racomi-$version-$archive_arch-macos.zip"
+if [ "$channel" = dev ]; then suffix=-dev; else suffix=; fi
+archive_name="racomi-$version$suffix-$archive_arch-macos.zip"
 archive_path="$release_dir/$archive_name"
 # ditto preserves app permissions, symlinks and macOS resources. Archive the
 # directory contents so racomi.app and INSTALL.txt sit at the ZIP root.

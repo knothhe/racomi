@@ -22,6 +22,7 @@ export interface ProjectSelectionAutosave {
   retry: (key: string) => void;
   state: (key: string) => ProjectSelectionSaveState;
   flush: (key: string) => Promise<void>;
+ flushAll: () => Promise<void>;
   idle: () => Promise<void>;
   forget: (key: string) => void;
   clear: () => void;
@@ -171,6 +172,7 @@ export function createProjectSelectionAutosave<T>(options: ProjectSelectionAutos
       schedule();
       return new Promise<void>((resolve, reject) => entry.waiters.push({ resolve, reject }));
     },
+    async flushAll() { await Promise.all([...entries.values()].filter((entry) => entry.draft || pending(entry)).map((entry) => this.flush(entry.key))); },
     idle() { return busy() ? new Promise<void>((resolve) => idleResolvers.push(resolve)) : Promise.resolve(); },
     forget(key) {
       const entry = entries.get(key);

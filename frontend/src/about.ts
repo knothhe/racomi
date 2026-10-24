@@ -1,0 +1,12 @@
+import { notices, sparkleLicense } from "virtual:racomi-notices";
+import type { BuildInfo, UpdaterState } from "./api";
+import { t, tMessage } from "./i18n";
+const e = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]!);
+export function aboutPage(info?: BuildInfo, updater?: UpdaterState): string {
+ return `<div class="settings-page about-page"><header class="page-heading"><h2>${e(t("About racomi"))}</h2></header><section class="settings-section"><div class="settings-group">
+ <div class="settings-row"><strong>${e(info?.name || "racomi")}</strong><span>${e(info?.version || t("Loading build information…"))} ${info ? `· ${e(t(info.channel === "dev" ? "Development build" : info.channel === "preview" ? "Preview build" : "Release build"))}` : ""}</span></div>
+ <p>${e(t("A lightweight local agent skill manager"))}</p>
+ ${info ? `<div class="settings-row"><span>${e(t("Build"))}</span><code>${e(info.number)} · ${e(info.commit)} · ${e(info.executor)}${info.dirty ? ` · ${e(t("Uncommitted changes"))}` : ""}</code></div><div class="settings-row"><span>${e(t("Platform"))}</span><code>${e(info.os)} / ${e(info.arch)}</code></div>` : ""}
+ <div class="settings-row"><a href="https://github.com/knothhe/racomi" target="_blank" rel="noopener noreferrer">${e(t("Project home"))}</a><details class="about-notices"><summary>${e(t("Third-party notices"))}</summary><pre>${e(notices)}\nSparkle\n${e(sparkleLicense)}</pre></details></div></div></section>
+ <section class="settings-section"><h2 class="settings-section-title">${e(t("Application updates"))}</h2><div class="settings-group">${updater?.available ? `<label class="settings-row"><span class="settings-row-copy"><strong>${e(t("Automatically check for updates"))}</strong><span class="settings-row-description">${e(t("New versions are offered in a native window. Save and confirm before restarting to install."))}</span></span><input class="settings-toggle" type="checkbox" role="switch" name="automatic-app-updates" ${updater.automatic ? "checked" : ""}></label>` : `<p role="status">${e(updater ? tMessage(updater.reason) : t("Loading updater…"))}</p>`}<div class="settings-row"><span></span><button type="button" class="button" data-action="check-application-updates" ${updater?.available && updater.canCheck ? "" : "disabled"}>${e(t("Check application updates…"))}</button></div></div></section></div>`;
+}

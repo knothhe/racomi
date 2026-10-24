@@ -56,6 +56,8 @@ export interface CloudSyncStatus {
 export interface CloudBackup { id: string; createdAt: string; skillCount: number; presetCount: number }
 export interface DirectoryOption { id: string; name: string; path: string; kind: "global" | "project"; description: string }
 export interface DesktopPreferences { lightweight: boolean; openAtLogin: boolean; supported: boolean }
+export interface BuildInfo { name: string; id: string; version: string; number: string; commit: string; dirty: boolean; channel: string; executor: string; os: string; arch: string; repository: string }
+export interface UpdaterState { available: boolean; reason: string; automatic: boolean; canCheck: boolean }
 export interface AppState {
   desktopPreferences?: DesktopPreferences;
   cloudSync: CloudSyncStatus;
@@ -104,6 +106,12 @@ export function invoke<T>(method: string, ...args: unknown[]): Promise<T> & { ca
   return Call.ByName(`racomi/internal/desktop.Service.${method}`, ...args) as Promise<T>;
 }
 export const api = {
+ buildInfo: () => invoke<BuildInfo>("GetBuildInfo"),
+ updaterState: () => invoke<UpdaterState>("GetUpdaterState"),
+ checkApplicationUpdates: () => invoke<void>("CheckApplicationUpdates"),
+ setAutomaticUpdates: (on: boolean) => invoke<UpdaterState>("SetAutomaticUpdates", on),
+ frontendReady: () => invoke<number>("FrontendReady"),
+ completeLifecycle: (id: number, page: number, allow: boolean) => invoke<boolean>("CompleteLifecycle", id, page, allow),
   listInterfaceFonts: () => invoke<InterfaceFontFamily[]>("ListInterfaceFonts"),
   state: () => invoke<AppState>("GetState"),
   cloudSyncStatus: () => invoke<CloudSyncStatus>("GetCloudSyncStatus"),

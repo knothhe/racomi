@@ -11,6 +11,8 @@ export interface SettingsAutosaveOptions<T> {
 
 export interface SettingsAutosave {
   save: (patch: Partial<AppSettings>) => void;
+ readonly failed: Partial<AppSettings>;
+ retry: () => void;
   readonly busy: boolean;
   idle: () => Promise<void>;
 }
@@ -55,6 +57,7 @@ export function createSettingsAutosave<T>(options: SettingsAutosaveOptions<T>): 
   const queue: Partial<AppSettings>[] = [];
   const idleResolvers: (() => void)[] = [];
   let busy = false;
+ const failed: Partial<AppSettings> = {};
 
   function finish(latestResult: T | undefined): void {
     busy = false;
@@ -80,7 +83,9 @@ export function createSettingsAutosave<T>(options: SettingsAutosaveOptions<T>): 
         const result = await options.write(cloneSettings({ ...committed, ...patch }), clonePatch(patch));
         committed = cloneSettings(options.settings(result));
         latestResult = result;
+ for (const key of Object.keys(patch)) delete failed[key as keyof AppSettings];
       } catch (error) {
+ Object.assign(failed, clonePatch(patch));
         options.error(error);
       }
     }
@@ -96,6 +101,8 @@ export function createSettingsAutosave<T>(options: SettingsAutosaveOptions<T>): 
       void drain();
     },
     get busy() { return busy; },
+ get failed() { return clonePatch(failed); },
+ retry() { if (Object.keys(failed).length) this.save(clonePatch(failed)); },
     idle() {
       return busy ? new Promise<void>((resolve) => idleResolvers.push(resolve)) : Promise.resolve();
     },

@@ -1,6 +1,6 @@
 window.H2_DESIGN_CANVAS = {
   "title": "Racomi · 项目批量应用与同步冲突",
-  "boards": [
+  "boards": [{"file":"desktop-about-stable.html","title":"关于 racomi","x":0,"y":9000,"w":900,"h":620},{"file":"desktop-about-dev.html","title":"关于 racomi Dev","x":960,"y":9000,"w":900,"h":620},{"file":"desktop-exit-saving.html","title":"正在完成保存","x":1920,"y":9000,"w":900,"h":620},{"file":"desktop-exit-failed.html","title":"退出前保存失败","x":2880,"y":9000,"w":900,"h":620},{"file":"desktop-exit-draft.html","title":"尚有未保存的编辑","x":3840,"y":9000,"w":900,"h":620},
     {
       "file": "source-ready.html?theme=light",
       "title": "来源 · 同步入口 · 1280 · 浅色",

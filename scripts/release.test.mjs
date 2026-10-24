@@ -121,6 +121,31 @@ test('nested preview preserves files, HEAD and refs without running checks', t =
   f.assertUnreleased();
 });
 
+test('Actions releases report their executor and reject competing local publishing', t => {
+  const f = fixture(t, { config: { release_executor: 'github-actions' } });
+  const before = f.snapshot();
+  const plan = JSON.parse(f.release(['patch']).stdout);
+  assert.equal(plan.release_executor, 'github-actions');
+  assert.equal(plan.github_release, false);
+  const result = f.release(['patch', '--apply', '--github-release'], false);
+  assert.match(result.stderr, /Actions owns Release publishing/);
+  f.assertSnapshot(before);
+  f.assertUnreleased();
+});
+
+test('standalone release notes stop at the requested tag and preserve the changelog', t => {
+  const f = fixture(t);
+  f.git('tag', '-a', 'v1.2.3', '-m', 'Release v1.2.3');
+  f.write('after-release.txt', 'later work');
+  f.git('add', '--', 'after-release.txt');
+  f.git('commit', '-m', 'Do not include future work');
+  const script = fileURLToPath(new URL('./release-notes.mjs', import.meta.url));
+  const result = f.run(process.execPath, [script, 'knothhe/racomi', 'v1.2.3']);
+  assert.match(result.stdout, /Full Changelog.*github.com\/knothhe\/racomi\/commits\/v1.2.3/);
+  assert.match(result.stdout, /Fixture/);
+  assert.doesNotMatch(result.stdout, /future work/);
+});
+
 for (const versionFile of ['package.json', 'frontend/package.json']) {
   for (const lockVersion of [1, 2, 3]) {
     test(`${versionFile} upgrades and atomically pushes matching npm v${lockVersion} locks`, t => {
