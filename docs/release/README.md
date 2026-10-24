@@ -62,7 +62,7 @@ CI 先完成包签名检查，再使用 Sparkle 的 `generate_appcast --maximum-
 
 Linux job 在 Ubuntu 24.04 上以 GTK 3 + WebKit2GTK 4.1 运行 `make check` 并打包 `racomi-*-x86_64-linux.tar.gz`。Sparkle 签名工具只在 macOS 上提供，因此 macOS job 依赖 Linux job：稳定 tag 时下载 Linux 包，用同一私钥经 `sign_update` 签名，由 `scripts/verify-linux-feed.mjs` 生成并以嵌入公钥校验 `linux-update.json`（版本、提交、下载地址、大小、SHA-256 与签名）。发布 job 再次校验后与 `appcast.xml` 一并上传；Linux 客户端读取最新稳定 Release 的 `linux-update.json`，下载地址固定为对应 tag 的附件。
 
-Windows job 在 Windows 2025 runner 上使用 UCRT64 MinGW GCC／windres，保留 CGO 并静态链接编译器运行库。稳定 tag 时 macOS job 同样下载确切 Windows ZIP、核对 SHA-256，由 `scripts/create-windows-feed.sh` 签名，并通过 `scripts/verify-windows-feed.mjs` 校验 `windows-update.json`；私钥只进入 macOS 签名步骤。发布 job 要求三平台包全部齐备、再次校验 Windows Feed 后才公开草稿。Windows 客户端还核对解压后 EXE 的版本、提交、通道、架构与 CI 身份，保存后退出；独立助手等待旧进程释放 EXE 后使用 Windows ReplaceFile 创建备份并替换，再重启，失败保留／恢复旧程序。更新目录须可写；助手错误记录在同目录 `.racomi-update-helper-*.exe.log`。此签名不等于 Authenticode，当前 EXE 未接入 Authenticode。
+Windows job 在 Windows 2022 runner 上使用 UCRT64 MinGW GCC／windres，保留 CGO 并静态链接编译器运行库。稳定 tag 时 macOS job 同样下载确切 Windows ZIP、核对 SHA-256，由 `scripts/create-windows-feed.sh` 签名，并通过 `scripts/verify-windows-feed.mjs` 校验 `windows-update.json`；私钥只进入 macOS 签名步骤。发布 job 要求三平台包全部齐备、再次校验 Windows Feed 后才公开草稿。Windows 客户端还核对解压后 EXE 的版本、提交、通道、架构与 CI 身份，保存后退出；独立助手等待旧进程释放 EXE 后使用 Windows ReplaceFile 创建备份并替换，再重启，失败保留／恢复旧程序。更新目录须可写；助手错误记录在同目录 `.racomi-update-helper-*.exe.log`。此签名不等于 Authenticode，当前 EXE 未接入 Authenticode。
 
 更新签名独立于 Apple Developer ID／公证。当前宿主包仍为 ad-hoc 签名，尚未接入 Developer ID 和公证。没有更新器的历史版本需手动安装一次。
 
