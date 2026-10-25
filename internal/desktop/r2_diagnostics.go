@@ -30,6 +30,7 @@ type r2DiagnosticEvent struct {
 	StateMatches      *bool                       `json:"stateMatches,omitempty"`
 	CodePresent       *bool                       `json:"codePresent,omitempty"`
 	OAuthErrorPresent *bool                       `json:"oauthErrorPresent,omitempty"`
+	OAuthError        string                      `json:"oauthError,omitempty"`
 	API               *cloudflare.DiagnosticEvent `json:"api,omitempty"`
 }
 
@@ -47,6 +48,18 @@ func newR2DiagnosticLog(root string, enabled bool) *r2DiagnosticLog {
 }
 
 func diagnosticBool(value bool) *bool { return &value }
+
+// r2OAuthErrorCode keeps only the standard OAuth error codes; any other
+// callback value is recorded as "other" so arbitrary text never reaches the log.
+func r2OAuthErrorCode(value string) string {
+	switch value {
+	case "":
+		return ""
+	case "invalid_request", "unauthorized_client", "access_denied", "unsupported_response_type", "invalid_scope", "server_error", "temporarily_unavailable", "invalid_state":
+		return value
+	}
+	return "other"
+}
 
 func (d *r2DiagnosticLog) write(event r2DiagnosticEvent) {
 	if d == nil {

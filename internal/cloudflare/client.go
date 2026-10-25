@@ -26,16 +26,19 @@ const (
 	DefaultOAuthBaseURL = "https://dash.cloudflare.com/oauth2"
 	// Scope names come from GET /oauth/scopes, rather than Wrangler's older
 	// colon-delimited, internal-client scope names.
-	OAuthScopes      = "account-settings.read workers-r2.read workers-r2-bucket-item.write account-api-tokens.write"
+	requiredScopes = "account-settings.read workers-r2.read workers-r2-bucket-item.write account-api-tokens.write"
+	// offline_access asks for a refresh token so R2 credentials can be renewed
+	// without a browser. It is not required: a code-only grant still works.
+	OAuthScopes      = requiredScopes + " offline_access"
 	maxResponseBytes = 2 << 20
 	maxPages         = 100
 )
 
 // RequiredScopes returns a fresh copy of the permissions needed to enumerate
-// accounts/buckets and provision object credentials. Setup uses the ordinary
-// authorization-code grant and does not require offline access.
+// accounts/buckets and provision object credentials. offline_access is
+// requested but optional, so it is not part of this set.
 func RequiredScopes() []string {
-	return strings.Fields(OAuthScopes)
+	return strings.Fields(requiredScopes)
 }
 
 type TokenSet struct {

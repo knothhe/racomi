@@ -28,7 +28,7 @@ racomi 默认读写本地资料，关闭同步时无需账号或网络服务。�
 
 OAuth 负责授权与凭据配置；同步仍使用同一个 S3 协议和加密引擎，同步范围、冲突、条件写入和历史恢复与手动配置一致。仍需先在 Cloudflare 开通 R2；账号成员须有创建 Account API Token 的权限。
 
-OAuth 令牌与自动创建的 S3 凭据仅存于本机系统凭据存储（macOS Keychain / Windows Credential Manager / Linux Secret Service，如 GNOME Keyring 或 KWallet；Linux 未运行 Secret Service 时无法使用 Cloudflare 授权连接，手动 S3 不受影响），不返回前端或进入备份。同步加密口令继续按现有方式保存在本机 `0600` 配置文件。OAuth 不要求离线访问：有效的 S3 凭据可继续同步；授权过期后，选择桶、续期凭据或断开连接时需重新授权。**断开 Cloudflare** 会删除应用生成的远端凭据并撤销授权，保留手动 S3 设置。
+OAuth 令牌与自动创建的 S3 凭据仅存于本机系统凭据存储（macOS Keychain / Windows Credential Manager / Linux Secret Service，如 GNOME Keyring 或 KWallet；Linux 未运行 Secret Service 时无法使用 Cloudflare 授权连接，手动 S3 不受影响），不返回前端或进入备份。同步加密口令继续按现有方式保存在本机 `0600` 配置文件。授权会请求 `offline_access`：拿到 Refresh Token 时，凭据在到期前 7 天内由同步静默续期，无需再次打开浏览器；没有 Refresh Token 时，有效的 S3 凭据仍可继续同步，授权过期后选择桶、续期凭据或断开连接需重新授权。**断开 Cloudflare** 会删除应用生成的远端凭据并撤销授权，保留手动 S3 设置。
 
 若构建尚未配置发行者的 OAuth Client ID，连接入口会说明不可用，仍可使用手动配置。发行者在 `internal/desktop/cloudflare-registration.json` 中填写公开 Client ID 后重新构建；普通用户无需填写。注册参数及真实 PoC 验证见 [OAuth 接入与验证](r2-oauth-poc.md)。
 

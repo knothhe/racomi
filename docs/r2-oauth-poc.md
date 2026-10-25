@@ -9,13 +9,13 @@ OAuth 用于自动配置用户自己的 R2 桶。对象读写、加密、同步�
 | 字段 | 值 |
 | --- | --- |
 | Client Name | `racomi` |
-| Grant type | Authorization Code（`authorization_code`） |
+| Grant type | Authorization Code（`authorization_code`）和 Refresh Token（`refresh_token`） |
 | Response type | Code（`code`） |
 | Token endpoint authentication | None（`none`） |
 | Redirect URL | `http://localhost:18796/oauth/cloudflare/callback` |
 | Client URL | 私有 PoC 可留空；公开发行时填自己控制的应用网站 |
 
-使用 PKCE S256，不生成或内置 Client Secret。默认只请求本次授权所需权限，不请求 `offline_access`，不要求开启 Refresh Token。PoC 先使用 private visibility，仅父账号成员能够授权。面向其他用户发行前，需要提供应用名称、Logo、Client URL，完成域名验证，再设为 public visibility；该公开操作不可回退。当前实现不使用 Wrangler 的 Client ID 或设备授权流。
+使用 PKCE S256，不生成或内置 Client Secret。授权请求附带 `offline_access` 以获取 Refresh Token，用于静默续期 R2 凭据，因此注册时必须同时勾选 Refresh Token grant；未勾选时 Cloudflare 可能以 `invalid_scope` 拒绝授权。`offline_access` 不是必需 scope：若未返回 Refresh Token，客户端按仅授权码模式继续工作，只是续期需要重新授权。PoC 先使用 private visibility，仅父账号成员能够授权。面向其他用户发行前，需要提供应用名称、Logo、Client URL，完成域名验证，再设为 public visibility；该公开操作不可回退。当前实现不使用 Wrangler 的 Client ID 或设备授权流。
 
 点击 Continue 后选择以下四项，全部保持 **Required**：
 
@@ -55,7 +55,7 @@ macOS / Windows 构建入口也支持将该变量嵌入二进制。配置优先�
 
 ## 授权与凭据边界
 
-系统浏览器 → Cloudflare 登录、账号授权 → 仅监听 `127.0.0.1` 的 localhost 回调 → Go 后端校验 state 并换票 → 获取账号与桶 → 创建桶范围 Account API Token → 以 `id` 与 `SHA256(value)` 得到 S3 凭据。
+系统浏览器 → Cloudflare 登录、账号授权 → 同时监听 `127.0.0.1` 与 `[::1]` 的 localhost 回调（主机没有 IPv6 时只监听 IPv4） → Go 后端校验 state 并换票 → 获取账号与桶 → 创建桶范围 Account API Token → 以 `id` 与 `SHA256(value)` 得到 S3 凭据。
 
 后端查询可选权限组，生成的 Token 仅有 `Workers R2 Storage Bucket Item Write`，资源严格限定为 `com.cloudflare.edge.r2.bucket.<account>_<jurisdiction>_<bucket>`，有效期 30 天。授权用户需具备 API Token Provisioning 或 Super Administrator 能力；Token 权限受用户权限与 OAuth 授权范围共同限制。PoC 选择已有桶，不自动开通 R2 或创建桶。
 
@@ -63,11 +63,11 @@ OAuth Token 和派生的 S3 秘密进入系统凭据存储；磁盘上的 OAuth 
 
 macOS 拒绝、取消或不允许凭据访问后，本次运行会停止后续自动读取、保存和删除请求，包括轮询、后台同步与失败补偿。仅用户主动点击连接 Cloudflare 才允许重新尝试；状态查询不会解除该限制。授权进行中不读取旧账号凭据，账号加载失败后也不由轮询再次请求。手动 S3 模式不会为加载账号而访问 R2 Keychain。
 
-同步前检查 S3 凭据有效期；有效的 S3 凭据可继续同步，无需每次进行 OAuth。只有 Access Token 的授权过期后，选择存储桶、续期 R2 凭据或断开连接时需要重新授权。兼容此前带 Refresh Token 的授权，其刷新串行进行并保存旋转后的令牌。R2 凭据轮换后清理旧 Token；断开连接显式删除应用创建的 Token 并撤销 OAuth，不能假定 OAuth 撤销会自动删除独立 S3 凭据。
+同步前检查 S3 凭据有效期；有效的 S3 凭据可继续同步，无需每次进行 OAuth。授权带 Refresh Token 时，R2 凭据剩余不足 7 天即在同步时静默刷新 Access Token 并换发新的 30 天凭据；提前续期失败不影响仍有效的凭据，一小时后再试，只有剩余不足 5 分钟仍失败才报错。刷新串行进行并保存旋转后的令牌；元数据只记录授权是否可续期，不在磁盘保存令牌。只有 Access Token 的授权（包括 Refresh Token 失效后）仅在凭据即将到期时尝试续期，Access Token 过期后选择存储桶、续期 R2 凭据或断开连接需要重新授权。R2 凭据轮换后清理旧 Token；断开连接显式删除应用创建的 Token 并撤销 OAuth，不能假定 OAuth 撤销会自动删除独立 S3 凭据。
 
 ## 验证范围
 
-Dev 包将脱敏诊断写入数据目录下的 `logs/cloudflare-oauth.jsonl`，默认位置为 `~/Library/Application Support/racomi-dev/logs/cloudflare-oauth.jsonl`。文件权限为 `0600`，单文件上限 512 KiB，保留一份轮转文件；正式包不开启。日志记录 UTC 时间、进程、授权轮次、监听/取消/超时、回调校验布尔值，以及 Cloudflare 请求的 HTTP 状态、数字错误码、CF-Ray 和耗时，不记录 URL 查询、code/state/PKCE、令牌、密钥、账号或桶名。
+Dev 包将脱敏诊断写入数据目录下的 `logs/cloudflare-oauth.jsonl`，默认位置为 `~/Library/Application Support/racomi-dev/logs/cloudflare-oauth.jsonl`。文件权限为 `0600`，单文件上限 512 KiB，保留一份轮转文件；正式包不开启。日志记录 UTC 时间、进程、授权轮次、监听/取消/超时、回调校验布尔值、标准 OAuth error 码（非标准值记为 `other`，不记录 error_description），以及 Cloudflare 请求的 HTTP 状态、数字错误码、CF-Ray 和耗时，不记录 URL 查询、code/state/PKCE、令牌、密钥、账号或桶名。
 
 出现授权页通用错误时，先区分 `listen_started`、`callback_received`、`code_exchange_started`：只有启动记录但没有回调记录，表示该轮监听期间未收到 HTTP 回调；收到回调后才进入 token 交换。Cloudflare 授权页自身的请求失败仍需从浏览器检查，客户端日志不能代替该阶段的网络证据。权限目录的 `is_selectable` 仅作诊断提示，创建凭据以 Cloudflare POST 的实际权限检查为准。
 

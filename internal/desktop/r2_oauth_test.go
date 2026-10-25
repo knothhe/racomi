@@ -1226,3 +1226,125 @@ func TestR2OAuthDisconnectMetadataFailureDoesNotReuseRevokedAuthorization(t *tes
 		t.Fatal("disconnect reused a revoked token or left local authorization active")
 	}
 }
+
+func setR2CredentialExpiry(t *testing.T, s *Service, expiresAt time.Time) cloudflare.Credentials {
+	t.Helper()
+	s.r2.mu.Lock()
+	defer s.r2.mu.Unlock()
+	key := r2ConnectionKey(s.r2.state.Connections[0])
+	data, err := s.r2.secrets.Load(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var credentials cloudflare.Credentials
+	if err = json.Unmarshal(data, &credentials); err != nil {
+		t.Fatal(err)
+	}
+	credentials.ExpiresAt = expiresAt
+	data, _ = json.Marshal(credentials)
+	if err = s.r2.secrets.Save(key, data); err != nil {
+		t.Fatal(err)
+	}
+	return credentials
+}
+
+func TestR2OAuthRefreshableGrantRenewsCredentialsEarly(t *testing.T) {
+	s, control, _, urls := r2TestService(t)
+	authorizeR2Fixture(t, s, urls)
+	if !s.r2.state.Renewable {
+		t.Fatal("a grant with a refresh token was not recorded as renewable")
+	}
+	config, err := s.ConfigureR2Bucket(t.Context(), r2TestAccount, r2TestBucket, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Passphrase = "isolated early renewal phrase"
+	if _, err = s.SaveCloudSyncConfig(config); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.r2ConfigForUse(t.Context(), config); err != nil {
+		t.Fatal(err)
+	}
+	control.mu.Lock()
+	mints := control.mints
+	control.mu.Unlock()
+	if mints != 1 {
+		t.Fatal("fresh credentials were renewed")
+	}
+
+	// Inside the renewal window, an expired access token is refreshed and the
+	// bucket credentials are replaced without a browser.
+	previous := setR2CredentialExpiry(t, s, time.Now().Add(3*24*time.Hour))
+	key := s.r2.oauthKey()
+	data, err := s.r2.secrets.Load(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tokens cloudflare.TokenSet
+	if err = json.Unmarshal(data, &tokens); err != nil {
+		t.Fatal(err)
+	}
+	tokens.ExpiresAt = time.Now().Add(-time.Minute)
+	data, _ = json.Marshal(tokens)
+	if err = s.r2.secrets.Save(key, data); err != nil {
+		t.Fatal(err)
+	}
+	renewed, err := s.r2ConfigForUse(t.Context(), config)
+	if err != nil {
+		t.Fatal("silent renewal failed:", err)
+	}
+	control.mu.Lock()
+	exchanges, mints, deletes := control.exchanges, control.mints, control.deletes
+	control.mu.Unlock()
+	if exchanges != 2 || mints != 2 || deletes != 1 || renewed.AccessKeyID == previous.AccessKeyID || s.r2.state.Connections[0].TokenID == previous.TokenID {
+		t.Fatalf("silent renewal did not refresh, rotate and retire: exchanges=%d mints=%d deletes=%d", exchanges, mints, deletes)
+	}
+
+	// A failed early renewal keeps the still-valid credentials and backs off.
+	current := setR2CredentialExpiry(t, s, time.Now().Add(3*24*time.Hour))
+	if err = s.r2.secrets.Save(key, []byte("{}")); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		used, err := s.r2ConfigForUse(t.Context(), config)
+		if err != nil || used.AccessKeyID != current.AccessKeyID {
+			t.Fatal("a failed early renewal interrupted sync with valid credentials:", err)
+		}
+	}
+	if s.r2.renewRetryAt.IsZero() {
+		t.Fatal("a failed early renewal did not back off")
+	}
+	setR2CredentialExpiry(t, s, time.Now().Add(time.Minute))
+	if _, err = s.r2ConfigForUse(t.Context(), config); err == nil {
+		t.Fatal("expiring credentials were used after renewal failed")
+	}
+}
+
+func TestR2OAuthCodeOnlyGrantRenewsOnlyNearExpiry(t *testing.T) {
+	s, control, _, urls := r2TestService(t)
+	control.mu.Lock()
+	control.omitRefresh = true
+	control.mu.Unlock()
+	authorizeR2Fixture(t, s, urls)
+	if s.r2.state.Renewable {
+		t.Fatal("a code-only grant was recorded as renewable")
+	}
+	config, err := s.ConfigureR2Bucket(t.Context(), r2TestAccount, r2TestBucket, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Passphrase = "isolated code-only renewal phrase"
+	if _, err = s.SaveCloudSyncConfig(config); err != nil {
+		t.Fatal(err)
+	}
+	setR2CredentialExpiry(t, s, time.Now().Add(3*24*time.Hour))
+	if _, err = s.r2ConfigForUse(t.Context(), config); err != nil {
+		t.Fatal(err)
+	}
+	control.mu.Lock()
+	mints := control.mints
+	control.mu.Unlock()
+	if mints != 1 {
+		t.Fatal("a code-only grant renewed credentials early")
+	}
+}

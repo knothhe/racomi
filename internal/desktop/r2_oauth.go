@@ -25,6 +25,17 @@ var cloudflareOAuthClientID string
 
 const r2OAuthRedirectURI = "http://localhost:18796/oauth/cloudflare/callback"
 
+// R2 credentials last 30 days. With a refresh token they are renewed silently
+// once inside the renewal window; otherwise only just before they expire.
+const (
+	r2CredentialLifetime  = 30 * 24 * time.Hour
+	r2SilentRenewalWindow = 7 * 24 * time.Hour
+	r2ExpiryMargin        = 5 * time.Minute
+	r2RenewalRetryDelay   = time.Hour
+)
+
+const r2OAuthInvalidScopeMessage = "Cloudflare rejected the requested permissions (invalid_scope). This build's OAuth client is not allowed to request them; its Cloudflare OAuth client settings must allow the Refresh Token grant and every requested scope."
+
 const r2OAuthDeniedMessage = "Cloudflare authorization was denied. Retry, and on the Cloudflare page click Edit Permissions and turn on Account API Tokens Write before you authorize."
 
 type R2OAuthStatus struct {
@@ -57,7 +68,10 @@ type r2OAuthState struct {
 	Connections        []r2Connection   `json:"connections"`
 	RetiredTokens      []r2RetiredToken `json:"retiredTokens,omitempty"`
 	OAuthCredentialKey string           `json:"oauthCredentialKey,omitempty"`
-	RetiredOAuthKeys   []string         `json:"retiredOAuthKeys,omitempty"`
+	// Renewable records that the saved grant has a refresh token, so sync can
+	// decide on early renewal without reading the OAuth secret.
+	Renewable        bool     `json:"renewable,omitempty"`
+	RetiredOAuthKeys []string `json:"retiredOAuthKeys,omitempty"`
 }
 
 type r2OAuthRuntime struct {
@@ -83,6 +97,8 @@ type r2OAuthRuntime struct {
 	pendingRetired       []r2RetiredToken
 	saveMetadata         func(string, r2OAuthState) error
 	authorizationRevoked bool
+	// Failed early renewals wait before retrying while credentials stay valid.
+	renewRetryAt time.Time
 }
 
 func newR2OAuthRuntime(root string) *r2OAuthRuntime {
@@ -366,8 +382,7 @@ func (s *Service) StartR2OAuth() (R2OAuthStatus, error) {
 		r.mu.Unlock()
 		return R2OAuthStatus{}, errors.New("Invalid Cloudflare callback configuration.")
 	}
-	network, listenAddress := r2CallbackListenAddress(u)
-	listener, err := net.Listen(network, listenAddress)
+	listener, err := listenR2Callback(u)
 	if err != nil {
 		r.diagnostics.write(r2DiagnosticEvent{Stage: "listen_failed", Generation: r.generation, Result: "listen_error"})
 		r.mu.Unlock()
@@ -484,6 +499,11 @@ func (s *Service) serveR2OAuth(ctx context.Context, listener net.Listener, host,
 				io.WriteString(w, "Cloudflare sign-in was denied. Return to racomi to retry, and turn on Account API Tokens Write under Edit Permissions before you authorize.")
 				return
 			}
+			if q.Get("error") == "invalid_scope" {
+				finish("failed", r2OAuthInvalidScopeMessage)
+				io.WriteString(w, "Cloudflare rejected the permissions racomi requested. Return to racomi for details.")
+				return
+			}
 			finish("failed", "Cloudflare sign-in was not authorized. You can retry.")
 			io.WriteString(w, "Cloudflare sign-in was not authorized. Return to racomi to retry.")
 			return
@@ -548,7 +568,7 @@ func (s *Service) serveR2OAuth(ctx context.Context, listener net.Listener, host,
 		if err == nil && !canceled {
 			oldKey := r.oauthKey()
 			next := r.state
-			next.ClientID, next.Authorized, next.OAuthCredentialKey = client.ClientID, true, newKey
+			next.ClientID, next.Authorized, next.OAuthCredentialKey, next.Renewable = client.ClientID, true, newKey, tokens.RefreshToken != ""
 			next.RetiredOAuthKeys = append(append([]string{}, next.RetiredOAuthKeys...), oldKey)
 			err = r.saveLocked(next)
 			if err == nil {
@@ -588,7 +608,7 @@ func (s *Service) serveR2OAuth(ctx context.Context, listener net.Listener, host,
 		r.diagnostics.write(r2DiagnosticEvent{Stage: "callback_received", Generation: generation,
 			MethodMatches: diagnosticBool(req.Method == "GET"), HostMatches: diagnosticBool(req.Host == host), PathMatches: diagnosticBool(req.URL.Path == path),
 			StatePresent: diagnosticBool(len(q["state"]) > 0), StateMatches: diagnosticBool(stateMatches),
-			CodePresent: diagnosticBool(q.Get("code") != ""), OAuthErrorPresent: diagnosticBool(q.Get("error") != "")})
+			CodePresent: diagnosticBool(q.Get("code") != ""), OAuthErrorPresent: diagnosticBool(q.Get("error") != ""), OAuthError: r2OAuthErrorCode(q.Get("error"))})
 		mux.ServeHTTP(w, req)
 	})
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 40 * time.Second, MaxHeaderBytes: 16 << 10}
@@ -741,7 +761,7 @@ func (s *Service) ConfigureR2Bucket(ctx context.Context, accountID, bucket, juri
 	}
 	// Every version gets its own Keychain item. A failed metadata commit must
 	// never replace the secret used by the previous, still-active connection.
-	credentials, err := r.client.CreateR2Credentials(ctx, tokens.AccessToken, accountID, jurisdiction, bucket, "racomi-"+id[:12], time.Now().Add(30*24*time.Hour))
+	credentials, err := r.client.CreateR2Credentials(ctx, tokens.AccessToken, accountID, jurisdiction, bucket, "racomi-"+id[:12], time.Now().Add(r2CredentialLifetime))
 	if err != nil {
 		return CloudSyncConfig{}, err
 	}
@@ -843,19 +863,33 @@ func (r *r2OAuthRuntime) credentialsLocked(ctx context.Context, config CloudSync
 	if err != nil || credentials.AccessKeyID == "" || credentials.SecretAccessKey == "" || credentials.TokenID != connection.TokenID || credentials.ExpiresAt.IsZero() {
 		return cloudflare.Credentials{}, errors.New("Saved R2 credentials are invalid. Reconnect the bucket.")
 	}
-	if time.Until(credentials.ExpiresAt) > 5*time.Minute {
+	remaining := time.Until(credentials.ExpiresAt)
+	if remaining > r2ExpiryMargin && (!r.state.Renewable || remaining > r2SilentRenewalWindow || time.Now().Before(r.renewRetryAt)) {
 		return credentials, nil
 	}
+	renewed, err := r.renewCredentialsLocked(ctx, config, index, connection)
+	if err != nil && remaining > r2ExpiryMargin {
+		// Early renewal is best effort; current credentials keep sync working.
+		r.renewRetryAt = time.Now().Add(r2RenewalRetryDelay)
+		return credentials, nil
+	}
+	if err == nil {
+		r.renewRetryAt = time.Time{}
+	}
+	return renewed, err
+}
+
+func (r *r2OAuthRuntime) renewCredentialsLocked(ctx context.Context, config CloudSyncConfig, index int, connection r2Connection) (cloudflare.Credentials, error) {
 	tokens, err := r.tokensLocked(ctx)
 	if err != nil {
 		return cloudflare.Credentials{}, err
 	}
-	credentials, err = r.client.CreateR2Credentials(ctx, tokens.AccessToken, config.AccountID, config.Jurisdiction, config.Bucket, "racomi-"+config.R2ConnectionID[:12], time.Now().Add(30*24*time.Hour))
+	credentials, err := r.client.CreateR2Credentials(ctx, tokens.AccessToken, config.AccountID, config.Jurisdiction, config.Bucket, "racomi-"+config.R2ConnectionID[:12], time.Now().Add(r2CredentialLifetime))
 	if err != nil {
 		return cloudflare.Credentials{}, err
 	}
 	key := "connection-" + connection.ID + "-" + credentials.TokenID
-	data, err = json.Marshal(credentials)
+	data, err := json.Marshal(credentials)
 	if err == nil {
 		err = r.secrets.Save(key, data)
 	}

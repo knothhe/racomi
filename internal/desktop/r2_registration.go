@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // The distributor fills only this public application registration. User
@@ -85,13 +86,97 @@ func r2CallbackURL(value string) (*url.URL, error) {
 	return u, nil
 }
 
-func r2CallbackListenAddress(u *url.URL) (string, string) {
-	host, network := u.Hostname(), "tcp4"
+type r2ListenAddress struct {
+	network, address string
+	// Optional addresses may be unavailable, such as IPv6 loopback on a host
+	// without IPv6; the callback then listens on the required address only.
+	optional bool
+}
+
+// A localhost callback may resolve to either loopback family, so both are
+// served. Literal IP callbacks listen only on that address.
+func r2CallbackListenAddresses(u *url.URL) []r2ListenAddress {
+	host, port := u.Hostname(), u.Port()
 	if host == "localhost" {
-		host = "127.0.0.1"
+		return []r2ListenAddress{{network: "tcp4", address: net.JoinHostPort("127.0.0.1", port)}, {network: "tcp6", address: net.JoinHostPort("::1", port), optional: true}}
 	}
+	network := "tcp4"
 	if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
 		network = "tcp6"
 	}
-	return network, net.JoinHostPort(host, u.Port())
+	return []r2ListenAddress{{network: network, address: net.JoinHostPort(host, port)}}
+}
+
+func listenR2Callback(u *url.URL) (net.Listener, error) {
+	var listeners []net.Listener
+	for _, candidate := range r2CallbackListenAddresses(u) {
+		listener, err := net.Listen(candidate.network, candidate.address)
+		if err != nil {
+			if candidate.optional {
+				continue
+			}
+			for _, l := range listeners {
+				_ = l.Close()
+			}
+			return nil, err
+		}
+		listeners = append(listeners, listener)
+	}
+	if len(listeners) == 1 {
+		return listeners[0], nil
+	}
+	return newMultiListener(listeners), nil
+}
+
+// multiListener accepts connections from several listeners as one, so a single
+// http.Server and a single Close cover every loopback family.
+type multiListener struct {
+	listeners []net.Listener
+	conns     chan net.Conn
+	done      chan struct{}
+	once      sync.Once
+}
+
+func newMultiListener(listeners []net.Listener) *multiListener {
+	m := &multiListener{listeners: listeners, conns: make(chan net.Conn), done: make(chan struct{})}
+	for _, listener := range listeners {
+		go func() {
+			for {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				select {
+				case m.conns <- conn:
+				case <-m.done:
+					_ = conn.Close()
+					return
+				}
+			}
+		}()
+	}
+	return m
+}
+
+func (m *multiListener) Accept() (net.Conn, error) {
+	select {
+	case conn := <-m.conns:
+		return conn, nil
+	case <-m.done:
+		return nil, net.ErrClosed
+	}
+}
+
+func (m *multiListener) Close() error {
+	m.once.Do(func() {
+		close(m.done)
+		for _, listener := range m.listeners {
+			_ = listener.Close()
+		}
+	})
+	return nil
+}
+
+func (m *multiListener) Addr() net.Addr {
+	return m.listeners[0].Addr()
 }

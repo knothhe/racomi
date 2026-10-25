@@ -62,6 +62,7 @@ func TestR2DiagnosticsTerminalResults(t *testing.T) {
 		{name: "cleanup warning", result: "completed_with_cleanup_warning", connected: true},
 		{name: "denied", result: "denied"},
 		{name: "other oauth error", result: "failed"},
+		{name: "invalid scope", result: "failed"},
 		{name: "canceled", result: "canceled"},
 		{name: "unexpected listener close", result: "failed"},
 	} {
@@ -89,12 +90,19 @@ func TestR2DiagnosticsTerminalResults(t *testing.T) {
 				if test.name == "other oauth error" {
 					query = url.Values{"state": {auth.Get("state")}, "error": {"server_error"}}
 				}
+				if test.name == "invalid scope" {
+					query = url.Values{"state": {auth.Get("state")}, "error": {"invalid_scope"}, "error_description": {"synthetic secret description"}}
+				}
 				if status, err := r2Callback(t, callback, query); err != nil || status != 200 {
 					t.Fatalf("callback: status=%d err=%v", status, err)
 				}
 			}
+			wantCode := map[string]string{"denied": "access_denied", "other oauth error": "server_error", "invalid scope": "invalid_scope"}[test.name]
 			var finished, listenerErrors int
 			for _, event := range waitR2DiagnosticClose(t, d) {
+				if event.Stage == "callback_received" && event.OAuthError != wantCode {
+					t.Fatalf("logged OAuth error %q, want %q", event.OAuthError, wantCode)
+				}
 				if event.Stage == "finished" {
 					finished++
 					if event.Result != test.result {
@@ -111,6 +119,9 @@ func TestR2DiagnosticsTerminalResults(t *testing.T) {
 			status := s.GetR2OAuthStatus()
 			if status.Authorizing || status.Connected != test.connected || (test.name == "canceled" && status.LastError != "") {
 				t.Fatalf("unexpected authorization status: %+v", status)
+			}
+			if (test.name == "invalid scope") != (status.LastError == r2OAuthInvalidScopeMessage) {
+				t.Fatalf("invalid scope guidance mismatch: %q", status.LastError)
 			}
 			if (test.name == "denied") != (status.LastError == r2OAuthDeniedMessage) {
 				t.Fatalf("denied guidance mismatch: %q", status.LastError)
@@ -241,5 +252,13 @@ func TestR2DiagnosticsAreDevOnlyBoundedAndRejectSymlinks(t *testing.T) {
 	d.write(r2DiagnosticEvent{Stage: "start_requested"})
 	if data, err := os.ReadFile(target); err != nil || string(data) != "preserved" {
 		t.Fatal("diagnostic logger followed a symlink")
+	}
+}
+
+func TestR2OAuthErrorCodeKeepsOnlyStandardCodes(t *testing.T) {
+	for value, want := range map[string]string{"": "", "invalid_scope": "invalid_scope", "access_denied": "access_denied", "invalid_scope extra": "other", "secret\nvalue": "other"} {
+		if got := r2OAuthErrorCode(value); got != want {
+			t.Fatalf("r2OAuthErrorCode(%q) = %q, want %q", value, got, want)
+		}
 	}
 }

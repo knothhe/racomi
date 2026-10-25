@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -58,9 +59,12 @@ func TestAuthorizationUsesPKCEAndIndependentState(t *testing.T) {
 	if query.Get("code_challenge") != "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM" || query.Get("code_challenge_method") != "S256" || query.Get("state") != "state" || query.Get("redirect_uri") != callback || query.Get("response_type") != "code" {
 		t.Fatalf("invalid authorization parameters: %v", query)
 	}
-	const expectedScopes = "account-settings.read workers-r2.read workers-r2-bucket-item.write account-api-tokens.write"
-	if query.Get("scope") != expectedScopes || query.Has("client_secret") || strings.Contains(query.Get("scope"), "offline_access") {
+	const expectedScopes = "account-settings.read workers-r2.read workers-r2-bucket-item.write account-api-tokens.write offline_access"
+	if query.Get("scope") != expectedScopes || query.Has("client_secret") {
 		t.Fatal("wrong public-client authorization")
+	}
+	if slices.Contains(RequiredScopes(), "offline_access") || !(TokenSet{Scope: "account-settings.read workers-r2.read workers-r2-bucket-item.write account-api-tokens.write"}).HasScopes(RequiredScopes()...) {
+		t.Fatal("offline_access must be requested but not required")
 	}
 	state1, verifier1, err := NewPKCE()
 	if err != nil {
