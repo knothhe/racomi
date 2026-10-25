@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -93,7 +94,7 @@ func TestManualCloudSecretsFallBackToFileWithoutCredentialStore(t *testing.T) {
 	if saved.ManualSecrets != "" || saved.ManualConfig.SecretAccessKey != config.SecretAccessKey || saved.ManualConfig.Passphrase != config.Passphrase {
 		t.Fatal("manual S3 did not fall back to the configuration file")
 	}
-	if info, err := os.Stat(c.path); err != nil || info.Mode().Perm() != 0600 {
+	if info, err := os.Stat(c.path); err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
 		t.Fatalf("fallback file permissions: %v %v", info.Mode(), err)
 	}
 	// R2 cannot run without the credential store, so its passphrase never

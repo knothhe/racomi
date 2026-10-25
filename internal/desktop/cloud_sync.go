@@ -109,9 +109,11 @@ func loadCloudSync(root string, secrets r2SecretStore) (*cloudSyncRuntime, error
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 	var saved savedCloudSync
-	if err = json.NewDecoder(io.LimitReader(f, 64<<10)).Decode(&saved); err != nil || (saved.Version != 1 && saved.Version != 2) {
+	err = json.NewDecoder(io.LimitReader(f, 64<<10)).Decode(&saved)
+	// Close before migrating: Windows cannot replace a file that is still open.
+	f.Close()
+	if err != nil || (saved.Version != 1 && saved.Version != 2) {
 		return nil, errors.New("invalid cloud sync configuration")
 	}
 	c.config = saved.Config
