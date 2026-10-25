@@ -37,7 +37,7 @@ func TestLinuxUpdaterStagesOnlyVerifiedReleaseIdentity(t *testing.T) {
 	defer func() {
 		buildinfo.FeedURL, buildinfo.PublicKey, updateHTTPClient = originalFeed, originalKey, originalClient
 	}()
-	buildinfo.FeedURL = "https://example.test/linux-update.json"
+	buildinfo.FeedURL = "https://example.test/update.json"
 	buildinfo.PublicKey = base64.StdEncoding.EncodeToString(public)
 	current := buildinfo.Current()
 
@@ -60,7 +60,7 @@ func TestLinuxUpdaterStagesOnlyVerifiedReleaseIdentity(t *testing.T) {
 			archiveName := "racomi-9.0.0-x86_64-linux"
 			archive := linuxArchiveFixture(t, map[string]string{archiveName + "/racomi": script(test.info)})
 			feedData := signedFeed(t, "9.0.0", archive, private)
-			feed, asset, err := parseLinuxUpdateFeed(feedData, "amd64")
+			feed, asset, err := parseUpdateFeed(feedData, "linux", "amd64")
 			if err != nil {
 				t.Fatal(err)
 			}

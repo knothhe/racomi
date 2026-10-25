@@ -34,7 +34,7 @@ type windowsUpdater struct {
 	automatic  bool
 	busy       bool
 	staged     string // A verified executable waiting for the page to save.
-	stagedFeed linuxUpdateFeed
+	stagedFeed updateFeed
 	started    bool
 }
 
@@ -254,12 +254,12 @@ func (s *Service) showMessage(dialog *application.MessageDialog, title, message 
 	dialog.Show()
 }
 
-func fetchWindowsFeed() (linuxUpdateFeed, linuxUpdateAsset, error) {
+func fetchWindowsFeed() (updateFeed, updateAsset, error) {
 	data, err := httpGet(buildinfo.FeedURL, maxUpdateFeedBytes, time.Minute)
 	if err != nil {
-		return linuxUpdateFeed{}, linuxUpdateAsset{}, err
+		return updateFeed{}, updateAsset{}, err
 	}
-	return parseWindowsUpdateFeed(data, runtime.GOARCH)
+	return parseUpdateFeed(data, "windows", runtime.GOARCH)
 }
 
 func httpGet(url string, limit int64, timeout time.Duration) ([]byte, error) {
@@ -290,12 +290,12 @@ func httpGet(url string, limit int64, timeout time.Duration) ([]byte, error) {
 
 // download stages a verified executable beside the installed one, so the final
 // swap is a rename on the same filesystem.
-func (u *windowsUpdater) download(feed linuxUpdateFeed, asset linuxUpdateAsset) (string, error) {
+func (u *windowsUpdater) download(feed updateFeed, asset updateAsset) (string, error) {
 	archive, err := httpGet(asset.URL, asset.Length, 10*time.Minute)
 	if err != nil {
 		return "", err
 	}
-	if err = verifyLinuxUpdateArchive(archive, asset, buildinfo.PublicKey); err != nil {
+	if err = verifyUpdateArchive(archive, asset, buildinfo.PublicKey); err != nil {
 		return "", err
 	}
 	stage, err := os.CreateTemp(filepath.Dir(u.executable), updatePrefix+"*.exe")
@@ -328,7 +328,7 @@ func (u *windowsUpdater) download(feed linuxUpdateFeed, asset linuxUpdateAsset) 
 
 // The archive signature proves origin; the build identity proves it is the
 // release the feed names, for this installation's channel and architecture.
-func verifyStagedIdentity(path string, feed linuxUpdateFeed) error {
+func verifyStagedIdentity(path string, feed updateFeed) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, path, "--build-info")

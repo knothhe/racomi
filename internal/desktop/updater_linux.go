@@ -255,12 +255,12 @@ func (s *Service) showMessage(dialog *application.MessageDialog, title, message 
 	dialog.Show()
 }
 
-func fetchLinuxFeed() (linuxUpdateFeed, linuxUpdateAsset, error) {
+func fetchLinuxFeed() (updateFeed, updateAsset, error) {
 	data, err := httpGet(buildinfo.FeedURL, maxUpdateFeedBytes, time.Minute)
 	if err != nil {
-		return linuxUpdateFeed{}, linuxUpdateAsset{}, err
+		return updateFeed{}, updateAsset{}, err
 	}
-	return parseLinuxUpdateFeed(data, runtime.GOARCH)
+	return parseUpdateFeed(data, "linux", runtime.GOARCH)
 }
 
 func httpGet(url string, limit int64, timeout time.Duration) ([]byte, error) {
@@ -291,12 +291,12 @@ func httpGet(url string, limit int64, timeout time.Duration) ([]byte, error) {
 
 // download stages a verified executable beside the installed one, so the final
 // swap is a rename on the same filesystem.
-func (u *linuxUpdater) download(feed linuxUpdateFeed, asset linuxUpdateAsset) (string, error) {
+func (u *linuxUpdater) download(feed updateFeed, asset updateAsset) (string, error) {
 	archive, err := httpGet(asset.URL, asset.Length, 10*time.Minute)
 	if err != nil {
 		return "", err
 	}
-	if err = verifyLinuxUpdateArchive(archive, asset, buildinfo.PublicKey); err != nil {
+	if err = verifyUpdateArchive(archive, asset, buildinfo.PublicKey); err != nil {
 		return "", err
 	}
 	name, err := linuxArchiveName(feed.Version, runtime.GOARCH)
@@ -333,7 +333,7 @@ func (u *linuxUpdater) download(feed linuxUpdateFeed, asset linuxUpdateAsset) (s
 
 // The archive signature proves origin; the build identity proves it is the
 // release the feed names, for this installation's channel and architecture.
-func verifyStagedIdentity(path string, feed linuxUpdateFeed) error {
+func verifyStagedIdentity(path string, feed updateFeed) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	output, err := exec.CommandContext(ctx, path, "--build-info").Output()

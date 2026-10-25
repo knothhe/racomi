@@ -19,11 +19,11 @@ import (
 )
 
 type windowsUpdatePlan struct {
-	PID        int             `json:"pid"`
-	Executable string          `json:"executable"`
-	Staged     string          `json:"staged"`
-	SHA256     string          `json:"sha256"`
-	Feed       linuxUpdateFeed `json:"feed"`
+	PID        int        `json:"pid"`
+	Executable string     `json:"executable"`
+	Staged     string     `json:"staged"`
+	SHA256     string     `json:"sha256"`
+	Feed       updateFeed `json:"feed"`
 }
 
 func updateDirectoryWritable(directory string) bool {

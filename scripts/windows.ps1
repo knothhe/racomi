@@ -163,7 +163,7 @@ function Build-App {
     $feed = ''; $key = ''
     if ($Channel -eq 'stable') {
         $updates = Get-Content build/updates.json -Raw | ConvertFrom-Json
-        $feed = $updates.windowsFeedURL; $key = $updates.publicKey
+        $feed = $updates.updateFeedURL; $key = $updates.publicKey
     }
     Build-Frontend
     New-WindowsResources

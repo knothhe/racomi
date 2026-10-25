@@ -17,17 +17,17 @@ import (
 	"strings"
 )
 
-// The Linux feed is a small JSON manifest published beside each stable release.
-// Its archives are signed with the same Ed25519 key as the macOS appcast, so a
-// client trusts nothing in the manifest that the signature does not cover.
-type linuxUpdateFeed struct {
-	Version    string                      `json:"version"`
-	Commit     string                      `json:"commit"`
-	ReleaseURL string                      `json:"releaseURL"`
-	Assets     map[string]linuxUpdateAsset `json:"assets"`
+// update.json is a small manifest published beside each stable release for
+// Linux and Windows. Its archives are signed with the same Ed25519 key as the
+// macOS appcast, so a client trusts nothing the signature does not cover.
+type updateFeed struct {
+	Version    string                 `json:"version"`
+	Commit     string                 `json:"commit"`
+	ReleaseURL string                 `json:"releaseURL"`
+	Assets     map[string]updateAsset `json:"assets"`
 }
 
-type linuxUpdateAsset struct {
+type updateAsset struct {
 	URL         string `json:"url"`
 	Length      int64  `json:"length"`
 	SHA256      string `json:"sha256"`
@@ -67,35 +67,43 @@ func linuxArchiveName(version, goarch string) (string, error) {
 	return fmt.Sprintf("racomi-%s-%s-linux", version, arch), nil
 }
 
-// parseLinuxUpdateFeed pins every archive to its release download URL, so a
+// parseUpdateFeed pins every archive to its release download URL, so a
 // tampered manifest can point only at an archive the release itself published.
-func parseLinuxUpdateFeed(data []byte, goarch string) (linuxUpdateFeed, linuxUpdateAsset, error) {
-	var feed linuxUpdateFeed
+// Assets are keyed by GOOS-GOARCH; the feed only ever carries stable versions.
+func parseUpdateFeed(data []byte, goos, goarch string) (updateFeed, updateAsset, error) {
+	var feed updateFeed
 	if len(data) > maxUpdateFeedBytes {
-		return feed, linuxUpdateAsset{}, errors.New("The update feed is too large.")
+		return feed, updateAsset{}, errors.New("The update feed is too large.")
 	}
-	if err := json.Unmarshal(data, &feed); err != nil {
-		return feed, linuxUpdateAsset{}, errors.New("The update feed is invalid.")
+	if json.Unmarshal(data, &feed) != nil || !semverPattern.MatchString(feed.Version) || !commitPattern.MatchString(feed.Commit) || strings.Contains(feed.Version, "-") {
+		return feed, updateAsset{}, errors.New("The update feed is invalid.")
 	}
-	if !semverPattern.MatchString(feed.Version) || !commitPattern.MatchString(feed.Commit) {
-		return feed, linuxUpdateAsset{}, errors.New("The update feed is invalid.")
-	}
-	asset, ok := feed.Assets[goarch]
+	asset, ok := feed.Assets[goos+"-"+goarch]
 	if !ok {
-		return feed, linuxUpdateAsset{}, errors.New("No update is published for this architecture.")
+		return feed, asset, errors.New("No update is published for this platform.")
 	}
-	name, err := linuxArchiveName(feed.Version, goarch)
+	var name string
+	var err error
+	switch goos {
+	case "linux":
+		if name, err = linuxArchiveName(feed.Version, goarch); err == nil {
+			name += ".tar.gz"
+		}
+	case "windows":
+		name, err = windowsArchiveName(feed.Version, goarch)
+	default:
+		err = fmt.Errorf("unsupported update platform: %s", goos)
+	}
 	if err != nil {
 		return feed, asset, err
 	}
-	expected := fmt.Sprintf("%s/v%s/%s.tar.gz", releaseDownloadBase, feed.Version, name)
-	if asset.URL != expected || asset.Length <= 0 || asset.Length > maxUpdateArchiveBytes || len(asset.SHA256) != 64 || asset.EdSignature == "" {
+	if asset.URL != releaseDownloadBase+"/v"+feed.Version+"/"+name || asset.Length <= 0 || asset.Length > maxUpdateArchiveBytes || len(asset.SHA256) != 64 || asset.EdSignature == "" {
 		return feed, asset, errors.New("The update feed is invalid.")
 	}
 	return feed, asset, nil
 }
 
-func verifyLinuxUpdateArchive(data []byte, asset linuxUpdateAsset, publicKey string) error {
+func verifyUpdateArchive(data []byte, asset updateAsset, publicKey string) error {
 	key, err := base64.StdEncoding.DecodeString(publicKey)
 	if err != nil || len(key) != ed25519.PublicKeySize {
 		return errors.New("The update feed is not configured.")

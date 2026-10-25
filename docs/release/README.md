@@ -34,11 +34,9 @@ make release VERSION_BUMP=patch RELEASE_FLAGS=--apply   # 正式执行
 
 ## GitHub Actions
 
-手动运行 Desktop Release workflow 会检查并构建 `main` 当前版本，只上传 CI artifact，不签署 Feed、不创建 Release，可用于升级验证的旧版本基线。正式发布仍由版本 tag 触发。
-
 推送 `vX.Y.Z`（也支持预发布及 build metadata）标签后，[Release workflow](../../.github/workflows/release.yml) 校验标签与版本一致，检查、构建并发布 macOS Apple Silicon、Linux x86_64 与 Windows x64 包；macOS Intel、Windows arm64 和 Linux arm64 暂不进入此工作流；带 `-` 预发布标识的标签发布为预发布版。`.release.json` 中 `github_release: false`，GitHub Release 与附件均由 Actions 创建，请保留此配置并避免使用本地 `--github-release` 覆盖它。`make install` 仍只构建并安装本机应用。
 
-[Windows Build](../../.github/workflows/windows.yml) 在 main push、PR 与手动触发时执行 Windows 检查、原生窗口生命周期验收、打包和产物验证，发布工作流复用相同任务。[Platform Checks](../../.github/workflows/check.yml) 同时检查并打包 macOS 与 Linux。PR 任务不使用发布私钥、不连接正式更新源，也不创建 Release。
+仓库只有这一个工作流，只由版本 tag 触发；普通 push 与 PR 不运行 CI，提交前请在本地运行 `make check`。
 
 ## 失败后续推
 
@@ -62,11 +60,13 @@ macOS 安装确认后由 Sparkle 请求正常退出，`Service.ShouldQuit` 完�
 
 CI 先完成包签名检查，再使用 Sparkle 的 `generate_appcast --maximum-deltas 0` 对完整 ZIP 签名，生成并签署 `appcast.xml`。发布前以嵌入的公钥校验 ZIP 的 Ed25519 签名、版本、构建号、下载地址和大小。发布 job 收齐确切附件后创建草稿，全部就绪才公开，并回读公开附件比较内容。重跑仅恢复同 tag 的草稿，已存在的附件内容不同或 Release 已公开时停止，不覆盖历史资产。稳定 Feed 使用最新稳定 Release 的 `appcast.xml` 附件，预览 Release 不参与。
 
-Linux job 在 Ubuntu 24.04 上以 GTK 3 + WebKit2GTK 4.1 运行 `make check` 并打包 `racomi-*-x86_64-linux.tar.gz`。Sparkle 签名工具只在 macOS 上提供，因此 macOS job 依赖 Linux job：稳定 tag 时下载 Linux 包，用同一私钥经 `sign_update` 签名，由 `scripts/verify-linux-feed.mjs` 生成并以嵌入公钥校验 `linux-update.json`（版本、提交、下载地址、大小、SHA-256 与签名）。发布 job 再次校验后与 `appcast.xml` 一并上传；Linux 客户端读取最新稳定 Release 的 `linux-update.json`，下载地址固定为对应 tag 的附件。
+Linux job 在 Ubuntu 24.04 上以 GTK 3 + WebKit2GTK 4.1 运行 `make check` 并打包 `racomi-*-x86_64-linux.tar.gz`。Windows job 在 Windows 2022 runner 上使用 UCRT64 MinGW GCC／windres，保留 CGO 并静态链接编译器运行库，另做原生窗口生命周期验收和产物检查。
 
-Windows job 在 Windows 2022 runner 上使用 UCRT64 MinGW GCC／windres，保留 CGO 并静态链接编译器运行库。稳定 tag 时 macOS job 同样下载确切 Windows ZIP、核对 SHA-256，由 `scripts/create-windows-feed.sh` 签名，并通过 `scripts/verify-windows-feed.mjs` 校验 `windows-update.json`；私钥只进入 macOS 签名步骤。发布 job 要求三平台包全部齐备、再次校验 Windows Feed 后才公开草稿。Windows 客户端还核对解压后 EXE 的版本、提交、通道、架构与 CI 身份，保存后退出；独立助手等待旧进程释放 EXE 后使用 Windows ReplaceFile 创建备份并替换，再重启，失败保留／恢复旧程序。更新目录须可写；助手错误记录在同目录 `.racomi-update-helper-*.exe.log`。此签名不等于 Authenticode，当前 EXE 未接入 Authenticode。
+Sparkle 签名工具只在 macOS 上提供，因此 macOS job 依赖另两个 job：稳定 tag 时下载 Linux 与 Windows 包、核对 SHA-256，由 `scripts/create-update-feed.sh` 用同一私钥签名，经 `scripts/update-feed.mjs` 生成并以嵌入公钥校验 `update.json`（版本、提交、下载地址、大小、SHA-256 与签名）。`update.json` 按 `linux-amd64`／`windows-amd64` 列出资产，Linux 与 Windows 客户端读取最新稳定 Release 的同一份文件，下载地址固定为对应 tag 的附件；macOS 仍使用 Sparkle 的 `appcast.xml`。私钥只进入 macOS 签名步骤。发布 job 要求三平台包齐备、再次校验 Feed 后才公开草稿。
 
-更新签名独立于 Apple Developer ID／公证。当前宿主包仍为 ad-hoc 签名，尚未接入 Developer ID 和公证。没有更新器的历史版本需手动安装一次。
+Windows 客户端还核对解压后 EXE 的版本、提交、通道、架构与 CI 身份，保存后退出；独立助手等待旧进程释放 EXE 后使用 Windows ReplaceFile 创建备份并替换，再重启，失败保留／恢复旧程序。更新目录须可写；助手错误记录在同目录 `.racomi-update-helper-*.exe.log`。此签名不等于 Authenticode，当前 EXE 未接入 Authenticode。
+
+更新签名独立于 Apple Developer ID／公证。当前宿主包仍为 ad-hoc 签名，尚未接入 Developer ID 和公证。`update.json` 从 v0.1.6 开始发布；更早的 Linux／Windows 版本读取旧 Feed 名称，需手动安装一次新版本。
 
 ## 本地验证
 

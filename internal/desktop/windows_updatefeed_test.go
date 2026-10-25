@@ -36,7 +36,7 @@ func windowsArchiveFixture(t *testing.T, names, bodies []string) []byte {
 func signedWindowsFeed(t *testing.T, data []byte, key ed25519.PrivateKey) []byte {
 	t.Helper()
 	digest := sha256.Sum256(data)
-	feed := linuxUpdateFeed{Version: "9.0.0", Commit: testCommit, Assets: map[string]linuxUpdateAsset{"amd64": {
+	feed := updateFeed{Version: "9.0.0", Commit: testCommit, Assets: map[string]updateAsset{"windows-amd64": {
 		URL: releaseDownloadBase + "/v9.0.0/racomi-9.0.0-x86_64-windows.zip", Length: int64(len(data)), SHA256: hex.EncodeToString(digest[:]), EdSignature: base64.StdEncoding.EncodeToString(ed25519.Sign(key, data)),
 	}}}
 	result, err := json.Marshal(feed)
@@ -51,11 +51,11 @@ func TestWindowsUpdateTrustAndZIPExtraction(t *testing.T) {
 	key := base64.StdEncoding.EncodeToString(public)
 	archive := windowsArchiveFixture(t, []string{"../escape", "INSTALL.txt", "racomi.exe"}, []string{"ignore", "notes", "executable"})
 	data := signedWindowsFeed(t, archive, private)
-	_, asset, err := parseWindowsUpdateFeed(data, "amd64")
+	_, asset, err := parseUpdateFeed(data, "windows", "amd64")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = verifyLinuxUpdateArchive(archive, asset, key); err != nil {
+	if err = verifyUpdateArchive(archive, asset, key); err != nil {
 		t.Fatal(err)
 	}
 	var binary bytes.Buffer
@@ -63,31 +63,31 @@ func TestWindowsUpdateTrustAndZIPExtraction(t *testing.T) {
 		t.Fatal(binary.String(), err)
 	}
 	archive[0] ^= 1
-	if verifyLinuxUpdateArchive(archive, asset, key) == nil {
+	if verifyUpdateArchive(archive, asset, key) == nil {
 		t.Fatal("tampered archive accepted")
 	}
-	if _, _, err = parseWindowsUpdateFeed(data, "arm64"); err == nil {
+	if _, _, err = parseUpdateFeed(data, "windows", "arm64"); err == nil {
 		t.Fatal("unsupported architecture accepted")
 	}
-	for _, mutation := range []func(*linuxUpdateFeed){
-		func(f *linuxUpdateFeed) { f.Version = "9.0.0-rc.1" },
-		func(f *linuxUpdateFeed) { f.Commit = "main" },
-		func(f *linuxUpdateFeed) {
-			a := f.Assets["amd64"]
+	for _, mutation := range []func(*updateFeed){
+		func(f *updateFeed) { f.Version = "9.0.0-rc.1" },
+		func(f *updateFeed) { f.Commit = "main" },
+		func(f *updateFeed) {
+			a := f.Assets["windows-amd64"]
 			a.URL = "https://example.com/app.zip"
-			f.Assets["amd64"] = a
+			f.Assets["windows-amd64"] = a
 		},
-		func(f *linuxUpdateFeed) {
-			a := f.Assets["amd64"]
+		func(f *updateFeed) {
+			a := f.Assets["windows-amd64"]
 			a.URL = releaseDownloadBase + "/v9.0.0/racomi-9.0.0-x86_64-linux.tar.gz"
-			f.Assets["amd64"] = a
+			f.Assets["windows-amd64"] = a
 		},
 	} {
-		var feed linuxUpdateFeed
+		var feed updateFeed
 		json.Unmarshal(data, &feed)
 		mutation(&feed)
 		changed, _ := json.Marshal(feed)
-		if _, _, err = parseWindowsUpdateFeed(changed, "amd64"); err == nil {
+		if _, _, err = parseUpdateFeed(changed, "windows", "amd64"); err == nil {
 			t.Fatal("invalid feed accepted")
 		}
 	}

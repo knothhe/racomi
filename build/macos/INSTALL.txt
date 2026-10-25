@@ -1,64 +1,27 @@
-racomi — macOS installation / 安装说明
+racomi for macOS / macOS 安装说明
 
-Requires macOS 13 or newer. / 需要 macOS 13 或更新版本。
-Apple Silicon (M series): racomi-*-aarch64-macos.zip
+Requires macOS 13 or newer on Apple Silicon. / 需要 Apple Silicon，macOS 13 或更新。
 
-1. Download the ZIP and its matching .sha256 from the official release:
-   https://github.com/knothhe/racomi/releases/latest
-   下载对应架构的 ZIP 和同名 .sha256；在下载目录校验：
-   shasum -a 256 -c racomi-*-macos.zip.sha256
-2. Unzip, then drag racomi.app into Applications. You can also use
-   ~/Applications without administrator access. Quit racomi before replacing
-   an older version. Existing data and deployed skills are kept.
-   解压后将 racomi.app 拖入“应用程序”，也可放入 ~/Applications。
-   升级前先退出旧版，替换应用不会删除已有数据或已部署技能。
-3. Open racomi.app. The app needs Git to import and refresh Git sources.
-   打开 racomi.app。导入和刷新 Git 来源需要本机已安装 Git。
+Install / 安装
+  1. Verify the download / 校验下载：
+       shasum -a 256 -c racomi-*-macos.zip.sha256
+  2. Drag racomi.app into Applications (or ~/Applications).
+     将 racomi.app 拖入“应用程序”（或 ~/Applications）。
+  Git is needed for Git sources. / 导入 Git 来源需要本机 Git。
 
 First launch / 首次打开
-
-This release uses a local ad-hoc signature, without a Developer ID signature
-or Apple notarization. macOS may block it with “cannot be verified” or
-“is damaged and can't be opened”. These messages can have other causes;
-first confirm the official download and a matching checksum. Then try opening
-once and choose System Settings > Privacy & Security > Open Anyway.
-本发布包仅有本地 ad-hoc 签名，尚无 Developer ID 签名和 Apple 公证。
-遇到“无法验证开发者”或“已损坏”时，请先确认官方来源与校验结果；
-尝试打开一次后，在“系统设置 > 隐私与安全性”选择“仍要打开”。
-
-If a trusted download is still blocked because it is quarantined, remove that
-mark once for this app and open it again:
-确认可信下载仍因隔离属性受阻时，可仅为此应用清除一次隔离标记：
-
-   xattr -dr com.apple.quarantine /Applications/racomi.app
-
-If installed in ~/Applications, use:
-若应用在用户目录中，请改用：
-
-   xattr -dr com.apple.quarantine "$HOME/Applications/racomi.app"
-
-Apple's explanation / Apple 官方说明:
-https://support.apple.com/en-us/102445
-
-Uninstall / 卸载
-
-Quit racomi, then move racomi.app to the Trash. User data is kept at:
-退出 racomi 后将 racomi.app 移到废纸篓，数据仍保留在：
-   ~/Library/Application Support/racomi
-
-Skills already deployed to projects or global agent directories are kept.
-If you want to remove those skills, clear each target's selection in racomi,
-wait for autosave, then preview and apply before uninstalling.
-已部署到项目或 Agent 全局目录的技能会保留。如需移除，请在卸载前于
-racomi 清空对应选择，等待自动保存后预览并应用。
+  The app is ad-hoc signed and not notarized. If macOS blocks it, open it once,
+  then choose System Settings > Privacy & Security > Open Anyway. If it is still
+  blocked, run:
+  应用未经公证。若被拦截，先尝试打开一次，再到“系统设置 > 隐私与安全性”
+  选择“仍要打开”；仍受阻时执行：
+       xattr -dr com.apple.quarantine /Applications/racomi.app
 
 Updates / 更新
+  Stable builds check signed updates in Settings > About.
+  正式版在“设置 > 关于”检查签名更新。
 
-Official stable Apple Silicon builds include Sparkle. Use Settings > About
-(or the app menu) to check for application updates and change automatic checks.
-Downloads and installs are signed with the release update key. Installation
-asks for confirmation and coordinates pending saves before restarting.
-官方 Apple Silicon 稳定版在“设置 > 关于”或应用菜单检查应用更新。
-更新包与 Feed 均有签名，安装前确认并处理未保存编辑。
-Older builds without the updater need one manual installation.
-历史版本没有更新器时，需先手动安装一次新版本。
+Uninstall / 卸载
+  Quit racomi and move racomi.app to the Trash. Data in
+  ~/Library/Application Support/racomi and deployed skills are kept.
+  退出后将 racomi.app 移到废纸篓；数据与已部署技能会保留。

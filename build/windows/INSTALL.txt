@@ -1,39 +1,18 @@
 racomi for Windows x64
 
-Requires Windows 10/11 x64 and Microsoft Edge WebView2 Runtime.
-If WebView2 is missing: https://developer.microsoft.com/microsoft-edge/webview2/
-Git is required to import or refresh Git sources.
+Requirements: Windows 10/11 x64, Microsoft Edge WebView2 Runtime, and Git for
+Git sources. WebView2: https://developer.microsoft.com/microsoft-edge/webview2/
 
-Verify the ZIP using PowerShell:
+Install:
   Get-FileHash .\racomi-*-x86_64-windows.zip -Algorithm SHA256
-Compare the result with the accompanying .sha256 file, then extract the ZIP
-and double-click racomi.exe. Keep the executable in a writable user folder.
-This build is unsigned; check the download source before opening it.
+  Compare with the .sha256 file, extract, and run racomi.exe from a folder
+  you can write. The EXE is not Authenticode-signed.
 
-Official stable CI builds offer signed updates in Settings > About. The ZIP's
-Ed25519 signature, checksum and executable release identity are verified before
-installation. The app saves changes, exits, and a separate helper waits for the
-old process to stop before replacing the EXE with a backup and restarting.
-The installation directory must be writable by your user. Automatic checks run
-daily by default and can be disabled in About. This update signature is separate
-from Authenticode; the EXE is currently not Authenticode-signed.
-For Dev, preview and local source builds, exit racomi and replace racomi.exe.
-To uninstall the portable build, exit racomi and delete the extracted files.
-User data and deployed skills are preserved.
+Updates: stable builds check signed updates in Settings > About, then replace
+racomi.exe and restart.
 
-Source installation:
-  make install
-  make uninstall
-Default: %LOCALAPPDATA%\Programs\racomi-dev\racomi.exe (racomi Dev shortcut).
-CHANNEL=stable uses %LOCALAPPDATA%\Programs\racomi and the racomi shortcut.
-Dev and release data use %APPDATA%\racomi-dev and %APPDATA%\racomi separately.
-Use APP_DIR to choose another installation directory.
-Exit the app before installing an update or uninstalling.
+Uninstall: exit racomi and delete the files. Data in %APPDATA%\racomi and
+deployed skills are kept.
 
-Lightweight mode releases the page one minute after closing the window. Click
-the system tray icon or launch racomi again to reopen it; the tray menu can quit.
-Open at login registers the exact executable under the current user's Run key.
-Installations never overwrite another installation's login registration.
-
-Symbolic link deployment requires Windows Developer Mode or elevation.
-Use copy deployment if symbolic links are unavailable.
+Symbolic link deployment needs Developer Mode or elevation; otherwise use copy
+deployment. Building from source: see README.md (make install / make uninstall).

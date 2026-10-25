@@ -29,7 +29,7 @@ fi
 feed=''
 key=''
 if [ "$channel" = stable ]; then
- feed=$(node -p 'require("./build/updates.json").linuxFeedURL')
+ feed=$(node -p 'require("./build/updates.json").updateFeedURL')
  key=$(node -p 'require("./build/updates.json").publicKey')
 fi
 mkdir -p "bin/$channel"

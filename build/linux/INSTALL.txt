@@ -1,36 +1,16 @@
 racomi for Linux
 
-The executable links the system GTK and WebKitGTK libraries it was built
-against: GTK 3 with WebKit2GTK 4.1, or GTK 4 with WebKitGTK 6.0.
-  Arch:          webkit2gtk-4.1        (or webkitgtk-6.0)
-  Debian/Ubuntu: libwebkit2gtk-4.1-0   (or libwebkitgtk-6.0-4)
-  Fedora:        webkit2gtk4.1         (or webkitgtk6.0)
-Git is required to import or refresh Git sources.
+Requirements: GTK 3 with WebKit2GTK 4.1, and Git for Git sources.
+  Arch: webkit2gtk-4.1   Debian/Ubuntu: libwebkit2gtk-4.1-0   Fedora: webkit2gtk4.1
 
-Verify the archive:
+Install:
   sha256sum -c racomi-*-linux.tar.gz.sha256
-Extract it and run ./racomi. Keep the executable in a writable user folder.
-This build is unsigned; check the download source before opening it.
+  Extract and run ./racomi from a folder you can write, such as ~/.local/bin.
 
-To update, quit racomi and replace the executable.
-To uninstall, quit racomi and delete the extracted files.
-User data in ~/.config/racomi (Dev: ~/.config/racomi-dev) and deployed skills
-are preserved.
+Updates: stable builds check signed updates in Settings -> About and replace
+the executable in place.
 
-Official stable builds check for signed updates once a day and from
-Settings -> About. An update replaces the executable in place, so keep it in
-a folder you can write, such as ~/.local/bin, then restarts after saving.
+Uninstall: quit racomi and delete the files. Data in ~/.config/racomi and
+deployed skills are kept.
 
-Settings -> Lightweight mode keeps racomi in the system tray after the window
-closes; click the tray icon or launch racomi again to reopen it. Open at login
-writes ~/.config/autostart/com.knothhe.racomi.desktop for desktop sessions
-that support XDG autostart.
-
-Source installation:
-  make install
-  make uninstall
-Default: ~/.local/bin/racomi-dev with a desktop entry and icon under
-~/.local/share. Use CHANNEL=stable for the stable identity, and BIN_DIR,
-DESKTOP_DIR or ICON_DIR to choose other locations (pass the same values to
-uninstall). GTK=3 or GTK=4 forces a toolkit; by default GTK 4 is used when
-its development files are present.
+Building from source (GTK 3 or GTK 4): see README.md (make install / make uninstall).

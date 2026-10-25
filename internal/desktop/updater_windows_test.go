@@ -82,7 +82,7 @@ func TestWindowsUpdaterStagesOnlyVerifiedIdentity(t *testing.T) {
 			binary := windowsReleaseFixture(t, info)
 			archive := windowsArchiveFixture(t, []string{"racomi.exe"}, []string{string(binary)})
 			data := signedWindowsFeed(t, archive, private)
-			feed, asset, err := parseWindowsUpdateFeed(data, "amd64")
+			feed, asset, err := parseUpdateFeed(data, "windows", "amd64")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -136,7 +136,7 @@ func TestWindowsUpdateHelperWaitsReplacesAndRestarts(t *testing.T) {
 	}
 	defer parent.Process.Kill()
 	digest, _ := executableDigest(staged)
-	plan := windowsUpdatePlan{PID: parent.Process.Pid, Executable: exe, Staged: staged, SHA256: digest, Feed: linuxUpdateFeed{Version: "9.0.0", Commit: testCommit}}
+	plan := windowsUpdatePlan{PID: parent.Process.Pid, Executable: exe, Staged: staged, SHA256: digest, Feed: updateFeed{Version: "9.0.0", Commit: testCommit}}
 	planData, _ := json.Marshal(plan)
 	if err = os.WriteFile(helper+".json", planData, 0o600); err != nil {
 		t.Fatal(err)
@@ -229,7 +229,7 @@ func TestWindowsUpdatePlanRejectsTamperingAndProcessTimeout(t *testing.T) {
 		}
 	}
 	digest, _ := executableDigest(staged)
-	plan := windowsUpdatePlan{PID: os.Getpid(), Executable: exe, Staged: staged, SHA256: digest, Feed: linuxUpdateFeed{Version: "9.0.0", Commit: testCommit}}
+	plan := windowsUpdatePlan{PID: os.Getpid(), Executable: exe, Staged: staged, SHA256: digest, Feed: updateFeed{Version: "9.0.0", Commit: testCommit}}
 	if err := validateWindowsUpdatePlan(plan, helper, helper+".json"); err != nil {
 		t.Fatal(err)
 	}

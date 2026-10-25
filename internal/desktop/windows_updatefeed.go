@@ -3,42 +3,18 @@ package desktop
 import (
 	"archive/zip"
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 )
 
-// The wire format and Ed25519 verification match the Linux feed, while archive
-// names and extraction are explicitly pinned to Windows releases.
+// Archive names and extraction are pinned to Windows releases; the feed and
+// signature checks are shared with Linux in updatefeed.go.
 func windowsArchiveName(version, arch string) (string, error) {
 	if arch != "amd64" {
 		return "", fmt.Errorf("unsupported Windows architecture: %s", arch)
 	}
 	return "racomi-" + version + "-x86_64-windows.zip", nil
-}
-
-func parseWindowsUpdateFeed(data []byte, arch string) (linuxUpdateFeed, linuxUpdateAsset, error) {
-	var feed linuxUpdateFeed
-	if len(data) > maxUpdateFeedBytes {
-		return feed, linuxUpdateAsset{}, errors.New("The update feed is too large.")
-	}
-	if json.Unmarshal(data, &feed) != nil || !semverPattern.MatchString(feed.Version) || !commitPattern.MatchString(feed.Commit) || strings.Contains(feed.Version, "-") {
-		return feed, linuxUpdateAsset{}, errors.New("The update feed is invalid.")
-	}
-	asset, ok := feed.Assets[arch]
-	if !ok {
-		return feed, asset, errors.New("No update is published for this architecture.")
-	}
-	name, err := windowsArchiveName(feed.Version, arch)
-	if err != nil {
-		return feed, asset, err
-	}
-	if asset.URL != releaseDownloadBase+"/v"+feed.Version+"/"+name || asset.Length <= 0 || asset.Length > maxUpdateArchiveBytes || len(asset.SHA256) != 64 || asset.EdSignature == "" {
-		return feed, asset, errors.New("The update feed is invalid.")
-	}
-	return feed, asset, nil
 }
 
 func extractWindowsUpdate(data []byte, dest io.Writer) error {
