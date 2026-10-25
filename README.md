@@ -2,153 +2,70 @@
 
 轻量本地 Agent Skill 管理器：从 skills.sh 或 Git 导入技能，按预设组织，并应用到 Codex、Claude Code、Cursor 的项目或全局目录。
 
-- 支持 skills.sh 的 Git 与非 Git 托管来源（如 lark-doc），挑选安装或订阅全部技能，手动同步更新。
-- 发现页后台核验 Git 技能，标记上游已移除或改名的条目，并可直接查看仓库当前技能。
-- 按来源选择全部已安装技能，与多个预设及直接选择的技能合并去重，支持多目录、复制与软链接部署。
-- 提供本地快照、ZIP 备份恢复和 skills-manager 数据导入。
-- 可选 S3 / Cloudflare R2 加密双向同步，跨设备共享来源、技能、预设及设置，并支持云端历史恢复；R2 可通过 OAuth 自动配置，亦保留独立的手动 S3 配置。
-- 支持侧边栏／顶部导航切换、明暗主题、文字缩放、界面字体，以及简体中文、繁體中文和 English。
-- macOS、Windows 与 Linux 可开启轻量模式与开机自启，官方正式版支持签名应用内更新。
+- 导入 skills.sh（Git 与非 Git 来源）技能，可挑选安装或订阅全部，手动同步更新；标记上游已移除或改名的技能。
+- 来源、预设与单个技能合并去重，支持多目录、复制与软链接部署。
+- 本地快照、ZIP 备份恢复，可导入 skills-manager 数据。
+- 可选 S3 / Cloudflare R2 加密同步与云端历史恢复；R2 支持 OAuth 自动配置，无需 racomi 账号。
+- 明暗主题、文字缩放、界面字体，简体中文／繁體中文／English。
+- 轻量模式（托盘常驻）、开机自启，官方正式版支持签名应用内更新。
 
-## macOS 安装
+## 安装
 
-需要 **macOS 13+**。从 [最新 Release](https://github.com/knothhe/racomi/releases/latest) 下载 ZIP 和同名 `.sha256` 文件：
+从 [最新 Release](https://github.com/knothhe/racomi/releases/latest) 下载对应平台的包及同名 `.sha256`。导入和刷新 Git 来源需要本机安装 Git。
 
-| Mac | 下载文件 |
-| --- | --- |
-| Apple Silicon | `racomi-*-aarch64-macos.zip` |
+| 平台 | 文件 | 要求 |
+| --- | --- | --- |
+| macOS 13+ (Apple Silicon) | `racomi-*-aarch64-macos.zip` | — |
+| Windows 10/11 x64 | `racomi-*-x86_64-windows.zip` | [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) |
+| Linux x86_64 | `racomi-*-x86_64-linux.tar.gz` | WebKit2GTK 4.1（Arch `webkit2gtk-4.1`，Debian／Ubuntu `libwebkit2gtk-4.1-0`，Fedora `webkit2gtk4.1`） |
 
-在下载目录校验后解压，将 **racomi.app** 拖入 `/Applications` 或 `~/Applications`：
+- **macOS**：`shasum -a 256 -c racomi-*-macos.zip.sha256` 校验后，将 `racomi.app` 拖入 `/Applications` 或 `~/Applications`。应用仅有 ad-hoc 签名、未经公证，若被拦截，到“系统设置 → 隐私与安全性”选择“仍要打开”，或执行 `xattr -dr com.apple.quarantine /Applications/racomi.app`。详见 [安装说明](build/macos/INSTALL.txt)。
+- **Windows**：解压后运行 `racomi.exe`（目录需当前用户可写）。EXE 尚未做 Authenticode 签名。
+- **Linux**：
 
-```sh
-shasum -a 256 -c racomi-*-macos.zip.sha256
-```
+  ```sh
+  sha256sum -c racomi-*-x86_64-linux.tar.gz.sha256
+  tar -xzf racomi-*-x86_64-linux.tar.gz
+  install -m 755 racomi-*-x86_64-linux/racomi ~/.local/bin/racomi
+  ```
 
-使用发布包无需 Go、Node.js 或 Xcode；导入和刷新 Git 来源需要本机已安装 Git。
+  托盘需要桌面支持 StatusNotifierItem（如 KDE、waybar）；开机自启使用 XDG autostart。
 
-### 首次打开
+正式版在“设置 → 关于”检查更新（默认每天一次，可关闭）。卸载时删除应用即可，本地数据与已部署技能会保留；如需移除部署，请先在应用中清空选择并应用。
 
-发布包仅有 ad-hoc 签名，尚无 Developer ID 签名和 Apple 公证。若 macOS 提示“无法验证开发者”或“已损坏”，先确认官方来源和校验结果，再尝试打开一次，到“系统设置 → 隐私与安全性”选择“仍要打开”。可信下载仍因隔离属性受阻时，可针对应用清除一次标记：
+## 从源码构建
 
-```sh
-xattr -dr com.apple.quarantine /Applications/racomi.app
-```
+需要 **Go 1.26.8+、Node.js 22.12+、npm、GNU Make、Git**，另加平台工具链：
 
-若安装在用户目录，路径改为 `"$HOME/Applications/racomi.app"`。详见 [安装说明](build/macos/INSTALL.txt) 与 [Apple 官方说明](https://support.apple.com/en-us/102445)。
-
-更新前先退出应用，再替换 `.app`；卸载时退出并移到废纸篓。两者均保留本地数据与已部署技能。如需移除部署，请在卸载前清空对应选择，等待自动保存后预览并应用。
-
-### 从源码安装
-
-需要 **Go 1.26.8+、Node.js 22.12+、npm、make、Git**，以及 Xcode 或 Command Line Tools（`xcode-select --install`）。macOS 不自带 Go 和 Node.js。在仓库目录运行：
+- **macOS**：Xcode 或 Command Line Tools（`xcode-select --install`）。
+- **Windows**：x86_64 MinGW-w64 GCC 与 windres（如 `winget install BrechtSanders.WinLibs.POSIX.UCRT`）。没有 Make 时可用 `scripts/windows.ps1 -Action <target>`。
+- **Linux**：C 编译器、pkg-config，以及 GTK 3 + WebKit2GTK 4.1 或 GTK 4 + WebKitGTK 6.0 开发包（自动检测，可用 `GTK=3|4` 指定）。
 
 ```sh
 make doctor      # 检查构建环境
-make install     # 默认构建并安装独立 Dev 版
-make uninstall   # 默认卸载 Dev 版，保留数据与部署
+make install     # 构建并安装独立 Dev 版
+make uninstall   # 卸载，保留数据与部署
+make dist        # 生成 bin/releases 下的发布包与 SHA-256
 ```
 
-默认安装到 `~/Applications/racomi Dev.app`，启动命令为 `~/.local/bin/racomi-dev`，资料位于 `~/Library/Application Support/racomi-dev`。Dev 的应用标识、单实例、自启和图标均与正式版分开。`make install CHANNEL=stable` 可构建并安装本地正式身份，卸载同样传入 `CHANNEL=stable`；这种源码构建使用 Make 更新，不接入官方自动更新。可通过 `APP_DIR` 和 `BIN_DIR` 自定义位置，卸载时使用相同参数。安装／卸载会请求精确目标实例正常退出；保存失败或退出超时即停止，保留原安装。卸载仅清理属于该安装的自启登记，保留数据与凭据。开机自启和官方更新要求应用放在 `/Applications` 或 `~/Applications`。
+默认安装 Dev 版，其应用标识、数据目录、自启与图标都与正式版分开；`CHANNEL=stable` 安装正式身份（不接入官方更新）。可用 `APP_DIR`、`BIN_DIR` 等自定义位置，卸载时传入相同参数。Windows 上软链接部署需要开发者模式，否则使用默认的复制部署。
 
-## Windows 安装与构建
+## 开发
 
-发布 CI 构建 Windows x64、macOS Apple Silicon 与 Linux x86_64；main push / PR 也执行三平台检查和打包。
-
-支持 **Windows 10/11 x64**，运行需要 Microsoft Edge WebView2 Runtime；缺少时从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。导入和刷新 Git 来源仍需 Git。轻量模式在关闭窗口一分钟后释放页面，可点击系统托盘或再次启动恢复窗口；托盘菜单可以退出。开机自启登记在当前用户的 Run 注册表项，Dev 与正式版独立，拒绝覆盖其他安装副本的登记。
-
-发布包为 `racomi-*-x86_64-windows.zip`，解压后运行 `racomi.exe`。可用 PowerShell 的 `Get-FileHash <ZIP 文件路径> -Algorithm SHA256` 与同名 `.sha256` 文件比较。官方稳定版从关于页检查更新：校验 ZIP 的 Ed25519 签名、大小、SHA-256 和程序发布身份，保存更改后退出，由独立助手等待旧进程结束、备份并替换 EXE，再重启；替换失败保留原版本。所在目录需当前用户可写。默认每天检查一次，可关闭自动检查。Dev、预览版和本地源码构建手动更新。删除便携版文件即可卸载，保留用户数据与已部署技能。更新包签名与 Windows Authenticode 不同，当前 EXE 尚未做 Authenticode 代码签名。
-
-从源码构建需要 **Go 1.26.8+、Node.js 22.12+、npm、Git、GNU Make、x86_64 MinGW-w64 GCC 和 windres**。例如在 PowerShell 中安装构建工具：
-
-```powershell
-winget install --id GoLang.Go -e
-winget install --id OpenJS.NodeJS.LTS -e
-winget install --id Git.Git -e
-winget install --id GnuWin32.Make -e
-winget install --id BrechtSanders.WinLibs.POSIX.UCRT -e
-```
-
-安装后重新打开终端，并确保这些工具已加入 `PATH`（GnuWin32 Make 通常位于 `C:\Program Files (x86)\GnuWin32\bin`）。也可以用 MinGW 自带的 `mingw32-make` 执行相同目标。在仓库根目录运行：
-
-```powershell
-make doctor      # 检查 Windows 构建环境
-make deps        # 首次构建安装依赖
-make build       # 生成 bin/racomi.exe
-make dist        # 生成 bin/releases 下的 ZIP 和 SHA-256
-make install     # 自动安装依赖、构建、安装并创建开始菜单快捷方式
-make uninstall   # 卸载已安装应用与快捷方式，保留数据和技能部署
-```
-
-`make` 根据当前操作系统自动选择 Windows、Linux 或 macOS 流程。Windows 默认安装 Dev 版到 `%LOCALAPPDATA%\Programs\racomi-dev\racomi.exe`，开始菜单为 racomi Dev，资料目录为 `%APPDATA%\racomi-dev`。`CHANNEL=stable` 使用 `%LOCALAPPDATA%\Programs\racomi`、racomi 快捷方式和 `%APPDATA%\racomi` 资料，与 Dev 共存。可用 `make install APP_DIR="D:/Apps/racomi"` 自定义，卸载时使用相同参数与通道。安装更新前请先退出应用。Windows 当前构建架构为 `amd64`，保留 CGO 以支持 SQLite 数据导入；EXE 已嵌入通道图标、版本信息和 DPI／长路径清单，无需附带 MinGW DLL。设置中的字体及样式列表读取 Windows 本机字体。
-
-没有 Make 时也可直接执行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 -Action install`，其他目标通过 `-Action build`、`-Action dist` 等选择。软链接部署需要 Windows 开发者模式或相应权限，普通账号可使用默认的复制部署；`make check` 在无软链接权限时会跳过对应测试。
-
-Windows 的 `make check` 和 `make test` 显式使用 `-ldflags="-s=false -w=false"`，保留测试程序的符号表与 DWARF 调试信息。本机排查发现，Go 默认剥离调试信息的临时测试 EXE 会触发 Smart App Control 拦截，保留调试信息后可以通过检查。此设置仅用于测试构建，不修改系统安全策略或增加排除项；发布 EXE 仍使用原来的体积优化参数。其他设备若仍提示应用控制拦截，可检查事件查看器的 `Microsoft-Windows-CodeIntegrity/Operational` 日志（事件 3077）；这不是所有应用控制策略的通用放行保证，详见 [Microsoft 的说明](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/overview)。
-
-## Linux 构建与安装
-
-### 发布包
-
-[最新 Release](https://github.com/knothhe/racomi/releases/latest) 提供 `racomi-*-x86_64-linux.tar.gz` 及同名 `.sha256`，基于 GTK 3 + WebKit2GTK 4.1 构建，运行时需安装对应库（Arch `webkit2gtk-4.1`，Debian／Ubuntu `libwebkit2gtk-4.1-0`，Fedora `webkit2gtk4.1`）。校验并解压后，将 `racomi` 放到当前用户可写的目录（如 `~/.local/bin`）运行：
-
-```sh
-sha256sum -c racomi-*-x86_64-linux.tar.gz.sha256
-tar -xzf racomi-*-x86_64-linux.tar.gz
-install -m 755 racomi-*-x86_64-linux/racomi ~/.local/bin/racomi
-```
-
-正式版在“设置 → 关于”中检查更新：下载 Release 附带的 `linux-update.json`，以内嵌公钥校验压缩包的 Ed25519 签名、大小和 SHA-256，并核对解压后程序的版本、提交与发布身份，原生窗口确认并保存更改后原地替换可执行文件并重启。所在目录需当前用户可写；默认每天自动检查一次，可在关于页关闭。预览版、Dev 与本地源码构建不连接更新源。
-
-### 从源码构建
-
-需要 **Go 1.26.8+、Node.js 22.12+、npm、GNU Make、Git、C 编译器、pkg-config**，以及 GTK 和 WebKitGTK 开发文件，二选一即可：
-
-| 发行版 | GTK 3 + WebKit2GTK 4.1 | GTK 4 + WebKitGTK 6.0 |
-| --- | --- | --- |
-| Arch | `webkit2gtk-4.1` | `webkitgtk-6.0` |
-| Debian／Ubuntu | `libgtk-3-dev libwebkit2gtk-4.1-dev` | `libgtk-4-dev libwebkitgtk-6.0-dev` |
-| Fedora | `gtk3-devel webkit2gtk4.1-devel` | `gtk4-devel webkitgtk6.0-devel` |
-
-在仓库目录运行：
-
-```sh
-make doctor      # 检查构建环境与 GTK 版本
-make run         # 构建 bin/dev/racomi 并启动
-make install     # 默认构建并安装独立 Dev 版
-make uninstall   # 默认卸载 Dev 版，保留数据与部署
-make dist        # 生成 bin/releases 下的 tar.gz 和 SHA-256
-```
-
-默认安装 `~/.local/bin/racomi-dev`，并在 `~/.local/share/applications` 和 `~/.local/share/icons/hicolor` 写入桌面入口与图标；资料位于 `~/.config/racomi-dev`。`CHANNEL=stable` 安装正式身份 `~/.local/bin/racomi`，资料位于 `~/.config/racomi`。可通过 `BIN_DIR`、`DESKTOP_DIR`、`ICON_DIR` 自定义位置，卸载时使用相同参数。安装只替换带有 racomi 管理标记的桌面入口所对应的文件，拒绝覆盖无关命令或软链接；更新后需重启正在运行的应用。
-
-构建时若检测到 GTK 4 开发文件则使用 GTK 4，否则使用 GTK 3（Wails 的 `gtk3` 构建标签），可用 `GTK=3` 或 `GTK=4` 指定，`make check`、`make dev` 同样适用。生成的可执行文件依赖构建时的系统 GTK／WebKitGTK 库。
-
-设置中的“轻量模式”在关闭窗口一分钟后释放页面，应用保留在系统托盘（需桌面提供 StatusNotifierItem 托盘，如 KDE、waybar），点击托盘图标或再次启动 racomi 即可重新打开，托盘菜单也可退出。“开机自启”写入 `~/.config/autostart/<应用标识>.desktop`，由支持 XDG 自启的桌面会话（GNOME、KDE、uwsm 等）在登录时启动；只识别并删除记录本程序路径的登记，临时 `go run` 构建无法开启。
-
-## 开发与发布
-
-技术栈为 Go + Wails v3、TypeScript + Vite + CSS。开发环境要求同源码安装。
+技术栈：Go + Wails v3，TypeScript + Vite。
 
 ```sh
 make deps        # 安装锁定依赖
-make check       # 前端构建、类型检查、Go vet 和测试
+make check       # 前端构建、类型检查、Go vet 与测试
 ```
 
-在两个终端分别运行 `make frontend-dev` 和 `make dev`。前端默认端口为 `9245`，可通过 `VITE_PORT` 修改；Go 代码修改后需重启桌面应用。
-
-发行者在 [Cloudflare 注册配置](internal/desktop/cloudflare-registration.json) 中填写 racomi 的公开 `ClientID` 后重新构建，即可启用 R2 OAuth。回调地址和四项控制台权限见 [OAuth 接入与验证](docs/r2-oauth-poc.md)；普通用户无需填写 Client ID 或访问密钥。
-
-浏览器验证入口为 [内存测试工作空间](http://127.0.0.1:9245/tests/browser.html?projects=40)，包含 40 个项目，不访问本机技能或部署目录，刷新即可重置。实际管理功能需要桌面后端。
-
-本地打包、首次发版、版本升级及失败续推见 [发布指南](docs/release/README.md)。
-
-当前 CI 发布 macOS Apple Silicon、Windows x64 与 Linux x86_64。官方稳定版在“设置 → 关于”手动检查或开关自动检查，macOS 使用 Sparkle，Windows／Linux 使用同一公钥验证签名更新；退出前处理保存与草稿。Dev、预览版及本地源码构建不连接正式安装式更新。旧版没有更新器，须手动安装首个包含更新功能的版本。云同步使用用户自己的 S3 兼容存储，无需 racomi 账号。
+在两个终端分别运行 `make frontend-dev` 和 `make dev`（前端端口 `9245`，可用 `VITE_PORT` 修改）；Go 代码修改后需重启应用。浏览器中的 [内存测试工作空间](http://127.0.0.1:9245/tests/browser.html?projects=40) 不访问本机数据，刷新即重置。
 
 ## 更多资料
 
 - [功能与数据规则](docs/requirements.md)
 - [S3 / R2 同步配置指南](docs/s3-r2-sync.md)
-- [R2 OAuth 发行者配置与 PoC](docs/r2-oauth-poc.md)
-- [安装与卸载说明](build/macos/INSTALL.txt)
+- [R2 OAuth 发行者配置](docs/r2-oauth-poc.md)
+- [发布指南](docs/release/README.md)
 - [图标设计与生成](build/design/README.md)
-- [第三方许可](frontend/public/THIRD_PARTY_NOTICES.txt)（Agent 品牌图标来自 Magpie／Lobe Icons；通用操作图标为本地 SVG，Markdown 解析使用 markdown-it）
+- [第三方许可](frontend/public/THIRD_PARTY_NOTICES.txt)
