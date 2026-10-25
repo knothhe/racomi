@@ -107,7 +107,7 @@ test-install:
 	sh scripts/install-macos.test.sh
 
 test-release:
-	$(NODE) --test scripts/release.test.mjs scripts/updates.test.mjs
+	$(NODE) --test scripts/release.test.mjs scripts/updates.test.mjs scripts/macos-signing.test.mjs
 
 build: frontend
 	GO="$(GO)" sh scripts/build-macos.sh "$(CHANNEL)" "$(VERSION)" "$(BUILD_NUMBER)" "$(GOARCH)" "$(MACOSX_DEPLOYMENT_TARGET)"

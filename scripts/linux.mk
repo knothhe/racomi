@@ -88,7 +88,7 @@ test-install:
 	sh scripts/install.test.sh
 
 test-release:
-	$(NODE) --test scripts/release.test.mjs scripts/updates.test.mjs
+	$(NODE) --test scripts/release.test.mjs scripts/updates.test.mjs scripts/macos-signing.test.mjs
 
 build: frontend
 	GO="$(GO)" sh scripts/build-linux.sh "$(CHANNEL)" "$(VERSION)" "$(BUILD_NUMBER)" "$(GOARCH)" "$(GTK)"
