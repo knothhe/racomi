@@ -75,6 +75,8 @@ import (
 	"unsafe"
 )
 
+var errR2SecretStoreMissing = errR2SecretUnavailable
+
 type r2NativeSecretBackend struct{}
 
 func r2KeychainError(operation string, status C.int) error {

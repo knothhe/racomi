@@ -18,6 +18,8 @@ const (
 	r2WinMaxSecretBytes    = 5 * 512
 )
 
+var errR2SecretStoreMissing = errR2SecretUnavailable
+
 type r2NativeSecretBackend struct{}
 
 // Layout follows CREDENTIALW from wincred.h. Secrets are passed to the native

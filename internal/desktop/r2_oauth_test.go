@@ -771,7 +771,18 @@ func TestR2OAuthLegacyManualConfigurationMigration(t *testing.T) {
 	if err = json.Unmarshal(disk, &migrated); err != nil {
 		t.Fatal(err)
 	}
-	if migrated.Version != 2 || migrated.ManualConfig == nil || migrated.ManualConfig.SecretAccessKey != manual.SecretAccessKey || migrated.ManualConfig.SessionToken != manual.SessionToken || migrated.ManualConfig.Passphrase != manual.Passphrase || migrated.R2Config == nil {
+	if migrated.Version != 2 || migrated.ManualConfig == nil || migrated.R2Config == nil || migrated.ManualSecrets != cloudSecretsSystem {
+		t.Fatal("profile migration did not keep the legacy manual profile")
+	}
+	if migrated.Config.SecretAccessKey != "" || migrated.ManualConfig.SecretAccessKey != "" || migrated.ManualConfig.SessionToken != "" || migrated.ManualConfig.Passphrase != "" {
+		t.Fatal("legacy manual credentials stayed in the configuration file")
+	}
+	data, err := s.cloud.secrets.Load(cloudSecretsManualKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored cloudSecrets
+	if err = json.Unmarshal(data, &stored); err != nil || stored != (cloudSecrets{manual.SecretAccessKey, manual.SessionToken, manual.Passphrase}) {
 		t.Fatal("profile migration changed legacy manual credentials")
 	}
 }

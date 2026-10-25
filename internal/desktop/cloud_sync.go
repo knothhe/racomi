@@ -16,7 +16,8 @@ import (
 	skillstore "racomi/internal/skills"
 )
 
-// Credentials are device-local. Public status always replaces them with presence flags.
+// Credentials are device-local and kept in the system credential store when it
+// is usable (see cloud_secrets.go). Public status replaces them with presence flags.
 type CloudSyncConfig struct {
 	Provider           string `json:"provider,omitempty"`
 	R2ConnectionID     string `json:"r2ConnectionId,omitempty"`
@@ -65,6 +66,9 @@ type cloudSyncRuntime struct {
 	conflicts       []skillstore.SyncConflict
 	resolutionToken string
 	lastAttempt     time.Time
+	secrets         r2SecretStore
+	manualSecrets   cloudSecretSlot
+	r2Secrets       cloudSecretSlot
 }
 
 type savedCloudSync struct {
@@ -73,20 +77,24 @@ type savedCloudSync struct {
 	LastSyncAt   string           `json:"lastSyncAt,omitempty"`
 	ManualConfig *CloudSyncConfig `json:"manualConfig,omitempty"`
 	R2Config     *CloudSyncConfig `json:"r2Config,omitempty"`
+	// "system" when the profile's secrets are in the credential store.
+	ManualSecrets string `json:"manualSecrets,omitempty"`
+	R2Secrets     string `json:"r2Secrets,omitempty"`
 }
 
 func defaultCloudSyncConfig() CloudSyncConfig {
 	return CloudSyncConfig{Region: "auto", Prefix: "racomi", PathStyle: true, IntervalMinutes: 5}
 }
 
-func newCloudSyncRuntime(root string) *cloudSyncRuntime {
+func newCloudSyncRuntime(root string, secrets r2SecretStore) *cloudSyncRuntime {
 	manual, r2 := defaultCloudSyncConfig(), defaultCloudSyncConfig()
 	r2.Provider = "r2-oauth"
-	return &cloudSyncRuntime{path: filepath.Join(root, "cloud-sync-config.json"), config: manual, manualConfig: manual, r2Config: r2, conflicts: []skillstore.SyncConflict{}}
+	return &cloudSyncRuntime{path: filepath.Join(root, "cloud-sync-config.json"), config: manual, manualConfig: manual, r2Config: r2, conflicts: []skillstore.SyncConflict{},
+		secrets: secrets, manualSecrets: cloudSecretSlot{key: cloudSecretsManualKey}, r2Secrets: cloudSecretSlot{key: cloudSecretsR2Key}}
 }
 
-func loadCloudSync(root string) (*cloudSyncRuntime, error) {
-	c := newCloudSyncRuntime(root)
+func loadCloudSync(root string, secrets r2SecretStore) (*cloudSyncRuntime, error) {
+	c := newCloudSyncRuntime(root, secrets)
 	info, err := os.Lstat(c.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return c, nil
@@ -129,7 +137,64 @@ func loadCloudSync(root string) (*cloudSyncRuntime, error) {
 	if err = os.Chmod(c.path, 0600); err != nil {
 		return nil, fmt.Errorf("cannot protect cloud sync credentials: %w", err)
 	}
+	c.manualSecrets.stored = saved.ManualSecrets == cloudSecretsSystem
+	c.r2Secrets.stored = saved.R2Secrets == cloudSecretsSystem
+	c.loadSecretsLocked()
+	if profileSecrets(c.manualConfig) != (cloudSecrets{}) && !c.manualSecrets.stored || profileSecrets(c.r2Config) != (cloudSecrets{}) && !c.r2Secrets.stored {
+		// Move secrets that older versions left in the file. A failure keeps the
+		// file as it is; the next successful save retries.
+		_ = c.persistLocked(c.config, c.lastSyncAt)
+	}
 	return c, nil
+}
+
+// loadSecretsLocked reads stored profiles whose secrets are not in memory yet.
+// The active configuration duplicates one of the profiles.
+func (c *cloudSyncRuntime) loadSecretsLocked() error {
+	var failure error
+	for _, profile := range []struct {
+		slot   *cloudSecretSlot
+		config *CloudSyncConfig
+		r2     bool
+	}{{&c.manualSecrets, &c.manualConfig, false}, {&c.r2Secrets, &c.r2Config, true}} {
+		if !profile.slot.stored || profile.slot.loadErr == nil && profileSecrets(*profile.config) != (cloudSecrets{}) {
+			continue
+		}
+		*profile.config = profile.slot.load(c.secrets, *profile.config)
+		if (c.config.Provider == "r2-oauth") == profile.r2 {
+			c.config = withSecrets(c.config, profileSecrets(*profile.config))
+		}
+		if profile.slot.loadErr != nil && failure == nil {
+			failure = errCloudSecretsUnreadable
+		}
+	}
+	if failure != nil {
+		c.lastError = failure.Error()
+	} else if c.lastError == errCloudSecretsUnreadable.Error() {
+		c.lastError = ""
+	}
+	return failure
+}
+
+// activeSecretsLocked retries unreadable stored secrets and reports whether the
+// active profile has them. Only a user action reopens a credential store that
+// denied access, and Cloudflare keeps requiring Connect Cloudflare for that.
+func (c *cloudSyncRuntime) activeSecretsLocked(explicit bool) error {
+	slot := &c.manualSecrets
+	if c.config.Provider == "r2-oauth" {
+		slot = &c.r2Secrets
+	}
+	if slot.loadErr == nil {
+		return nil
+	}
+	if store, ok := c.secrets.(interface{ retryAccess() }); ok && explicit && slot == &c.manualSecrets && errors.Is(slot.loadErr, errR2SecretAccessDenied) {
+		store.retryAccess()
+	}
+	c.loadSecretsLocked()
+	if slot.loadErr != nil {
+		return errCloudSecretsUnreadable
+	}
+	return nil
 }
 
 // persistLocked uses an atomic rename so interrupted saves cannot lose credentials.
@@ -145,8 +210,29 @@ func (c *cloudSyncRuntime) persistLocked(config CloudSyncConfig, lastSyncAt stri
 	} else {
 		manual = config
 	}
+	manual, manualStored, manualCommit, err := c.manualSecrets.prepare(c.secrets, manual)
+	if err != nil {
+		return err
+	}
+	r2, r2Stored, r2Commit, err := c.r2Secrets.prepare(c.secrets, r2)
+	if err != nil {
+		return err
+	}
+	if config.Provider == "r2-oauth" {
+		config = r2
+	} else {
+		config = manual
+	}
+	saved := savedCloudSync{Version: 2, LastSyncAt: lastSyncAt}
+	if manualStored {
+		saved.ManualSecrets = cloudSecretsSystem
+	}
+	if r2Stored {
+		saved.R2Secrets = cloudSecretsSystem
+	}
 	config, r2 = r2DiskConfig(config), r2DiskConfig(r2)
-	contents, err := json.MarshalIndent(savedCloudSync{Version: 2, Config: config, LastSyncAt: lastSyncAt, ManualConfig: &manual, R2Config: &r2}, "", "  ")
+	saved.Config, saved.ManualConfig, saved.R2Config = config, &manual, &r2
+	contents, err := json.MarshalIndent(saved, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -171,7 +257,12 @@ func (c *cloudSyncRuntime) persistLocked(config CloudSyncConfig, lastSyncAt stri
 	if err = f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), c.path)
+	if err = os.Rename(f.Name(), c.path); err != nil {
+		return err
+	}
+	manualCommit()
+	r2Commit()
+	return nil
 }
 
 func (config CloudSyncConfig) remote() cloudsync.Config {
@@ -315,6 +406,7 @@ func (s *Service) saveCloudSyncConfig(input CloudSyncConfig, previousConnection 
 	c.runMu.Lock()
 	defer c.runMu.Unlock()
 	c.mu.Lock()
+	c.loadSecretsLocked()
 	*previousConnection = c.r2Config.R2ConnectionID
 	previous := c.manualConfig
 	if input.Provider == "r2-oauth" {
@@ -355,6 +447,7 @@ func (s *Service) TestCloudSyncConnection(ctx context.Context, input CloudSyncCo
 	s.cloud.runMu.Lock()
 	defer s.cloud.runMu.Unlock()
 	s.cloud.mu.Lock()
+	s.cloud.loadSecretsLocked()
 	previous := s.cloud.manualConfig
 	if input.Provider == "r2-oauth" {
 		previous = s.cloud.r2Config
@@ -383,7 +476,7 @@ func redactCloudError(err error, config CloudSyncConfig) error {
 }
 
 func (s *Service) SyncCloud(ctx context.Context) (AppState, error) {
-	return s.runCloudSync(ctx, nil, "")
+	return s.runCloudSync(ctx, nil, "", true)
 }
 
 func (s *Service) ResolveCloudSync(ctx context.Context, resolutions map[string]string) (AppState, error) {
@@ -403,10 +496,10 @@ func (s *Service) ResolveCloudSync(ctx context.Context, resolutions map[string]s
 	}
 	choices["__token"] = s.cloud.resolutionToken
 	s.cloud.mu.Unlock()
-	return s.runCloudSync(ctx, choices, "")
+	return s.runCloudSync(ctx, choices, "", true)
 }
 
-func (s *Service) runCloudSync(ctx context.Context, resolutions map[string]string, restoreID string) (AppState, error) {
+func (s *Service) runCloudSync(ctx context.Context, resolutions map[string]string, restoreID string, explicit bool) (AppState, error) {
 	c := s.cloud
 	if !c.runMu.TryLock() {
 		return AppState{}, errors.New("cloud sync is already running")
@@ -418,6 +511,11 @@ func (s *Service) runCloudSync(ctx context.Context, resolutions map[string]strin
 	// Configuration saves share runMu, keeping this session's destination stable
 	// without holding the application's local mutation lock across network I/O.
 	c.mu.Lock()
+	if err := c.activeSecretsLocked(explicit); err != nil {
+		c.lastError, c.lastAttempt = err.Error(), time.Now()
+		c.mu.Unlock()
+		return AppState{}, err
+	}
 	config := c.config
 	c.syncing, c.lastError, c.lastAttempt = true, "", time.Now()
 	c.mu.Unlock()
@@ -493,7 +591,7 @@ func (s *Service) RestoreCloudBackup(ctx context.Context, id string) (AppState, 
 	if id == "" {
 		return AppState{}, errors.New("choose a cloud backup to restore")
 	}
-	return s.runCloudSync(ctx, nil, id)
+	return s.runCloudSync(ctx, nil, id, true)
 }
 
 func (s *Service) startCloudSync(ctx context.Context) {
@@ -512,7 +610,7 @@ func (s *Service) startCloudSync(ctx context.Context) {
 					(c.lastAttempt.IsZero() || time.Since(c.lastAttempt) >= time.Duration(c.config.IntervalMinutes)*time.Minute)
 				c.mu.Unlock()
 				if due {
-					_, _ = s.SyncCloud(ctx)
+					_, _ = s.runCloudSync(ctx, nil, "", false)
 				}
 				select {
 				case <-ctx.Done():

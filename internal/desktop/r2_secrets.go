@@ -68,8 +68,18 @@ func (s *r2SystemSecretStore) retryAccess() {
 	s.mu.Unlock()
 }
 
+// defaultSecretBackend is replaced in tests so they never reach the user's
+// credential store.
+var defaultSecretBackend r2SecretBackend = r2NativeSecretBackend{}
+
 func newR2SecretStore(namespace string) r2SecretStore {
-	return &r2SystemSecretStore{service: r2SecretService(namespace), backend: r2NativeSecretBackend{}}
+	return &r2SystemSecretStore{service: r2SecretService(namespace), backend: defaultSecretBackend}
+}
+
+// secretStoreUnusable reports that this device cannot keep secrets in its
+// credential store, as opposed to a transient failure.
+func secretStoreUnusable(err error) bool {
+	return errors.Is(err, errR2SecretUnavailable) || errors.Is(err, errR2SecretAccessDenied) || errors.Is(err, errR2SecretStoreMissing)
 }
 
 func r2SecretService(namespace string) string {

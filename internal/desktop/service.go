@@ -81,13 +81,16 @@ func New(root string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	cloud, err := loadCloudSync(store.Root())
+	// Sync profiles share the Cloudflare runtime's credential store, including
+	// its access-denied state.
+	r2 := newR2OAuthRuntime(store.Root())
+	cloud, err := loadCloudSync(store.Root(), r2.secrets)
 	if err != nil {
 		// Optional cloud configuration must never prevent opening the local library.
-		cloud = newCloudSyncRuntime(store.Root())
+		cloud = newCloudSyncRuntime(store.Root(), r2.secrets)
 		cloud.lastError = err.Error()
 	}
-	return &Service{desktop: desktop, store: store, sources: sources.New(filepath.Join(store.Root(), "cache", "sources")), theme: "system", locale: "zh-CN", cloud: cloud, r2: newR2OAuthRuntime(store.Root())}, nil
+	return &Service{desktop: desktop, store: store, sources: sources.New(filepath.Join(store.Root(), "cache", "sources")), theme: "system", locale: "zh-CN", cloud: cloud, r2: r2}, nil
 }
 
 // UseIcon gives native surfaces without their own artwork, such as the Linux

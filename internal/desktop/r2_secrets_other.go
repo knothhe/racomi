@@ -2,6 +2,8 @@
 
 package desktop
 
+var errR2SecretStoreMissing = errR2SecretUnavailable
+
 type r2NativeSecretBackend struct{}
 
 func (r2NativeSecretBackend) load(string, string) ([]byte, error) {

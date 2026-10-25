@@ -29,7 +29,7 @@ racomi 默认读写本地资料，关闭同步时无需账号或网络服务。�
 
 OAuth 负责授权与凭据配置；同步仍使用同一个 S3 协议和加密引擎，同步范围、冲突、条件写入和历史恢复与手动配置一致。仍需先在 Cloudflare 开通 R2；账号成员须有创建 Account API Token 的权限。
 
-OAuth 令牌与自动创建的 S3 凭据仅存于本机系统凭据存储（macOS Keychain / Windows Credential Manager / Linux Secret Service，如 GNOME Keyring 或 KWallet；Linux 未运行 Secret Service 时无法使用 Cloudflare 授权连接，手动 S3 不受影响），不返回前端或进入备份。同步加密口令继续按现有方式保存在本机 `0600` 配置文件。授权会请求 `offline_access`：拿到 Refresh Token 时，凭据在到期前 7 天内由同步静默续期，无需再次打开浏览器；没有 Refresh Token 时，有效的 S3 凭据仍可继续同步，授权过期后选择桶、续期凭据或断开连接需重新授权。**断开 Cloudflare** 会删除应用生成的远端凭据并撤销授权，保留手动 S3 设置。
+OAuth 令牌与自动创建的 S3 凭据仅存于本机系统凭据存储（macOS Keychain / Windows Credential Manager / Linux Secret Service，如 GNOME Keyring 或 KWallet；Linux 未运行 Secret Service 时无法使用 Cloudflare 授权连接，手动 S3 不受影响），不返回前端或进入备份。R2 方式的同步加密口令也存入系统凭据存储。授权会请求 `offline_access`：拿到 Refresh Token 时，凭据在到期前 7 天内由同步静默续期，无需再次打开浏览器；没有 Refresh Token 时，有效的 S3 凭据仍可继续同步，授权过期后选择桶、续期凭据或断开连接需重新授权。**断开 Cloudflare** 会删除应用生成的远端凭据并撤销授权，保留手动 S3 设置。
 
 若构建尚未配置发行者的 OAuth Client ID，连接入口会说明不可用，仍可使用手动配置。发行者在 `internal/desktop/cloudflare-registration.json` 中填写公开 Client ID 后重新构建；普通用户无需填写。注册参数及真实 PoC 验证见 [OAuth 接入与验证](r2-oauth-poc.md)。
 
@@ -115,7 +115,7 @@ AWS IAM 策略示例，使用前请替换桶名和前缀：
 
 共享清单、技能内容和历史在客户端进行 AES-256-GCM 加密；口令通过 PBKDF2-SHA256（210,000 次迭代）派生密钥。密钥身份与端点、桶及前缀绑定，因此这些配置和口令须在各设备一致。对象服务仍能看到对象键、大小、请求和时间等存储元数据。
 
-手动 S3 凭据和同步口令存于本机数据目录中的 `cloud-sync-config.json`，以 `0600` 文件权限限制访问；Cloudflare OAuth 令牌和自动生成的 S3 凭据单独存入系统凭据存储。它们不进入共享资料或 ZIP 备份。设置界面只显示是否已保存，不回显敏感值；留空保留原值，更换端点或 Access Key ID 时须重新填写 Secret Access Key。已保存的 Session Token 可勾选“清除已保存的 Session Token”后保存来移除；勾选时测试连接也不使用该 Token，但测试不会修改已保存的配置。普通 R2 长期凭据不需要 Session Token，请勿在该字段填写 Cloudflare API Token。临时凭据过期后需手动更新。
+手动 S3 的 Secret Access Key、Session Token 和同步口令，以及 Cloudflare OAuth 令牌、自动生成的 S3 凭据和 R2 方式的同步口令，都存入本机系统凭据存储（按数据目录区分正式版与 Dev 版）；本机数据目录中的 `cloud-sync-config.json` 只保存端点、桶、前缀等非敏感设置。系统凭据存储不可用或拒绝访问时，手动 S3 回退为把这些秘密写入 `cloud-sync-config.json`，以 `0600` 文件权限限制访问，凭据存储恢复后下次保存配置或同步时自动迁回；R2 方式必须使用系统凭据存储。旧版本保存在配置文件中的明文秘密会在启动时自动迁入凭据存储。它们都不进入共享资料或 ZIP 备份。设置界面只显示是否已保存，不回显敏感值；留空保留原值，更换端点或 Access Key ID 时须重新填写 Secret Access Key。已保存的 Session Token 可勾选“清除已保存的 Session Token”后保存来移除；勾选时测试连接也不使用该 Token，但测试不会修改已保存的配置。普通 R2 长期凭据不需要 Session Token，请勿在该字段填写 Cloudflare API Token。临时凭据过期后需手动更新。
 
 请在可靠位置额外保存加密口令。丢失所有设备上的口令后，存储提供方也无法恢复密文。需要更换口令时，先用现有设备确认本地资料完整，再使用新的前缀和口令建立新的同步空间，逐台更新配置；不要直接在现有空间更换口令。
 
@@ -126,6 +126,7 @@ AWS IAM 策略示例，使用前请替换桶名和前缀：
 | AccessDenied / HTTP 403 | 桶名、前缀限制、对象读写／删除及列表权限；R2 须使用桶范围的 Object Read & Write。 |
 | 签名或区域错误 | API 端点、实际区域、Access Key ID 与 Secret 配对、临时 Session Token，以及设备时间。R2 区域填写 `auto`。 |
 | 无法解密 | 各设备的口令、端点域名、桶及前缀是否完全一致。 |
+| 无法读取已保存的同步凭据 | 系统凭据存储（Keychain / Credential Manager / Secret Service）是否已解锁并允许 racomi 访问；解锁后重新同步，或重新填写凭据和口令并保存。 |
 | 条件写入不受支持 | 提供方或代理未正确实现 ETag / If-Match / If-None-Match；需要换用支持这些功能的 S3 服务。 |
 | 同步完成后 Agent 未看到变化 | 同步只更新本地资料，请在项目／全局页面预览并手动应用。 |
 | 修改配置后看不到旧历史 | 历史属于原来的端点、桶、前缀和口令空间；切回原配置查看。 |

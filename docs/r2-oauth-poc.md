@@ -59,7 +59,7 @@ macOS / Windows 构建入口也支持将该变量嵌入二进制。配置优先�
 
 后端查询可选权限组，生成的 Token 仅有 `Workers R2 Storage Bucket Item Write`，资源严格限定为 `com.cloudflare.edge.r2.bucket.<account>_<jurisdiction>_<bucket>`，有效期 30 天。授权用户需具备 API Token Provisioning 或 Super Administrator 能力；Token 权限受用户权限与 OAuth 授权范围共同限制。PoC 选择已有桶，不自动开通 R2 或创建桶。
 
-OAuth Token 和派生的 S3 秘密进入系统凭据存储；磁盘上的 OAuth 元数据只保留公开 Client ID、连接身份、桶、Token ID 和到期时间。同步加密口令沿用现有设备本地配置策略。前端只获取是否已保存的状态，不获取 OAuth code/verifier/access token/refresh token 或派生的 key pair。
+OAuth Token 和派生的 S3 秘密进入系统凭据存储；磁盘上的 OAuth 元数据只保留公开 Client ID、连接身份、桶、Token ID 和到期时间。同步加密口令同样存入系统凭据存储。前端只获取是否已保存的状态，不获取 OAuth code/verifier/access token/refresh token 或派生的 key pair。
 
 macOS 拒绝、取消或不允许凭据访问后，本次运行会停止后续自动读取、保存和删除请求，包括轮询、后台同步与失败补偿。仅用户主动点击连接 Cloudflare 才允许重新尝试；状态查询不会解除该限制。授权进行中不读取旧账号凭据，账号加载失败后也不由轮询再次请求。手动 S3 模式不会为加载账号而访问 R2 Keychain。
 

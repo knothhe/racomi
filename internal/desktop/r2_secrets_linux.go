@@ -24,6 +24,8 @@ const (
 	r2SecretItemAttrsProperty = "org.freedesktop.Secret.Item.Attributes"
 )
 
+var errR2SecretStoreMissing = errR2SecretServiceUnavailable
+
 var errR2SecretServiceUnavailable = errors.New("No system keyring is available. Install and unlock a Secret Service keyring such as GNOME Keyring or KWallet, then retry.")
 
 type r2SecretServiceSecret struct {
