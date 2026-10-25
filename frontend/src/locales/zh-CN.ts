@@ -1013,6 +1013,7 @@ export const zhCN = {
   "Finish authorization in your browser. This window will update automatically.": "请在浏览器中完成授权，此窗口会自动更新。",
   "Choose a private bucket. racomi creates credentials that can access only that bucket.": "选择私有存储桶，racomi 会创建仅能访问该桶的凭据。",
   "Authorize in your browser to choose a private bucket. racomi manages the access credentials.": "在浏览器中授权后选择私有存储桶，由 racomi 管理访问凭据。",
+  "On the Cloudflare page, click Edit Permissions and turn on Account API Tokens Write before you click Authorize. Cloudflare leaves it off by default, and authorization fails without it.": "在 Cloudflare 页面点击 Authorize 前，请先点 Edit Permissions，打开 Account API Tokens Write。Cloudflare 默认不勾选此权限，未勾选会导致授权失败。",
   "Waiting for browser authorization": "等待浏览器授权",
   "Cloudflare connected": "Cloudflare 已连接",
   "Connect Cloudflare": "连接 Cloudflare",

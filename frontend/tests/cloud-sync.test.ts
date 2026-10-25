@@ -172,6 +172,16 @@ test("OAuth editor escapes external account, bucket and error text and never ren
   assert.match(html, /R2 credentials ready/);
 });
 
+test("OAuth editor tells users to enable the sensitive token scope until Cloudflare is connected", () => {
+  const ui = module();
+  const view = { accounts: [], buckets: [], accountId: "", jurisdiction: "default", bucket: "", busy: false, error: "" };
+  const render = (oauth: { available: boolean; connected: boolean; authorizing: boolean }) => ui.r2SyncConfigFields(ui.defaultCloudSyncConfig(), { ...view, oauth: { ...oauth, lastError: "" } });
+  assert.match(render({ available: true, connected: false, authorizing: false }), /class="r2-consent-hint">.*Edit Permissions.*Account API Tokens Write/);
+  assert.match(render({ available: true, connected: true, authorizing: true }), /r2-consent-hint/);
+  assert.doesNotMatch(render({ available: true, connected: true, authorizing: false }), /r2-consent-hint/);
+  assert.doesNotMatch(render({ available: false, connected: false, authorizing: false }), /r2-consent-hint/);
+});
+
 test("unconfigured OAuth shows one localized notice while damaged authorization metadata stays visible", () => {
   const ui = module();
   const view = { accounts: [], buckets: [], accountId: "", jurisdiction: "default", bucket: "", busy: false, error: "" };

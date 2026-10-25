@@ -26,6 +26,8 @@ OAuth 用于自动配置用户自己的 R2 桶。对象读写、加密、同步�
 | Workers R2 Storage Bucket Item Write | `workers-r2-bucket-item.write` | 授予桶内对象读写能力 |
 | Account API Tokens Write | `account-api-tokens.write` | 自动创建和删除专用桶凭据 |
 
+即使注册时四项都设为 Required，Cloudflare 同意页仍会把 `account-api-tokens.write` 归入 Additional access → Sensitive scopes，并且默认不勾选。用户直接点 Authorize 时，同意页只提交三项，服务端返回 400（code 1420，"Required scopes cannot be omitted from the grant"），页面显示授权失败，也不会回调 racomi。用户必须先点 Edit Permissions 打开 Account API Tokens Write。racomi 在连接前和等待授权期间都会显示这条提示；回调收到 `access_denied` 时也会给出同样的指引。
+
 选择 **Workers R2 Storage Read**；不要选成 **Workers R2 Storage Bucket Item Read**。之前推荐的 Metadata Read 已修正，[列桶 API 明确接受的是 Storage Read / Write](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/methods/list/)。
 
 官方文档对部分旧 scope 的写法不同。注册前用 `GET /oauth/scopes` 核对点分名称；不要照抄旧的 `account_api_tokens:create`。localhost 固定端口必须与注册值完整一致；不假设通配端口或自定义 URL scheme 可用。

@@ -1372,6 +1372,7 @@ input.settings-toggle:checked::after { transform: translateX(12px); }
 .r2-connection-heading { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .r2-connection-heading svg { width: 18px; height: 18px; color: var(--muted); }
 .r2-connection p { color: var(--muted); font-size: 12px; line-height: 1.65; margin: 8px 0 0; }
+.r2-connection .r2-consent-hint { color: var(--amber); padding: 8px 10px; border-radius: 6px; background: var(--amber-soft); }
 .r2-connection-actions { display: flex; gap: 8px; margin-top: 12px; }
 .r2-editor-error { color: var(--red); overflow-wrap: anywhere; font-size: 12px; line-height: 1.65; margin: 0 0 16px; }
 .r2-bucket-fields { margin-bottom: 18px; }

@@ -60,7 +60,8 @@ func TestR2DiagnosticsTerminalResults(t *testing.T) {
 	}{
 		{name: "completed", result: "completed", connected: true},
 		{name: "cleanup warning", result: "completed_with_cleanup_warning", connected: true},
-		{name: "denied", result: "failed"},
+		{name: "denied", result: "denied"},
+		{name: "other oauth error", result: "failed"},
 		{name: "canceled", result: "canceled"},
 		{name: "unexpected listener close", result: "failed"},
 	} {
@@ -85,6 +86,9 @@ func TestR2DiagnosticsTerminalResults(t *testing.T) {
 				if test.name == "denied" {
 					query = url.Values{"state": {auth.Get("state")}, "error": {"access_denied"}}
 				}
+				if test.name == "other oauth error" {
+					query = url.Values{"state": {auth.Get("state")}, "error": {"server_error"}}
+				}
 				if status, err := r2Callback(t, callback, query); err != nil || status != 200 {
 					t.Fatalf("callback: status=%d err=%v", status, err)
 				}
@@ -107,6 +111,9 @@ func TestR2DiagnosticsTerminalResults(t *testing.T) {
 			status := s.GetR2OAuthStatus()
 			if status.Authorizing || status.Connected != test.connected || (test.name == "canceled" && status.LastError != "") {
 				t.Fatalf("unexpected authorization status: %+v", status)
+			}
+			if (test.name == "denied") != (status.LastError == r2OAuthDeniedMessage) {
+				t.Fatalf("denied guidance mismatch: %q", status.LastError)
 			}
 		})
 	}

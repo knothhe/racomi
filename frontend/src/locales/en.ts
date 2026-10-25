@@ -1013,6 +1013,7 @@ export const en = {
   "Finish authorization in your browser. This window will update automatically.": "Finish authorization in your browser. This window will update automatically.",
   "Choose a private bucket. racomi creates credentials that can access only that bucket.": "Choose a private bucket. racomi creates credentials that can access only that bucket.",
   "Authorize in your browser to choose a private bucket. racomi manages the access credentials.": "Authorize in your browser to choose a private bucket. racomi manages the access credentials.",
+  "On the Cloudflare page, click Edit Permissions and turn on Account API Tokens Write before you click Authorize. Cloudflare leaves it off by default, and authorization fails without it.": "On the Cloudflare page, click Edit Permissions and turn on Account API Tokens Write before you click Authorize. Cloudflare leaves it off by default, and authorization fails without it.",
   "Waiting for browser authorization": "Waiting for browser authorization",
   "Cloudflare connected": "Cloudflare connected",
   "Connect Cloudflare": "Connect Cloudflare",

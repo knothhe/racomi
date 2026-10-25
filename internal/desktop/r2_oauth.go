@@ -25,6 +25,8 @@ var cloudflareOAuthClientID string
 
 const r2OAuthRedirectURI = "http://localhost:18796/oauth/cloudflare/callback"
 
+const r2OAuthDeniedMessage = "Cloudflare authorization was denied. Retry, and on the Cloudflare page click Edit Permissions and turn on Account API Tokens Write before you authorize."
+
 type R2OAuthStatus struct {
 	Available   bool   `json:"available"`
 	Connected   bool   `json:"connected"`
@@ -475,6 +477,13 @@ func (s *Service) serveR2OAuth(ctx context.Context, listener net.Listener, host,
 		if q.Get("error") != "" {
 			consumed = true
 			r.mu.Unlock()
+			// Cloudflare reports both Cancel and an incomplete grant as access_denied;
+			// its consent page leaves the sensitive API token scope off by default.
+			if q.Get("error") == "access_denied" {
+				finish("denied", r2OAuthDeniedMessage)
+				io.WriteString(w, "Cloudflare sign-in was denied. Return to racomi to retry, and turn on Account API Tokens Write under Edit Permissions before you authorize.")
+				return
+			}
 			finish("failed", "Cloudflare sign-in was not authorized. You can retry.")
 			io.WriteString(w, "Cloudflare sign-in was not authorized. Return to racomi to retry.")
 			return
