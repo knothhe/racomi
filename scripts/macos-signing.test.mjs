@@ -5,11 +5,22 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {execFileSync} from 'node:child_process';
-import {certificateFingerprint, certificateSecret, generate, parseIdentityList, parseOptions, passwordSecret, selectIdentity, upload} from './macos-signing.mjs';
+import {certificateFingerprint, certificateSecret, generate, parseIdentityList, passwordSecret, selectIdentity, wizard} from './macos-signing.mjs';
 
 const temporary = () => fs.mkdtempSync(path.join(os.tmpdir(), 'racomi-macos-signing-test-'));
 
 // Records gh calls; `secrets` lists the names the repository already has.
+// Answers the wizard's questions in order and records what it asked.
+const answers = (...replies) => {
+ const asked = [];
+ const ask = async (question) => {
+  asked.push(question);
+  if (!replies.length) throw Error(`unexpected question: ${question}`);
+  return replies.shift();
+ };
+ return {ask, asked, left: () => replies.length};
+};
+
 const fakeGh = (secrets) => {
  const calls = [];
  const gh = (args, input) => {
@@ -19,7 +30,7 @@ const fakeGh = (secrets) => {
  return {gh, calls, sets: () => calls.filter((call) => call.args[1] === 'set')};
 };
 
-test('generate creates a private code-signing identity and replaces it only with --force', () => {
+test('generate creates a private code-signing identity and replaces it only on request', () => {
  const root = temporary();
  try {
   const dir = path.join(root, 'identity dir');
@@ -33,8 +44,8 @@ test('generate creates a private code-signing identity and replaces it only with
    assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
    for (const name of ['certificate.pem', 'identity.p12', 'identity-password']) assert.equal(fs.statSync(path.join(dir, name)).mode & 0o777, 0o600);
   }
-  assert.throws(() => generate({dir}), /already exists.*--force/);
-  const second = generate({dir, force: true});
+  assert.throws(() => generate({dir}), /already exists/);
+  const second = generate({dir, replace: true});
   assert.notEqual(second.fingerprint, first.fingerprint);
   assert.equal(certificateFingerprint(fs.readFileSync(path.join(second.replaced, 'certificate.pem'))), first.fingerprint);
   assert.deepEqual(fs.readdirSync(dir).filter((name) => name.startsWith('.generate-')), []);
@@ -48,7 +59,7 @@ test('a failed generate leaves the existing identity untouched', () => {
  try {
   const dir = path.join(root, 'identity');
   const first = generate({dir});
-  assert.throws(() => generate({dir, force: true, openssl: () => { throw Error('openssl failed'); }}), /openssl failed/);
+  assert.throws(() => generate({dir, replace: true, openssl: () => { throw Error('openssl failed'); }}), /openssl failed/);
   assert.equal(certificateFingerprint(fs.readFileSync(path.join(dir, 'certificate.pem'))), first.fingerprint);
   assert.deepEqual(fs.readdirSync(dir).sort(), ['certificate.pem', 'identity-password', 'identity.p12']);
  } finally {
@@ -56,31 +67,74 @@ test('a failed generate leaves the existing identity untouched', () => {
  }
 });
 
-test('upload sets both secrets and overwrites existing ones only with --force', async () => {
+test('wizard generates a certificate and uploads it after confirmation', async () => {
+ const root = temporary();
+ try {
+  const dir = path.join(root, 'identity');
+  const github = fakeGh(['SPARKLE_PRIVATE_KEY']);
+  const script = answers(dir, '1', '', 'yes');
+  const result = await wizard({ask: script.ask, gh: github.gh, platform: 'linux'});
+  assert.equal(script.left(), 0);
+  assert.equal(result.fingerprint, certificateFingerprint(fs.readFileSync(path.join(dir, 'certificate.pem'))));
+  assert.deepEqual(result.overwritten, []);
+  assert.equal(result.repository, 'knothhe/racomi');
+  assert.deepEqual(github.sets().map((call) => call.args[2]), [certificateSecret, passwordSecret]);
+  assert.equal(github.sets()[0].input, fs.readFileSync(path.join(dir, 'identity.p12')).toString('base64'));
+  assert.equal(github.sets()[1].input, fs.readFileSync(path.join(dir, 'identity-password'), 'utf8'));
+ } finally {
+  fs.rmSync(root, {recursive: true, force: true});
+ }
+});
+
+test('wizard overwrites existing secrets only after typing overwrite', async () => {
  const root = temporary();
  try {
   const dir = path.join(root, 'identity');
   const {fingerprint} = generate({dir});
-  const fresh = fakeGh(['SPARKLE_PRIVATE_KEY']);
-  const result = await upload({dir, gh: fresh.gh, confirm: async () => 'yes'});
+  const refused = fakeGh([certificateSecret, passwordSecret]);
+  await assert.rejects(wizard({ask: answers(dir, '1', '', 'yes').ask, gh: refused.gh, platform: 'linux'}), /Cancelled/);
+  assert.equal(refused.sets().length, 0);
+  const github = fakeGh([certificateSecret, passwordSecret]);
+  const script = answers(dir, '1', 'owner/fork', 'overwrite');
+  const result = await wizard({ask: script.ask, gh: github.gh, platform: 'linux'});
   assert.equal(result.fingerprint, fingerprint);
-  assert.deepEqual(result.overwritten, []);
-  assert.deepEqual(fresh.sets().map((call) => call.args[2]), [certificateSecret, passwordSecret]);
-  assert.deepEqual(fresh.sets()[0].input, fs.readFileSync(path.join(dir, 'identity.p12')).toString('base64'));
-  assert.equal(fresh.sets()[1].input, fs.readFileSync(path.join(dir, 'identity-password'), 'utf8'));
-  assert.ok(fresh.sets().every((call) => call.args.includes('knothhe/racomi')));
+  assert.deepEqual(result.overwritten, [certificateSecret, passwordSecret]);
+  assert.ok(github.sets().every((call) => call.args.includes('owner/fork')));
+  assert.ok(script.asked.some((question) => /Type overwrite/.test(question)));
+ } finally {
+  fs.rmSync(root, {recursive: true, force: true});
+ }
+});
 
-  const configured = fakeGh([certificateSecret, passwordSecret]);
-  await assert.rejects(upload({dir, gh: configured.gh, confirm: async () => 'yes'}), /already has .*--force/);
-  assert.equal(configured.sets().length, 0);
-  const forced = await upload({dir, gh: configured.gh, force: true, repository: 'owner/fork', confirm: async () => 'yes'});
-  assert.deepEqual(forced.overwritten, [certificateSecret, passwordSecret]);
-  assert.ok(configured.sets().every((call) => call.args.includes('owner/fork')));
+test('wizard replaces a local certificate only after typing replace', async () => {
+ const root = temporary();
+ try {
+  const dir = path.join(root, 'identity');
+  const first = generate({dir});
+  await assert.rejects(wizard({ask: answers(dir, '2', 'no').ask, gh: fakeGh([]).gh, platform: 'linux'}), /certificate was kept/);
+  assert.equal(certificateFingerprint(fs.readFileSync(path.join(dir, 'certificate.pem'))), first.fingerprint);
+  const github = fakeGh([]);
+  const result = await wizard({ask: answers(dir, '2', 'replace', '', 'yes').ask, gh: github.gh, platform: 'linux'});
+  assert.notEqual(result.fingerprint, first.fingerprint);
+  const replaced = fs.readdirSync(dir).find((name) => name.startsWith('replaced-'));
+  assert.equal(certificateFingerprint(fs.readFileSync(path.join(dir, replaced, 'certificate.pem'))), first.fingerprint);
+  assert.equal(github.sets().length, 2);
+ } finally {
+  fs.rmSync(root, {recursive: true, force: true});
+ }
+});
 
-  const declined = fakeGh([]);
-  await assert.rejects(upload({dir, gh: declined.gh, confirm: async () => 'no'}), /Cancelled/);
-  assert.equal(declined.sets().length, 0);
-  await assert.rejects(upload({dir: path.join(root, 'missing'), gh: fakeGh([]).gh}), /generate` first/);
+test('wizard offers the keychain only on macOS, re-asks invalid choices and can quit', async () => {
+ const root = temporary();
+ try {
+  const dir = path.join(root, 'identity');
+  generate({dir});
+  // Linux lists upload, replace and quit; option 3 quits without touching GitHub.
+  const linux = fakeGh([]);
+  assert.deepEqual(await wizard({ask: answers(dir, '9', 'x', '3').ask, gh: linux.gh, platform: 'linux'}), {uploaded: false});
+  assert.equal(linux.calls.length, 0);
+  assert.deepEqual(await wizard({ask: answers(dir, '4').ask, gh: linux.gh, platform: 'darwin'}), {uploaded: false});
+  await assert.rejects(wizard({ask: answers(dir, '0', '', 'five').ask, gh: linux.gh, platform: 'linux'}), /No option was chosen/);
  } finally {
   fs.rmSync(root, {recursive: true, force: true});
  }
@@ -109,10 +163,4 @@ test('keychain identities are parsed once and repacked from a multi-identity exp
  } finally {
   fs.rmSync(root, {recursive: true, force: true});
  }
-});
-
-test('options accept only known flags with values', () => {
- assert.deepEqual(parseOptions(['--repo', 'owner/name', '--force'], {repo: String, force: Boolean}), {repo: 'owner/name', force: true});
- assert.throws(() => parseOptions(['--repo'], {repo: String}), /needs a value/);
- assert.throws(() => parseOptions(['--yes'], {force: Boolean}), /Unknown option/);
 });

@@ -32,11 +32,11 @@ export function certificateFingerprint(pem) {
 }
 
 // Replacing an identity keeps the previous files in a sibling directory, so a
-// mistaken --force can still be undone before the secrets are overwritten.
-export function generate({dir = defaultIdentityDir, force = false, openssl = (args) => run('openssl', args)} = {}) {
+// mistaken replacement can still be undone before the secrets are overwritten.
+export function generate({dir = defaultIdentityDir, replace = false, openssl = (args) => run('openssl', args)} = {}) {
  const files = identityFiles.map((name) => path.join(dir, name));
  const existing = files.filter((file) => fs.existsSync(file));
- requireThat(!existing.length || force, `A macOS signing identity already exists in ${dir}. ${replaceWarning} Pass --force to replace it.`);
+ requireThat(!existing.length || replace, `A macOS signing identity already exists in ${dir}. ${replaceWarning}`);
  fs.mkdirSync(dir, {recursive: true, mode: 0o700});
  fs.chmodSync(dir, 0o700);
  // Build the identity next to its destination so a failed run changes nothing
@@ -91,20 +91,17 @@ export function selectIdentity(pem, sha1) {
 
 function readIdentityDir(dir) {
  const [certificate, identity, password] = identityFiles.map((name) => path.join(dir, name));
- requireThat(identityFiles.every((name) => fs.existsSync(path.join(dir, name))), `No macOS signing identity in ${dir}; run \`node scripts/macos-signing.mjs generate\` first.`);
+ requireThat(identityFiles.every((name) => fs.existsSync(path.join(dir, name))), `No macOS signing identity in ${dir}.`);
  return {certificate: fs.readFileSync(certificate, 'utf8'), identity: fs.readFileSync(identity), password: fs.readFileSync(password, 'utf8').trim()};
 }
 
 // Exports one code-signing identity from the maintainer's macOS keychain.
-async function readKeychainIdentity(prompt, work) {
- requireThat(process.platform === 'darwin', 'Uploading a keychain identity requires macOS.');
+async function readKeychainIdentity(ask, work) {
  const keychains = run('/usr/bin/security', ['list-keychains', '-d', 'user']).split('\n').map((line) => line.trim().replace(/^"|"$/g, '')).filter(Boolean);
  const identities = keychains.flatMap((keychain) => parseIdentityList(run('/usr/bin/security', ['find-identity', '-p', 'codesigning', keychain])).map((identity) => ({...identity, keychain})));
  requireThat(identities.length, 'No code-signing identity was found in the keychain search list.');
- identities.forEach((identity, index) => console.log(`${index + 1}) ${identity.name}${identity.status ? ` (${identity.status})` : ''}\n   ${identity.hash}  ${identity.keychain}`));
- const choice = Number(await prompt.question('Select a signing certificate: '));
- const selected = identities[choice - 1];
- requireThat(Number.isInteger(choice) && selected, 'No signing certificate selected.');
+ const selected = await choose(ask, 'Which certificate?', identities.map((identity) => ({
+  label: `${identity.name}${identity.status ? ` (${identity.status})` : ''}\n     ${identity.hash}  ${identity.keychain}`, value: identity})));
  // `security export` cannot pick one identity; keep the full export in a
  // private temporary directory and repack only the selected pair.
  const file = (name) => path.join(work, name);
@@ -121,69 +118,86 @@ async function readKeychainIdentity(prompt, work) {
  return {certificate: pair.certificate, identity: fs.readFileSync(file('identity.p12')), password};
 }
 
-// GitHub never returns secret values, so an existing secret cannot be compared
-// with the new identity; overwriting it requires --force.
-export async function upload({repository = defaultRepository, dir = defaultIdentityDir, keychain = false, force = false,
- gh = (args, input) => run('gh', args, input), confirm} = {}) {
- gh(['auth', 'status']);
- const prompt = readline.createInterface({input: process.stdin, output: process.stdout});
- const work = fs.mkdtempSync(path.join(os.tmpdir(), 'racomi-signing-upload-'));
+// Asks until the answer is one of the numbered options.
+async function choose(ask, question, options) {
+ options.forEach((option, index) => console.log(`  ${index + 1}) ${option.label}`));
+ for (let attempt = 0; attempt < 3; attempt++) {
+  const answer = (await ask(`${question} [1-${options.length}]: `)).trim();
+  if (/^\d+$/.test(answer) && options[Number(answer) - 1]) return options[Number(answer) - 1].value;
+  console.log('Enter one of the listed numbers.');
+ }
+ throw Error('No option was chosen.');
+}
+
+const askWithDefault = async (ask, question, fallback) => (await ask(`${question} [${fallback}]: `)).trim() || fallback;
+const confirmWord = async (ask, question, word) => (await ask(`${question} Type ${word} to continue: `)).trim() === word;
+
+function describe(pem) {
+ const certificate = new crypto.X509Certificate(pem);
+ const expired = Date.parse(certificate.validTo) < Date.now() ? ' (expired)' : '';
+ return `  Certificate: ${certificate.subject.replaceAll('\n', ', ')}\n  SHA-256:     ${certificateFingerprint(pem)}\n  Expires:     ${certificate.validTo}${expired}`;
+}
+
+// Walks through choosing or creating the identity and uploading it. GitHub
+// never returns secret values, so overwriting existing secrets is confirmed
+// explicitly rather than compared.
+export async function wizard({ask, gh = (args, input) => run('gh', args, input), openssl, platform = process.platform, dir: suggestedDir = defaultIdentityDir}) {
+ const work = fs.mkdtempSync(path.join(os.tmpdir(), 'racomi-signing-'));
  try {
-  const source = keychain ? await readKeychainIdentity(prompt, work) : readIdentityDir(dir);
+  const dir = path.resolve(await askWithDefault(ask, 'Identity directory', suggestedDir));
+  const local = identityFiles.every((name) => fs.existsSync(path.join(dir, name)));
+  const options = [];
+  if (local) {
+   console.log(`Found a signing identity in ${dir}:\n${describe(fs.readFileSync(path.join(dir, 'certificate.pem')))}`);
+   options.push({label: 'Upload this certificate', value: 'local'}, {label: 'Replace it with a new certificate', value: 'replace'});
+  } else {
+   options.push({label: 'Generate a new certificate', value: 'generate'});
+  }
+  if (platform === 'darwin') options.push({label: 'Choose a certificate from the macOS keychain', value: 'keychain'});
+  options.push({label: 'Quit', value: 'quit'});
+  const action = await choose(ask, 'What would you like to do?', options);
+  if (action === 'quit') return {uploaded: false};
+  if (action === 'replace') {
+   console.log(`The current files move to a replaced-<time> folder in ${dir}. ${replaceWarning}`);
+   requireThat(await confirmWord(ask, 'Replace the certificate?', 'replace'), 'Cancelled; the certificate was kept.');
+  }
+  if (action === 'generate' || action === 'replace') {
+   const created = generate({dir, replace: action === 'replace', openssl});
+   if (created.replaced) console.log(`Moved the previous identity to ${created.replaced}.`);
+   console.log(`Created a new certificate in ${dir}; back up this folder offline.`);
+  }
+  const source = action === 'keychain' ? await readKeychainIdentity(ask, work) : readIdentityDir(dir);
   const fingerprint = certificateFingerprint(source.certificate);
-  const certificate = new crypto.X509Certificate(source.certificate);
-  if (Date.parse(certificate.validTo) < Date.now()) console.log(`Warning: this certificate expired on ${certificate.validTo}.`);
+  const repository = await askWithDefault(ask, 'GitHub repository', defaultRepository);
+  gh(['auth', 'status']);
   const names = new Set(gh(['secret', 'list', '--repo', repository, '--json', 'name', '--jq', '.[].name']).split('\n').map((name) => name.trim()));
   const existing = [certificateSecret, passwordSecret].filter((name) => names.has(name));
-  requireThat(!existing.length || force, `${repository} already has ${existing.join(' and ')}. ${replaceWarning} Pass --force to overwrite.`);
-  console.log(`Certificate: ${certificate.subject.replaceAll('\n', ', ')}\nSHA-256:     ${fingerprint}\nRepository:  ${repository}`);
-  if (existing.length) console.log(`This overwrites ${existing.join(' and ')}. ${replaceWarning}`);
-  const ask = confirm ?? (process.stdin.isTTY ? (question) => prompt.question(question) : undefined);
-  if (ask) requireThat((await ask(`Upload ${certificateSecret} and ${passwordSecret}? Type yes to continue: `)).trim() === 'yes', 'Cancelled; nothing was uploaded.');
+  console.log(`Ready to upload to ${repository}:\n${describe(source.certificate)}`);
+  if (existing.length) {
+   console.log(`${repository} already has ${existing.join(' and ')}; uploading replaces them. ${replaceWarning}`);
+   requireThat(await confirmWord(ask, 'Overwrite the secrets?', 'overwrite'), 'Cancelled; nothing was uploaded.');
+  } else {
+   requireThat(await confirmWord(ask, `Upload ${certificateSecret} and ${passwordSecret}?`, 'yes'), 'Cancelled; nothing was uploaded.');
+  }
   gh(['secret', 'set', certificateSecret, '--repo', repository], source.identity.toString('base64'));
   gh(['secret', 'set', passwordSecret, '--repo', repository], source.password);
-  return {fingerprint, overwritten: existing};
+  return {uploaded: true, fingerprint, repository, overwritten: existing};
  } finally {
-  prompt.close();
   fs.rmSync(work, {recursive: true, force: true});
  }
 }
 
-export function parseOptions(args, allowed) {
- const options = {};
- for (let index = 0; index < args.length; index++) {
-  const name = args[index].replace(/^--/, '');
-  requireThat(args[index].startsWith('--') && name in allowed, `Unknown option: ${args[index]}`);
-  if (allowed[name] === Boolean) options[name] = true;
-  else {
-   requireThat(index + 1 < args.length, `${args[index]} needs a value`);
-   options[name] = args[++index];
-  }
- }
- return options;
-}
-
-const usage = 'Usage: macos-signing.mjs generate [--dir DIR] [--force] | upload [--repo OWNER/NAME] [--dir DIR | --keychain] [--force]';
-
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+ const prompt = readline.createInterface({input: process.stdin, output: process.stdout});
  try {
-  const [action, ...args] = process.argv.slice(2);
-  if (action === 'generate') {
-   const options = parseOptions(args, {dir: String, force: Boolean});
-   const result = generate({...options, dir: options.dir ? path.resolve(options.dir) : undefined});
-   if (result.replaced) console.log(`Moved the previous identity to ${result.replaced}.`);
-   console.log(`Created certificate SHA-256 ${result.fingerprint} in ${result.dir}; back it up offline.`);
-   console.log('Upload it with: node scripts/macos-signing.mjs upload');
-  } else if (action === 'upload') {
-   const options = parseOptions(args, {repo: String, dir: String, keychain: Boolean, force: Boolean});
-   requireThat(!(options.dir && options.keychain), '--dir and --keychain cannot be combined');
-   const result = await upload({repository: options.repo, dir: options.dir ? path.resolve(options.dir) : undefined, keychain: options.keychain, force: options.force});
-   console.log(`${result.overwritten.length ? 'Overwrote' : 'Uploaded'} the signing secrets for certificate ${result.fingerprint}.`);
-  } else {
-   throw Error(usage);
-  }
+  requireThat(process.argv.length === 2, 'This script takes no arguments; run it without options and answer its questions.');
+  requireThat(process.stdin.isTTY && process.stdout.isTTY, 'Run this script in an interactive terminal.');
+  const result = await wizard({ask: (question) => prompt.question(question)});
+  if (result.uploaded) console.log(`${result.overwritten.length ? 'Overwrote' : 'Uploaded'} the signing secrets in ${result.repository} for certificate ${result.fingerprint}.`);
  } catch (error) {
   console.error(`macOS signing failed: ${error.message}`);
   process.exitCode = 1;
+ } finally {
+  prompt.close();
  }
 }
