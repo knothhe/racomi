@@ -197,7 +197,8 @@ test('verify accepts only bundles signed with the pinned certificate', () => {
   verify(bundle, {pin: pinned.fingerprint, codesign: codesign(der('pinned'))});
   assert.throws(() => verify(bundle, {pin: pinned.fingerprint, codesign: codesign(der('other'))}), /not signed with the pinned/);
   assert.throws(() => verify(bundle, {pin: pinned.fingerprint, codesign: codesign(der('pinned'), 'designated => cdhash H"0123"')}), /certificate-based/);
-  assert.throws(() => verify(bundle, {pin: undefined, codesign: codesign(der('pinned'))}), /No pinned/);
+  // undefined loads the repository pin; null explicitly simulates a missing pin.
+  assert.throws(() => verify(bundle, {pin: null, codesign: () => assert.fail('codesign must not run without a pin')}), /No pinned/);
   assert.notEqual(other.fingerprint, pinned.fingerprint);
   assertCertificateRequirement('designated => identifier "x" and certificate root = H"0123456789abcdef0123456789abcdef01234567"');
  } finally {
