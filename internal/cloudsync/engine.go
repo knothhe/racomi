@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"racomi/internal/skills"
@@ -237,9 +238,65 @@ func resolutionToken(base, local skills.SharedState, revision string) string {
 	return sumHex(data)
 }
 
-func (s *session) downloadObjects(ctx context.Context, store *skills.Store, state skills.SharedState) (int, error) {
-	downloaded := 0
+// transferConcurrency bounds parallel object transfers. Each object is one
+// request, so a first sync over a high-latency link is dominated by round trips.
+const transferConcurrency = 8
+
+// forEachObject runs transfer once per distinct content hash with bounded
+// concurrency. The first failure cancels the remaining transfers; the count
+// covers the transfers that completed, which persist for the next attempt.
+func forEachObject(ctx context.Context, state skills.SharedState, transfer func(context.Context, string) (bool, error)) (int, error) {
+	var hashes []string
 	seen := map[string]bool{}
+	for _, skill := range state.Skills {
+		hash := skill.ContentHash
+		if !hashPattern.MatchString(hash) {
+			return 0, errors.New("invalid skill content hash")
+		}
+		if !seen[hash] {
+			seen[hash] = true
+			hashes = append(hashes, hash)
+		}
+	}
+	workCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var (
+		count    atomic.Int64
+		failOnce sync.Once
+		failure  error
+		workers  sync.WaitGroup
+	)
+	jobs := make(chan string)
+	for range min(transferConcurrency, len(hashes)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for hash := range jobs {
+				done, err := transfer(workCtx, hash)
+				if err != nil {
+					failOnce.Do(func() { failure = err; cancel() })
+				} else if done {
+					count.Add(1)
+				}
+			}
+		}()
+	}
+feed:
+	for _, hash := range hashes {
+		select {
+		case jobs <- hash:
+		case <-workCtx.Done():
+			break feed
+		}
+	}
+	close(jobs)
+	workers.Wait()
+	if failure == nil {
+		failure = ctx.Err()
+	}
+	return int(count.Load()), failure
+}
+func (s *session) downloadObjects(ctx context.Context, store *skills.Store, state skills.SharedState) (int, error) {
 	parent := filepath.Join(store.Root(), "objects")
 	info, err := os.Lstat(parent)
 	if err != nil {
@@ -248,96 +305,70 @@ func (s *session) downloadObjects(ctx context.Context, store *skills.Store, stat
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return 0, errors.New("unsafe skill objects directory")
 	}
-	for _, skill := range state.Skills {
-		hash := skill.ContentHash
-		if !hashPattern.MatchString(hash) {
-			return downloaded, errors.New("invalid skill content hash")
-		}
-		if seen[hash] {
-			continue
-		}
-		seen[hash] = true
+	return forEachObject(ctx, state, func(ctx context.Context, hash string) (bool, error) {
 		destination := filepath.Join(parent, hash)
 		if _, err := os.Lstat(destination); err == nil {
 			actual, err := skills.HashDir(destination)
 			if err != nil || actual != hash {
-				return downloaded, errors.New("existing local skill object failed verification")
+				return false, errors.New("existing local skill object failed verification")
 			}
-			continue
+			return false, nil
 		} else if !errors.Is(err, os.ErrNotExist) {
-			return downloaded, err
+			return false, err
 		}
 		key := s.objectKey(hash)
 		encrypted, _, err := s.remote.get(ctx, key, maxArchiveBytes+1024)
 		if err != nil {
-			return downloaded, err
+			return false, err
 		}
 		plain, err := s.crypto.open(key, encrypted)
 		if err != nil {
-			return downloaded, err
+			return false, err
 		}
 		stage, err := os.MkdirTemp(parent, ".cloud-incoming-")
 		if err != nil {
-			return downloaded, err
+			return false, err
 		}
 		err = extractObject(plain, stage, hash)
 		if err == nil {
 			err = os.Rename(stage, destination)
 		}
 		os.RemoveAll(stage)
-		if err != nil {
-			return downloaded, err
-		}
-		downloaded++
-	}
-	return downloaded, nil
+		return err == nil, err
+	})
 }
 func (s *session) uploadObjects(ctx context.Context, store *skills.Store, state skills.SharedState) (int, error) {
-	uploaded := 0
-	seen := map[string]bool{}
-	for _, skill := range state.Skills {
-		hash := skill.ContentHash
-		if !hashPattern.MatchString(hash) {
-			return uploaded, errors.New("invalid skill content hash")
-		}
-		if seen[hash] {
-			continue
-		}
-		seen[hash] = true
+	return forEachObject(ctx, state, func(ctx context.Context, hash string) (bool, error) {
 		key := s.objectKey(hash)
 		_, _, err := s.remote.request(ctx, "HEAD", key, nil, nil, nil, 4096)
 		if err == nil {
-			continue
+			return false, nil
 		}
 		if !statusIs(err, 404) {
-			return uploaded, err
+			return false, err
 		}
 		plain, err := archiveObject(filepath.Join(store.Root(), "objects", hash), hash)
 		if err != nil {
-			return uploaded, err
+			return false, err
 		}
 		encrypted, err := s.crypto.seal(key, plain)
 		if err != nil {
-			return uploaded, err
+			return false, err
 		}
 		_, err = s.remote.put(ctx, key, encrypted, "", true)
 		if statusIs(err, 412) {
 			// A competing create can have won, but a concurrent delete can
 			// remove it again. Verify existence before committing references.
 			if _, _, verifyErr := s.remote.request(ctx, "HEAD", key, nil, nil, nil, 4096); verifyErr != nil {
-				return uploaded, errors.New("concurrently uploaded skill object could not be verified; retry synchronization")
+				return false, errors.New("concurrently uploaded skill object could not be verified; retry synchronization")
 			}
-			continue
+			return false, nil
 		}
 		// S3's 409 ConditionalRequestConflict can be caused by a concurrent
 		// deletion. It does not prove that the object exists, so abort rather
 		// than publish a manifest with a potentially missing content object.
-		if err != nil {
-			return uploaded, err
-		}
-		uploaded++
-	}
-	return uploaded, nil
+		return err == nil, err
+	})
 }
 func (s *session) commit(ctx context.Context, state skills.SharedState, parent, etag string) (manifest, error) {
 	id, err := randomID()

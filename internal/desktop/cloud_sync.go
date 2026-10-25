@@ -438,9 +438,16 @@ func (s *Service) runCloudSync(ctx context.Context, resolutions map[string]strin
 	} else {
 		result, err = cloudsync.SyncWithLocalLock(ctx, s.store, config.remote(), resolutions, &s.mu)
 	}
+	// Transferred objects persist across attempts, so a large first sync that
+	// reaches the per-attempt limit resumes on the next tick instead of waiting
+	// a full interval.
+	resume := errors.Is(err, context.DeadlineExceeded) && result.Downloaded+result.Uploaded > 0
 	err = redactCloudError(err, config)
 	c.mu.Lock()
 	c.syncing = false
+	if resume {
+		c.lastAttempt = time.Time{}
+	}
 	if err != nil {
 		c.lastError = err.Error()
 	} else {

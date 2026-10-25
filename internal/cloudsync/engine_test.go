@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,6 +34,12 @@ type fakeS3 struct {
 	objectPutStatus  int
 	ignoreConditions bool
 	headWrites       int
+	failGet          string
+	objectDelay      time.Duration
+	stallGetsAfter   int
+	objectGets       int
+	inFlight         atomic.Int32
+	maxInFlight      atomic.Int32
 }
 
 func newFakeS3(t *testing.T) (*fakeS3, Config) {
@@ -48,6 +55,30 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := strings.TrimPrefix(r.URL.Path, "/test-bucket/")
+	if strings.Contains(key, "/objects/") {
+		// Measure overlap before taking the lock that serializes the fake.
+		current := f.inFlight.Add(1)
+		defer f.inFlight.Add(-1)
+		for peak := f.maxInFlight.Load(); current > peak && !f.maxInFlight.CompareAndSwap(peak, current); peak = f.maxInFlight.Load() {
+		}
+		delay := f.objectDelay
+		f.mu.Lock()
+		if r.Method == "GET" && f.failGet != "" && strings.Contains(key, f.failGet) {
+			// Fail after the other transfers so their progress is observable.
+			delay += 200 * time.Millisecond
+		}
+		stall := false
+		if r.Method == "GET" && f.stallGetsAfter > 0 {
+			f.objectGets++
+			stall = f.objectGets > f.stallGetsAfter
+		}
+		f.mu.Unlock()
+		if stall {
+			<-r.Context().Done()
+			return
+		}
+		time.Sleep(delay)
+	}
 	if r.Method == "PUT" && strings.HasSuffix(key, "head.enc") {
 		f.mu.Lock()
 		hook := f.beforeHeadPut
@@ -81,6 +112,10 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	object, exists := f.objects[key]
 	switch r.Method {
 	case "GET", "HEAD":
+		if r.Method == "GET" && f.failGet != "" && strings.Contains(key, f.failGet) {
+			w.WriteHeader(500)
+			return
+		}
 		if !exists {
 			w.WriteHeader(404)
 			return

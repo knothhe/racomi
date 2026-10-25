@@ -2,9 +2,15 @@ package cloudsync
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	"racomi/internal/skills"
 )
 
 func TestConcurrentDeletionOfUnsyncedPresetIsPreservedOnRetry(t *testing.T) {
@@ -49,4 +55,90 @@ func TestConcurrentDeletionOfUnsyncedPresetIsPreservedOnRetry(t *testing.T) {
 	if names := presetNames(t, store); names != "" {
 		t.Fatalf("retry resurrected deleted preset: %s", names)
 	}
+}
+
+func TestObjectTransfersRunInParallel(t *testing.T) {
+	fake, config := newFakeS3(t)
+	fake.objectDelay = 20 * time.Millisecond
+	a, b := openStore(t), openStore(t)
+	for i := range 2 * transferConcurrency {
+		addSkill(t, a, fmt.Sprintf("parallel-%02d", i))
+	}
+	if result := syncOK(t, a, config); result.Uploaded != 2*transferConcurrency {
+		t.Fatalf("uploaded=%d", result.Uploaded)
+	}
+	if peak := fake.maxInFlight.Swap(0); peak < 2 || peak > transferConcurrency {
+		t.Fatalf("upload overlap=%d, want 2..%d", peak, transferConcurrency)
+	}
+	if result := syncOK(t, b, config); result.Downloaded != 2*transferConcurrency {
+		t.Fatalf("downloaded=%d", result.Downloaded)
+	}
+	if peak := fake.maxInFlight.Load(); peak < 2 || peak > transferConcurrency {
+		t.Fatalf("download overlap=%d, want 2..%d", peak, transferConcurrency)
+	}
+}
+
+func TestFailedDownloadKeepsCompletedObjectsForRetry(t *testing.T) {
+	fake, config := newFakeS3(t)
+	a, b := openStore(t), openStore(t)
+	var failing string
+	for i := range 2 * transferConcurrency {
+		failing = addSkill(t, a, fmt.Sprintf("retry-%02d", i)).ContentHash
+	}
+	syncOK(t, a, config)
+	fake.mu.Lock()
+	fake.failGet = failing
+	fake.mu.Unlock()
+	first, err := Sync(context.Background(), b, config, nil)
+	if err == nil {
+		t.Fatal("sync succeeded despite a failing object download")
+	}
+	if _, statErr := os.Lstat(filepath.Join(b.Root(), "objects", failing)); !os.IsNotExist(statErr) {
+		t.Fatalf("failed object was installed: %v", statErr)
+	}
+	if skillNames(t, b) != 0 {
+		t.Fatal("partial download was committed to the library")
+	}
+	fake.mu.Lock()
+	fake.failGet = ""
+	fake.mu.Unlock()
+	second := syncOK(t, b, config)
+	if first.Downloaded+second.Downloaded != 2*transferConcurrency || second.Downloaded == 2*transferConcurrency {
+		t.Fatalf("downloaded first=%d retry=%d", first.Downloaded, second.Downloaded)
+	}
+	if skillNames(t, b) != 2*transferConcurrency {
+		t.Fatalf("skills=%d after retry", skillNames(t, b))
+	}
+}
+
+// The desktop scheduler resumes immediately after a deadline that made
+// progress, so the deadline must surface unwrapped alongside the count.
+func TestDeadlineReportsCompletedDownloads(t *testing.T) {
+	fake, config := newFakeS3(t)
+	a, b := openStore(t), openStore(t)
+	for i := range 4 * transferConcurrency {
+		addSkill(t, a, fmt.Sprintf("deadline-%02d", i))
+	}
+	syncOK(t, a, config)
+	fake.mu.Lock()
+	fake.stallGetsAfter = transferConcurrency
+	fake.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	result, err := Sync(ctx, b, config, nil)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err=%v, want deadline exceeded", err)
+	}
+	if result.Downloaded != transferConcurrency {
+		t.Fatalf("downloaded=%d before the deadline", result.Downloaded)
+	}
+}
+
+func skillNames(t *testing.T, store *skills.Store) int {
+	t.Helper()
+	state, err := currentShared(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(state.Skills)
 }

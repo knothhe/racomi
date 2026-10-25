@@ -119,11 +119,24 @@ func statusIs(err error, statuses ...int) bool {
 	return false
 }
 
+// transferTransport keeps enough idle connections for parallel object
+// transfers; the default of two per host would redo TLS handshakes. It is
+// derived per client so a replaced DefaultTransport still applies.
+func transferTransport() http.RoundTripper {
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return http.DefaultTransport
+	}
+	transport = transport.Clone()
+	transport.MaxIdleConnsPerHost = transferConcurrency
+	return transport
+}
+
 func newClient(config Config) (*s3Client, error) {
 	if err := ValidateConfig(config); err != nil {
 		return nil, err
 	}
-	return &s3Client{config: normalized(config), client: &http.Client{Timeout: 45 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	return &s3Client{config: normalized(config), client: &http.Client{Transport: transferTransport(), Timeout: 45 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
 func awsEscape(value string, slash bool) string {
