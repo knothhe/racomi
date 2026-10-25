@@ -18,6 +18,9 @@ static NSMutableDictionary *racomiR2SecretQuery(const char *service, const char 
  }];
 }
 
+// Keychain Access shows the label; lookups use only service and account.
+static NSString *const racomiSecretLabel = @"racomi credentials";
+
 static int racomiR2SecretLoad(const char *service, const char *key, void **bytes, size_t *size) {
  @autoreleasepool {
   NSMutableDictionary *query = racomiR2SecretQuery(service, key);
@@ -49,10 +52,12 @@ static int racomiR2SecretSave(const char *service, const char *key, const void *
   OSStatus status = SecItemUpdate((CFDictionaryRef)query, (CFDictionaryRef)@{(id)kSecValueData: data});
   if (status == errSecItemNotFound) {
    query[(id)kSecValueData] = data;
+   query[(id)kSecAttrLabel] = racomiSecretLabel;
    status = SecItemAdd((CFDictionaryRef)query, NULL);
    // Another instance may have added this exact item between update and add.
    if (status == errSecDuplicateItem) {
     [query removeObjectForKey:(id)kSecValueData];
+    [query removeObjectForKey:(id)kSecAttrLabel];
     status = SecItemUpdate((CFDictionaryRef)query, (CFDictionaryRef)@{(id)kSecValueData: data});
    }
   }
@@ -71,11 +76,12 @@ static void racomiR2SecretFree(void *bytes, size_t size) {
 import "C"
 
 import (
+	"errors"
 	"fmt"
 	"unsafe"
 )
 
-var errR2SecretStoreMissing = errR2SecretUnavailable
+var errR2SecretStoreMissing = errors.New("No macOS keychain is available. Restore the login keychain in Keychain Access, then retry.")
 
 type r2NativeSecretBackend struct{}
 
@@ -86,7 +92,10 @@ func r2KeychainError(operation string, status C.int) error {
 	if status == C.errSecUserCanceled || status == C.errSecAuthFailed || status == C.errSecInteractionNotAllowed {
 		return errR2SecretAccessDenied
 	}
-	return fmt.Errorf("macOS Keychain could not %s Cloudflare credentials (status %d)", operation, int(status))
+	if status == C.errSecNotAvailable || status == C.errSecNoSuchKeychain || status == C.errSecNoDefaultKeychain {
+		return errR2SecretStoreMissing
+	}
+	return fmt.Errorf("macOS Keychain could not %s racomi credentials (status %d)", operation, int(status))
 }
 
 func (r2NativeSecretBackend) load(service, key string) ([]byte, error) {

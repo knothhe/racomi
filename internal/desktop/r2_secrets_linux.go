@@ -200,7 +200,7 @@ func (r2NativeSecretBackend) save(service, key string, value []byte) error {
 			return err
 		}
 		properties := map[string]dbus.Variant{
-			r2SecretItemLabelProperty: dbus.MakeVariant("racomi Cloudflare R2 credentials"),
+			r2SecretItemLabelProperty: dbus.MakeVariant("racomi credentials"),
 			r2SecretItemAttrsProperty: dbus.MakeVariant(r2SecretServiceAttributes(service, key)),
 		}
 		secret := r2SecretServiceSecret{Session: s.path, Parameters: []byte{}, Value: value, ContentType: "application/octet-stream"}
