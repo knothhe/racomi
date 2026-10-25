@@ -243,7 +243,11 @@ func r2TestService(t *testing.T) (*Service, *r2ControlFixture, *memoryR2SecretBa
 	r.redirectURI = fmt.Sprintf("http://localhost:%d/oauth/cloudflare/callback", port)
 	r.openURL = func(value string) error { urls <- value; return nil }
 	s.r2 = r
-	t.Cleanup(func() { s.CancelR2OAuth() })
+	t.Cleanup(func() {
+		if err := s.ServiceShutdown(); err != nil {
+			t.Error(err)
+		}
+	})
 	return s, control, backend, urls
 }
 

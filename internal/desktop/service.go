@@ -136,6 +136,9 @@ func (s *Service) ServiceStartup(ctx context.Context, _ application.ServiceOptio
 // window close alone does not revoke an existing Cloudflare connection.
 func (s *Service) ServiceShutdown() error {
 	s.CancelR2OAuth()
+	if s.r2 != nil {
+		s.r2.workers.Wait()
+	}
 	return nil
 }
 

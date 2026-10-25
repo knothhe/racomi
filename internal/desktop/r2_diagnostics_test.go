@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -68,7 +69,7 @@ func TestR2DiagnosticsTerminalResults(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			s, _, _, urls := r2TestService(t)
-			d := newR2DiagnosticLog(t.TempDir(), true)
+			d := newR2DiagnosticLog(s.store.Root(), true)
 			s.r2.diagnostics = d
 			if test.name == "cleanup warning" {
 				s.r2.secrets = r2DiagnosticCleanupFailureStore{s.r2.secrets}
@@ -132,7 +133,7 @@ func TestR2DiagnosticsTerminalResults(t *testing.T) {
 
 func TestR2DiagnosticsTimeoutIsDistinctFromCancellation(t *testing.T) {
 	s, _, _, _ := r2TestService(t)
-	d := newR2DiagnosticLog(t.TempDir(), true)
+	d := newR2DiagnosticLog(s.store.Root(), true)
 	s.r2.diagnostics = d
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -163,9 +164,43 @@ func TestR2DiagnosticsTimeoutIsDistinctFromCancellation(t *testing.T) {
 	}
 }
 
+func TestR2OAuthServiceShutdownDrainsCallbackDiagnostics(t *testing.T) {
+	s, _, _, urls := r2TestService(t)
+	d := newR2DiagnosticLog(s.store.Root(), true)
+	s.r2.diagnostics = d
+	// A canceled generation can still be finishing when another sign-in starts.
+	const attempts = 3
+	for i := 0; i < attempts; i++ {
+		beginR2Authorization(t, s, urls)
+		if i < attempts-1 {
+			s.CancelR2OAuth()
+		}
+	}
+	if err := s.ServiceShutdown(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(d.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := map[uint64]bool{}
+	for _, line := range bytes.Split(bytes.TrimSpace(data), []byte{'\n'}) {
+		var event r2DiagnosticEvent
+		if err := json.Unmarshal(line, &event); err != nil {
+			t.Fatal(err)
+		}
+		if event.Stage == "listener_closed" {
+			closed[event.Generation] = true
+		}
+	}
+	if len(closed) != attempts {
+		t.Fatalf("shutdown returned before all callback logs finished: %d/%d", len(closed), attempts)
+	}
+}
+
 func TestR2DiagnosticsTraceCallbackWithoutSecrets(t *testing.T) {
 	s, _, _, urls := r2TestService(t)
-	d := newR2DiagnosticLog(t.TempDir(), true)
+	d := newR2DiagnosticLog(s.store.Root(), true)
 	s.r2.diagnostics = d
 	s.r2.client.Diagnostic = func(event cloudflare.DiagnosticEvent) {
 		d.write(r2DiagnosticEvent{Stage: "cloudflare_api", API: &event})
@@ -181,6 +216,7 @@ func TestR2DiagnosticsTraceCallbackWithoutSecrets(t *testing.T) {
 	if err != nil || status != 200 {
 		t.Fatalf("valid callback: status=%d err=%v", status, err)
 	}
+	waitR2DiagnosticClose(t, d)
 	data, err := os.ReadFile(d.path)
 	if err != nil {
 		t.Fatal(err)
@@ -215,8 +251,9 @@ func TestR2DiagnosticsTraceCallbackWithoutSecrets(t *testing.T) {
 		t.Fatal("logs do not distinguish invalid and valid callback state")
 	}
 	info, err := os.Stat(d.path)
-	if err != nil || info.Mode().Perm() != 0600 {
-		t.Fatalf("diagnostic file permissions: %v", err)
+	// Windows exposes the read-only attribute through Mode, not POSIX permissions.
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
+		t.Fatalf("diagnostic file permissions: %v, %v", info, err)
 	}
 }
 
@@ -233,8 +270,8 @@ func TestR2DiagnosticsAreDevOnlyBoundedAndRejectSymlinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.write(r2DiagnosticEvent{Stage: "start_requested"})
-	if info, err := os.Stat(d.path + ".1"); err != nil || info.Size() != r2DiagnosticMaxBytes || info.Mode().Perm() != 0600 {
-		t.Fatalf("diagnostic rotation failed: %v", err)
+	if info, err := os.Stat(d.path + ".1"); err != nil || info.Size() != r2DiagnosticMaxBytes || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
+		t.Fatalf("diagnostic rotation failed: %v, %v", info, err)
 	}
 	if info, err := os.Stat(d.path); err != nil || info.Size() >= r2DiagnosticMaxBytes {
 		t.Fatalf("diagnostic file remains unbounded: %v", err)

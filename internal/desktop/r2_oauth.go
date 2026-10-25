@@ -76,6 +76,7 @@ type r2OAuthState struct {
 
 type r2OAuthRuntime struct {
 	mu          sync.Mutex
+	workers     sync.WaitGroup // Callback servers must stop before service cleanup.
 	path        string
 	client      *cloudflare.Client
 	secrets     r2SecretStore
@@ -407,8 +408,12 @@ func (s *Service) StartR2OAuth() (R2OAuthStatus, error) {
 	if store, ok := r.secrets.(interface{ retryAccess() }); ok {
 		store.retryAccess()
 	}
+	r.workers.Add(1)
 	r.mu.Unlock()
-	go s.serveR2OAuth(ctx, listener, u.Host, u.Path, state, verifier, redirectURI, generation)
+	go func() {
+		defer r.workers.Done()
+		s.serveR2OAuth(ctx, listener, u.Host, u.Path, state, verifier, redirectURI, generation)
+	}()
 	if openURL == nil {
 		err = errors.New("Cannot open the browser for Cloudflare sign-in.")
 	} else {
@@ -612,7 +617,9 @@ func (s *Service) serveR2OAuth(ctx context.Context, listener net.Listener, host,
 		mux.ServeHTTP(w, req)
 	})
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 40 * time.Second, MaxHeaderBytes: 16 << 10}
+	serverDone := make(chan struct{})
 	go func() {
+		defer close(serverDone)
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			if ctx.Err() != nil {
 				return // CancelR2OAuth closes the listener after canceling ctx.
@@ -635,6 +642,7 @@ func (s *Service) serveR2OAuth(ctx context.Context, listener net.Listener, host,
 	defer cancel()
 	_ = server.Shutdown(shutdown)
 	_ = server.Close()
+	<-serverDone
 }
 
 func discardR2Authorization(client *cloudflare.Client, tokens cloudflare.TokenSet) {
