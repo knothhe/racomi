@@ -3,6 +3,8 @@ racomi for macOS / macOS 安装说明
 Requires macOS 13 or newer on Apple Silicon. / 需要 Apple Silicon，macOS 13 或更新。
 
 Install / 安装
+  Homebrew: brew install --cask knothhe/tap/racomi
+  Or manually / 或手动安装：
   1. Verify the download / 校验下载：
        shasum -a 256 -c racomi-*-macos.zip.sha256
   2. Drag racomi.app into Applications (or ~/Applications).

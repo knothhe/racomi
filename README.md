@@ -19,7 +19,13 @@
 | Windows 10/11 x64 | `racomi-*-x86_64-windows.zip` | [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) |
 | Linux x86_64 | `racomi-*-x86_64-linux.tar.gz` | WebKit2GTK 4.1（Arch `webkit2gtk-4.1`，Debian／Ubuntu `libwebkit2gtk-4.1-0`，Fedora `webkit2gtk4.1`） |
 
-- **macOS**：`shasum -a 256 -c racomi-*-macos.zip.sha256` 校验后，将 `racomi.app` 拖入 `/Applications` 或 `~/Applications`。应用仅有 ad-hoc 签名、未经公证，若被拦截，到“系统设置 → 隐私与安全性”选择“仍要打开”，或执行 `xattr -dr com.apple.quarantine /Applications/racomi.app`。详见 [安装说明](build/macos/INSTALL.txt)。
+- **macOS**：推荐用 Homebrew 安装：
+
+  ```sh
+  brew install --cask knothhe/tap/racomi
+  ```
+
+  之后的升级由应用内更新完成（`brew upgrade --cask --greedy racomi` 亦可）。也可以手动安装：`shasum -a 256 -c racomi-*-macos.zip.sha256` 校验后，将 `racomi.app` 拖入 `/Applications` 或 `~/Applications`。应用仅有 ad-hoc 签名、未经公证，若被拦截，到“系统设置 → 隐私与安全性”选择“仍要打开”，或执行 `xattr -dr com.apple.quarantine /Applications/racomi.app`。详见 [安装说明](build/macos/INSTALL.txt)。
 - **Windows**：解压后运行 `racomi.exe`（目录需当前用户可写）。EXE 尚未做 Authenticode 签名。
 - **Linux**：一条命令完成安装，适用于 Arch、Debian／Ubuntu、Fedora、openSUSE 及其衍生发行版：
 

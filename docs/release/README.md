@@ -36,7 +36,7 @@ make release VERSION_BUMP=patch RELEASE_FLAGS=--apply   # 正式执行
 
 推送 `vX.Y.Z`（也支持预发布及 build metadata）标签后，[Release workflow](../../.github/workflows/release.yml) 校验标签与版本一致，检查、构建并发布 macOS Apple Silicon、Linux x86_64 与 Windows x64 包；macOS Intel、Windows arm64 和 Linux arm64 暂不进入此工作流；带 `-` 预发布标识的标签发布为预发布版。`.release.json` 中 `github_release: false`，GitHub Release 与附件均由 Actions 创建，请保留此配置并避免使用本地 `--github-release` 覆盖它。`make install` 仍只构建并安装本机应用。
 
-仓库只有这一个工作流，只由版本 tag 触发；普通 push 与 PR 不运行 CI，提交前请在本地运行 `make check`。
+仓库只有这一个工作流，只由版本 tag 触发（发布后另有 `homebrew` job 更新 tap）；普通 push 与 PR 不运行 CI，提交前请在本地运行 `make check`。
 
 ## 失败后续推
 
@@ -61,6 +61,8 @@ macOS 安装确认后由 Sparkle 请求正常退出，`Service.ShouldQuit` 完�
 CI 先完成包签名检查，再使用 Sparkle 的 `generate_appcast --maximum-deltas 0` 对完整 ZIP 签名，生成并签署 `appcast.xml`。发布前以嵌入的公钥校验 ZIP 的 Ed25519 签名、版本、构建号、下载地址和大小。发布 job 收齐确切附件后创建草稿，全部就绪才公开，并回读公开附件比较内容。重跑仅恢复同 tag 的草稿，已存在的附件内容不同或 Release 已公开时停止，不覆盖历史资产。稳定 Feed 使用最新稳定 Release 的 `appcast.xml` 附件，预览 Release 不参与。
 
 Linux job 在 Ubuntu 24.04 上以 GTK 3 + WebKit2GTK 4.1 运行 `make check` 并打包 `racomi-*-x86_64-linux.tar.gz`。发布 job 同时附上 `scripts/install.sh`（附件名 `install.sh`），因此 `releases/latest/download/install.sh` 始终对应最新正式版的包。脚本本身不在 Release 中固定版本，而是在运行时解析 `releases/latest`；`make check` 通过 `scripts/install.test.sh` 用本地伪造的 Release 和桩包管理器验证安装、升级、校验失败与卸载流程。Windows job 在 Windows 2022 runner 上使用 UCRT64 MinGW GCC／windres，保留 CGO 并静态链接编译器运行库，另做原生窗口生命周期验收和产物检查。
+
+稳定 Release 公开后，`homebrew` job 下载并校验 macOS ZIP，用 `scripts/homebrew-cask.sh` 生成 `Casks/racomi.rb` 并推送到 [knothhe/homebrew-tap](https://github.com/knothhe/homebrew-tap)，用户以 `brew install --cask knothhe/tap/racomi` 安装。推送使用仓库 Secret `HOMEBREW_TAP_SSH_KEY`（homebrew-tap 上只有写权限的 deploy key 私钥）。脚本不会把 cask 回退到更旧版本，同一版本的 SHA-256 改变时失败；预览版不更新 cask。该 job 失败时可单独重跑，或在 tap 仓库本地执行 `sh <racomi>/scripts/homebrew-cask.sh <版本> <SHA-256> Casks/racomi.rb` 后手动提交推送（v0.1.7 即以此方式手动上传）。
 
 Sparkle 签名工具只在 macOS 上提供，因此 macOS job 依赖另两个 job：稳定 tag 时下载 Linux 与 Windows 包、核对 SHA-256，由 `scripts/create-update-feed.sh` 用同一私钥签名，经 `scripts/update-feed.mjs` 生成并以嵌入公钥校验 `update.json`（版本、提交、下载地址、大小、SHA-256 与签名）。`update.json` 按 `linux-amd64`／`windows-amd64` 列出资产，Linux 与 Windows 客户端读取最新稳定 Release 的同一份文件，下载地址固定为对应 tag 的附件；macOS 仍使用 Sparkle 的 `appcast.xml`。私钥只进入 macOS 签名步骤。发布 job 要求三平台包齐备、再次校验 Feed 后才公开草稿。
 

@@ -9,7 +9,7 @@
 Verify each download with its `.sha256` file, then follow the `INSTALL.txt`
 inside the package. Git is needed for Git sources.
 
-- **macOS**: drag racomi.app to Applications. The app is ad-hoc signed and not
+- **macOS**: `brew install --cask knothhe/tap/racomi`, or drag racomi.app to Applications. The app is ad-hoc signed and not
   notarized; if blocked, choose System Settings → Privacy & Security → Open Anyway.
 - **Linux / Windows**: extract and run `racomi` / `racomi.exe` from a folder
   you can write, such as `~/.local/bin`. The Windows EXE is not Authenticode-signed.

@@ -277,3 +277,49 @@ jobs:
             curl --fail --location --retry 3 "https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/$asset" --output "published/$asset"
             cmp "$asset" "published/$asset"
           done
+
+  homebrew:
+    name: Update Homebrew cask
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          path: source
+      - name: Check stable release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          channel=stable
+          if [[ "${RELEASE_TAG%%+*}" == *-* ]]; then channel=preview; fi
+          echo "RELEASE_CHANNEL=$channel" >> "$GITHUB_ENV"
+      # A deploy key that can write only to knothhe/homebrew-tap.
+      - uses: actions/checkout@v7.0.1
+        if: env.RELEASE_CHANNEL == 'stable'
+        with:
+          repository: knothhe/homebrew-tap
+          ref: main
+          path: tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_SSH_KEY }}
+      - name: Verify published archive and push cask
+        if: env.RELEASE_CHANNEL == 'stable'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          archive="racomi-$version-aarch64-macos.zip"
+          curl --fail --location --retry 3 "https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/$archive" --output "$RUNNER_TEMP/$archive"
+          curl --fail --location --retry 3 "https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/$archive.sha256" --output "$RUNNER_TEMP/$archive.sha256"
+          (cd "$RUNNER_TEMP" && sha256sum --check "$archive.sha256")
+          sha256=$(cut -d' ' -f1 "$RUNNER_TEMP/$archive.sha256")
+          sh source/scripts/homebrew-cask.sh "$version" "$sha256" tap/Casks/racomi.rb
+          cd tap
+          git add Casks/racomi.rb
+          if git diff --cached --quiet; then exit 0; fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "chore(homebrew): update racomi to $version"
+          git push origin HEAD:main
