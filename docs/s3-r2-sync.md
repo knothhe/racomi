@@ -23,6 +23,7 @@ racomi 默认读写本地资料，关闭同步时无需账号或网络服务。�
 ### 通过 Cloudflare 授权
 
 1. 选择 **Cloudflare R2 → 连接 Cloudflare**，在系统浏览器中登录并授权访问指定账号。
+   Cloudflare 授权页默认不勾选 **Account API Tokens Write**：点击 **Authorize** 前，先点 **Edit Permissions** 打开该权限，否则授权会失败。
 2. 返回 racomi，选择账号、存储桶的司法辖区及私有存储桶，再选择使用该桶。应用自动生成该桶范围的对象读写凭据，填写端点与区域。
 3. 填写对象前缀与加密口令，测试连接后保存。所有设备继续使用相同的端点、桶、前缀和加密口令。
 

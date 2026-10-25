@@ -27,6 +27,8 @@ test("sync and FAQ guide tabs render only their own content and keep the configu
   const sync = guidePage("sync");
   assert.match(sync, /id="guide-cloud-title"/);
   assert.match(sync, /r2\.cloudflarestorage\.com/);
+  assert.match(sync, /Edit Permissions and turn on Account API Tokens Write/);
+  assert.match(sync, /Secret Service/);
   assert.match(sync, /data-action="open-cloud-settings"/);
   assert.doesNotMatch(sync, /id="guide-(workflow|start|questions)-title"/);
   const faq = guidePage("faq");
