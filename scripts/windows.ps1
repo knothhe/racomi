@@ -3,15 +3,21 @@ param(
     [string]$Action = 'help',
     [string]$Go = 'go', [string]$Npm = 'npm.cmd', [string]$Node = 'node',
     [string]$CC = 'gcc', [string]$Windres = 'windres', [string]$Arch = 'amd64',
-    [string]$AppDir = "$env:LOCALAPPDATA/Programs/racomi",
+    [string]$AppDir = '',
     [string]$Version = '', [string]$BuildNumber = '1', [int]$Port = 9245,
-    [string]$ShortcutPath = "$env:APPDATA/Microsoft/Windows/Start Menu/Programs/racomi.lnk"
+    [ValidateSet('dev', 'stable', 'preview')][string]$Channel = 'dev',
+    [string]$ShortcutPath = ''
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Import-Module Microsoft.PowerShell.Utility -Global
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location -LiteralPath $root
+$appName = if ($Channel -eq 'dev') { 'racomi Dev' } else { 'racomi' }
+$installID = if ($Channel -eq 'dev') { 'com.knothhe.racomi.dev' } else { 'com.knothhe.racomi' }
+$windowsRunKey = 'Software\Microsoft\Windows\CurrentVersion\Run'
+if (!$AppDir) { $AppDir = Join-Path $env:LOCALAPPDATA $(if ($Channel -eq 'dev') { 'Programs/racomi-dev' } else { 'Programs/racomi' }) }
+if (!$ShortcutPath) { $ShortcutPath = Join-Path $env:APPDATA "Microsoft/Windows/Start Menu/Programs/$appName.lnk" }
 
 function Invoke-Tool([string]$Command, [string[]]$Arguments) {
     # Windows PowerShell's legacy native argument marshaller drops embedded quotes.
@@ -49,7 +55,7 @@ function Invoke-GoTests([string]$Pattern) {
     # this Windows host SAC blocked those binaries, while tests retaining
     # symbols and DWARF ran successfully. Keep test builds debuggable without
     # changing Windows security policy or excluding any test packages.
-    Invoke-Tool $Go @('test', '-count=1', '-timeout', '120s', '-ldflags', '-s=false -w=false', $Pattern)
+    Invoke-Tool $Go @('test', '-count=1', '-timeout', '5m', '-ldflags', '-s=false -w=false', $Pattern)
 }
 
 function Install-Dependencies {
@@ -79,7 +85,8 @@ function New-WindowsResources {
     New-Item -ItemType Directory -Force bin/windows | Out-Null
     # ICO directory entries contain PNG images, supported since Windows Vista.
     Add-Type -AssemblyName System.Drawing
-    $source = [System.Drawing.Image]::FromFile((Join-Path $root 'build/appicon.png'))
+    $iconSource = if ($Channel -eq 'dev') { 'build/dev-icons/app-icon-dev.png' } else { 'build/appicon.png' }
+    $source = [System.Drawing.Image]::FromFile((Join-Path $root $iconSource))
     try {
         $images = @(foreach ($size in @(16, 32, 48, 64, 128, 256)) {
             $bitmap = New-Object System.Drawing.Bitmap($size, $size)
@@ -124,11 +131,11 @@ BEGIN
   BEGIN
     BLOCK "040904b0"
     BEGIN
-      VALUE "FileDescription", "racomi"
+      VALUE "FileDescription", "$appName"
       VALUE "FileVersion", "$Version.$BuildNumber"
       VALUE "InternalName", "racomi"
       VALUE "OriginalFilename", "racomi.exe"
-      VALUE "ProductName", "racomi"
+      VALUE "ProductName", "$appName"
       VALUE "ProductVersion", "$Version"
     END
   END
@@ -143,6 +150,21 @@ END
 function Build-App {
     Test-Tools
     Set-BuildEnvironment
+    if (!$script:Version) { $script:Version = (Get-Content frontend/package.json -Raw | ConvertFrom-Json).version }
+    Invoke-Tool $Node @('--input-type=module', '-e', 'import {parse} from "./scripts/release.mjs"; parse(process.argv[1])', $Version)
+    $executor = if ($env:BUILD_EXECUTOR) { $env:BUILD_EXECUTOR } else { 'local' }
+    if ($executor -notin @('local', 'ci')) { throw 'Invalid BUILD_EXECUTOR' }
+    $commit = (& git rev-parse HEAD)
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to read source commit.' }
+    $status = & git status --porcelain --untracked-files=normal
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect source state.' }
+    $dirty = if ($status) { 'true' } else { 'false' }
+    if ($executor -eq 'ci' -and ($Channel -eq 'dev' -or $dirty -ne 'false')) { throw 'CI release requires a clean release identity' }
+    $feed = ''; $key = ''
+    if ($Channel -eq 'stable') {
+        $updates = Get-Content build/updates.json -Raw | ConvertFrom-Json
+        $feed = $updates.windowsFeedURL; $key = $updates.publicKey
+    }
     Build-Frontend
     New-WindowsResources
     # Go automatically links architecture-specific resources from the package directory.
@@ -159,9 +181,12 @@ function Build-App {
         [System.IO.File]::WriteAllText((Join-Path $root 'bin/windows/gcc.specs'), $specs + "`n", [System.Text.Encoding]::ASCII)
         $oauthClientID = [string]$env:RACOMI_CLOUDFLARE_CLIENT_ID
         if ($oauthClientID -and $oauthClientID -notmatch '^[A-Za-z0-9._-]+$') { throw 'Invalid RACOMI_CLOUDFLARE_CLIENT_ID' }
-        $linkFlags = '-s -w -H windowsgui -extldflags "-static -specs=bin/windows/gcc.specs"'
-        if ($oauthClientID) { $linkFlags += " -X racomi/internal/desktop.cloudflareOAuthClientID=$oauthClientID" }
-        Invoke-Tool $Go @('build', '-trimpath', '-tags', 'production', '-ldflags', $linkFlags, '-o', 'bin/racomi.exe', '.')
+        $flags = '-s -w -H windowsgui -extldflags "-static -specs=bin/windows/gcc.specs"'
+        foreach ($entry in @("Version=$Version", "Number=$BuildNumber", "Commit=$commit", "Dirty=$dirty", "Channel=$Channel", "Executor=$executor", "FeedURL=$feed", "PublicKey=$key")) {
+            $flags += " -X racomi/internal/buildinfo.$entry"
+        }
+        if ($oauthClientID) { $flags += " -X racomi/internal/desktop.cloudflareOAuthClientID=$oauthClientID" }
+        Invoke-Tool $Go @('build', '-trimpath', '-tags', 'production', '-ldflags', $flags, '-o', 'bin/racomi.exe', '.')
     } finally {
         if (Test-Path -LiteralPath $resource) { Remove-Item -LiteralPath $resource }
     }
@@ -181,12 +206,12 @@ function Get-InstallPaths {
     $marker = Join-Path $directory '.racomi-install'
     if (Test-Path -LiteralPath $exe) {
         $item = Get-Item -LiteralPath $exe -Force
-        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -or $item.VersionInfo.ProductName -ne 'racomi') { throw "Refusing to replace/remove an unrelated file: $exe" }
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -or $item.VersionInfo.ProductName -ne $appName) { throw "Refusing to replace/remove an unrelated file: $exe" }
     }
     foreach ($path in @($marker, $ShortcutPath)) {
         if ((Test-Path -LiteralPath $path) -and ((Get-Item -LiteralPath $path -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) { throw "Refusing a reparse point: $path" }
     }
-    if ((Test-Path -LiteralPath $marker) -and (Get-Content -LiteralPath $marker -Raw) -ne 'com.knothhe.racomi') { throw "Unrelated install marker: $marker" }
+    if ((Test-Path -LiteralPath $marker) -and (Get-Content -LiteralPath $marker -Raw) -ne $installID) { throw "Unrelated install marker: $marker" }
     if (Test-Path -LiteralPath $ShortcutPath) {
         $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($ShortcutPath)
         if ($shortcut.TargetPath -ne $exe) { throw "Unrelated shortcut: $ShortcutPath" }
@@ -204,7 +229,7 @@ function Install-App {
         if (Test-Path -LiteralPath $paths.Exe) { [System.IO.File]::Replace($stage, $paths.Exe, [System.Management.Automation.Language.NullString]::Value) }
         else { Move-Item -LiteralPath $stage -Destination $paths.Exe }
     } finally { if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage } }
-    [System.IO.File]::WriteAllText($paths.Marker, 'com.knothhe.racomi')
+    [System.IO.File]::WriteAllText($paths.Marker, $installID)
     New-Item -ItemType Directory -Force -Path (Split-Path $ShortcutPath -Parent) | Out-Null
     $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($ShortcutPath)
     $shortcut.TargetPath = $paths.Exe
@@ -216,6 +241,13 @@ function Install-App {
 
 function Uninstall-App {
     $paths = Get-InstallPaths
+    # Only remove this channel's registration when it names this exact EXE.
+    $login = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($windowsRunKey, $true)
+    if ($login) {
+        try {
+            if ($login.GetValue($installID) -eq ('"' + $paths.Exe + '"')) { $login.DeleteValue($installID) }
+        } finally { $login.Dispose() }
+    }
     foreach ($file in @($paths.Exe, $paths.Marker, $ShortcutPath)) {
         if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file }
     }
@@ -235,7 +267,7 @@ deps          Install locked dependencies (alias: bootstrap)
 build         Build bin/racomi.exe (Windows x64, embedded icon and manifest)
 package       Build the standalone Windows executable
 dist          Build ZIP and SHA-256 in bin/releases
-install       Install dependencies, build, install to %LOCALAPPDATA%/Programs/racomi
+install       Install dependencies and selected channel (Dev by default)
 uninstall     Remove installed executable and Start menu shortcut; preserve user data
 frontend      Build frontend and check TypeScript
 frontend-dev  Start Vite (VITE_PORT=9245)
@@ -257,7 +289,7 @@ run           Build and launch the application
             Test-Tools; Set-BuildEnvironment; Build-Frontend
             Invoke-Tool $Npm @('test', '--prefix', 'frontend')
             & "$PSScriptRoot/windows.test.ps1"
-            Invoke-Tool $Node @('--test', 'scripts/release.test.mjs')
+            Invoke-Tool $Node @('--test', 'scripts/release.test.mjs', 'scripts/updates.test.mjs')
             Invoke-Tool $Go @('vet', './...')
             Invoke-GoTests './...'
         }

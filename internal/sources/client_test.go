@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"racomi/internal/testutil"
 	skillstore "racomi/internal/skills"
+	"racomi/internal/testutil"
 )
 
 func TestGitCommandDistinguishesTimeoutAndCancellation(t *testing.T) {
@@ -48,7 +48,7 @@ func TestGitCommandDistinguishesTimeoutAndCancellation(t *testing.T) {
 
 func testGit(t *testing.T, repo string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	cmd := exec.Command("git", append([]string{"-c", "core.longpaths=true", "-C", repo}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_NAME=Racomi test", "GIT_AUTHOR_EMAIL=test@example.invalid", "GIT_COMMITTER_NAME=Racomi test", "GIT_COMMITTER_EMAIL=test@example.invalid")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -78,6 +78,10 @@ func testRepo(t *testing.T) string {
 		t.Fatal(err)
 	}
 	testGit(t, repo, "init", "-b", "main")
+	// These fixtures create real symlinks (or skip when Windows denies them).
+	// Git for Windows otherwise initializes core.symlinks=false and retains
+	// mode 120000 even after a test replaces a link with a regular document.
+	testGit(t, repo, "config", "core.symlinks", "true")
 	writeTestSkill(t, repo, "skills/alpha", "alpha", `"A skill: with punctuation"`, "Version one")
 	writeTestSkill(t, repo, "nested/beta", "beta", ">\n  Folded multiline\n  description", "Beta")
 	testGit(t, repo, "add", ".")

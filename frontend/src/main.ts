@@ -1,6 +1,7 @@
 import { Events } from "@wailsio/runtime";
 import { aboutPage } from "./about";
 import { installLifecycle } from "./lifecycle";
+import { isDesktopRuntime } from "./desktop-runtime";
 import { installSelects } from "./select";
 import { renderMarkdownDocument } from "./markdown";
 import { applyInterfaceSettings, defaultFontStyle, loadInterfaceFonts, textSizes } from "./interface";
@@ -50,7 +51,7 @@ const e = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ 
 const short = (value: string) => value ? value.slice(0, 8) : "—";
 const date = (value: string) => value && !Number.isNaN(new Date(value).getTime()) ? new Date(value).toLocaleString(getLocale(), { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
 const arr = <T>(value: T[] | null | undefined): T[] => value || [];
-if (location.protocol === "wails:" && /Mac/.test(navigator.platform || navigator.userAgent)) document.body.classList.add("native-mac");
+if (isDesktopRuntime() && /Mac/.test(navigator.platform || navigator.userAgent)) document.body.classList.add("native-mac");
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const modalRoot = document.querySelector<HTMLDivElement>("#modal-root")!;
 // Give the webview a neutral initial focus target. Keyboard navigation retains
@@ -2531,7 +2532,7 @@ void loadInterfaceFonts().then(() => { if (currentPage === "settings" && !settin
 window.setInterval(() => { void pollCloudSync(); if(settingsAbout && document.body.dataset.lifecycleBlocked !== "true") void refreshUpdater(); }, 5000);
 
 window.addEventListener("keydown", (event) => {
-  if (location.protocol !== "wails:" || !data || event.altKey || !(navigator.platform.includes("Mac") ? event.metaKey : event.ctrlKey)) return;
+  if (!isDesktopRuntime() || !data || event.altKey || !(navigator.platform.includes("Mac") ? event.metaKey : event.ctrlKey)) return;
   const step = ["=", "+"].includes(event.key) ? 1 : ["-", "_"].includes(event.key) ? -1 : event.key === "0" ? 0 : null;
   if (step === null) return;
   event.preventDefault();

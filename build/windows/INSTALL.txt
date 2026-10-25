@@ -10,16 +10,30 @@ Compare the result with the accompanying .sha256 file, then extract the ZIP
 and double-click racomi.exe. Keep the executable in a writable user folder.
 This build is unsigned; check the download source before opening it.
 
-To update, exit racomi and replace racomi.exe.
+Official stable CI builds offer signed updates in Settings > About. The ZIP's
+Ed25519 signature, checksum and executable release identity are verified before
+installation. The app saves changes, exits, and a separate helper waits for the
+old process to stop before replacing the EXE with a backup and restarting.
+The installation directory must be writable by your user. Automatic checks run
+daily by default and can be disabled in About. This update signature is separate
+from Authenticode; the EXE is currently not Authenticode-signed.
+For Dev, preview and local source builds, exit racomi and replace racomi.exe.
 To uninstall the portable build, exit racomi and delete the extracted files.
 User data and deployed skills are preserved.
 
 Source installation:
   make install
   make uninstall
-Default: %LOCALAPPDATA%\Programs\racomi\racomi.exe with a Start menu shortcut.
+Default: %LOCALAPPDATA%\Programs\racomi-dev\racomi.exe (racomi Dev shortcut).
+CHANNEL=stable uses %LOCALAPPDATA%\Programs\racomi and the racomi shortcut.
+Dev and release data use %APPDATA%\racomi-dev and %APPDATA%\racomi separately.
 Use APP_DIR to choose another installation directory.
 Exit the app before installing an update or uninstalling.
+
+Lightweight mode releases the page one minute after closing the window. Click
+the system tray icon or launch racomi again to reopen it; the tray menu can quit.
+Open at login registers the exact executable under the current user's Run key.
+Installations never overwrite another installation's login registration.
 
 Symbolic link deployment requires Windows Developer Mode or elevation.
 Use copy deployment if symbolic links are unavailable.

@@ -8,7 +8,7 @@
 - 提供本地快照、ZIP 备份恢复和 skills-manager 数据导入。
 - 可选 S3 / Cloudflare R2 加密双向同步，跨设备共享来源、技能、预设及设置，并支持云端历史恢复；R2 可通过 OAuth 自动配置，亦保留独立的手动 S3 配置。
 - 支持侧边栏／顶部导航切换、明暗主题、文字缩放、界面字体，以及简体中文、繁體中文和 English。
-- macOS 可开启轻量模式与开机自启。
+- macOS、Windows 与 Linux 可开启轻量模式与开机自启，官方正式版支持签名应用内更新。
 
 ## macOS 安装
 
@@ -52,11 +52,11 @@ make uninstall   # 默认卸载 Dev 版，保留数据与部署
 
 ## Windows 安装与构建
 
-当前发布 CI 仅构建 macOS Apple Silicon。Windows 本地脚本暂时保留，Windows／Linux 的新桌面能力与发行验证另行处理。
+发布 CI 构建 Windows x64、macOS Apple Silicon 与 Linux x86_64；main push / PR 也执行三平台检查和打包。
 
-支持 **Windows 10/11 x64**，运行需要 Microsoft Edge WebView2 Runtime；缺少时从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。导入和刷新 Git 来源仍需 Git。Windows 版暂不提供 macOS 专属的轻量模式与开机自启。
+支持 **Windows 10/11 x64**，运行需要 Microsoft Edge WebView2 Runtime；缺少时从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。导入和刷新 Git 来源仍需 Git。轻量模式在关闭窗口一分钟后释放页面，可点击系统托盘或再次启动恢复窗口；托盘菜单可以退出。开机自启登记在当前用户的 Run 注册表项，Dev 与正式版独立，拒绝覆盖其他安装副本的登记。
 
-发布包为 `racomi-*-x86_64-windows.zip`，解压后运行 `racomi.exe`。可用 PowerShell 的 `Get-FileHash <ZIP 文件路径> -Algorithm SHA256` 与同名 `.sha256` 文件比较。更新前退出应用并替换 EXE；删除便携版文件即可卸载，保留用户数据与已部署技能。当前 EXE 未做代码签名。
+发布包为 `racomi-*-x86_64-windows.zip`，解压后运行 `racomi.exe`。可用 PowerShell 的 `Get-FileHash <ZIP 文件路径> -Algorithm SHA256` 与同名 `.sha256` 文件比较。官方稳定版从关于页检查更新：校验 ZIP 的 Ed25519 签名、大小、SHA-256 和程序发布身份，保存更改后退出，由独立助手等待旧进程结束、备份并替换 EXE，再重启；替换失败保留原版本。所在目录需当前用户可写。默认每天检查一次，可关闭自动检查。Dev、预览版和本地源码构建手动更新。删除便携版文件即可卸载，保留用户数据与已部署技能。更新包签名与 Windows Authenticode 不同，当前 EXE 尚未做 Authenticode 代码签名。
 
 从源码构建需要 **Go 1.26.8+、Node.js 22.12+、npm、Git、GNU Make、x86_64 MinGW-w64 GCC 和 windres**。例如在 PowerShell 中安装构建工具：
 
@@ -79,11 +79,51 @@ make install     # 自动安装依赖、构建、安装并创建开始菜单快�
 make uninstall   # 卸载已安装应用与快捷方式，保留数据和技能部署
 ```
 
-`make` 根据当前操作系统自动选择 Windows 或 macOS 流程。Windows 默认安装路径为 `%LOCALAPPDATA%\Programs\racomi\racomi.exe`，可用 `make install APP_DIR="D:/Apps/racomi"` 自定义，卸载时使用相同参数。安装更新前请先退出应用。Windows 当前构建架构为 `amd64`，保留 CGO 以支持 SQLite 数据导入；EXE 已嵌入图标、版本信息和 DPI／长路径清单，无需附带 MinGW DLL。
+`make` 根据当前操作系统自动选择 Windows、Linux 或 macOS 流程。Windows 默认安装 Dev 版到 `%LOCALAPPDATA%\Programs\racomi-dev\racomi.exe`，开始菜单为 racomi Dev，资料目录为 `%APPDATA%\racomi-dev`。`CHANNEL=stable` 使用 `%LOCALAPPDATA%\Programs\racomi`、racomi 快捷方式和 `%APPDATA%\racomi` 资料，与 Dev 共存。可用 `make install APP_DIR="D:/Apps/racomi"` 自定义，卸载时使用相同参数与通道。安装更新前请先退出应用。Windows 当前构建架构为 `amd64`，保留 CGO 以支持 SQLite 数据导入；EXE 已嵌入通道图标、版本信息和 DPI／长路径清单，无需附带 MinGW DLL。设置中的字体及样式列表读取 Windows 本机字体。
 
 没有 Make 时也可直接执行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 -Action install`，其他目标通过 `-Action build`、`-Action dist` 等选择。软链接部署需要 Windows 开发者模式或相应权限，普通账号可使用默认的复制部署；`make check` 在无软链接权限时会跳过对应测试。
 
 Windows 的 `make check` 和 `make test` 显式使用 `-ldflags="-s=false -w=false"`，保留测试程序的符号表与 DWARF 调试信息。本机排查发现，Go 默认剥离调试信息的临时测试 EXE 会触发 Smart App Control 拦截，保留调试信息后可以通过检查。此设置仅用于测试构建，不修改系统安全策略或增加排除项；发布 EXE 仍使用原来的体积优化参数。其他设备若仍提示应用控制拦截，可检查事件查看器的 `Microsoft-Windows-CodeIntegrity/Operational` 日志（事件 3077）；这不是所有应用控制策略的通用放行保证，详见 [Microsoft 的说明](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/overview)。
+
+## Linux 构建与安装
+
+### 发布包
+
+[最新 Release](https://github.com/knothhe/racomi/releases/latest) 提供 `racomi-*-x86_64-linux.tar.gz` 及同名 `.sha256`，基于 GTK 3 + WebKit2GTK 4.1 构建，运行时需安装对应库（Arch `webkit2gtk-4.1`，Debian／Ubuntu `libwebkit2gtk-4.1-0`，Fedora `webkit2gtk4.1`）。校验并解压后，将 `racomi` 放到当前用户可写的目录（如 `~/.local/bin`）运行：
+
+```sh
+sha256sum -c racomi-*-x86_64-linux.tar.gz.sha256
+tar -xzf racomi-*-x86_64-linux.tar.gz
+install -m 755 racomi-*-x86_64-linux/racomi ~/.local/bin/racomi
+```
+
+正式版在“设置 → 关于”中检查更新：下载 Release 附带的 `linux-update.json`，以内嵌公钥校验压缩包的 Ed25519 签名、大小和 SHA-256，并核对解压后程序的版本、提交与发布身份，原生窗口确认并保存更改后原地替换可执行文件并重启。所在目录需当前用户可写；默认每天自动检查一次，可在关于页关闭。预览版、Dev 与本地源码构建不连接更新源。
+
+### 从源码构建
+
+需要 **Go 1.26.8+、Node.js 22.12+、npm、GNU Make、Git、C 编译器、pkg-config**，以及 GTK 和 WebKitGTK 开发文件，二选一即可：
+
+| 发行版 | GTK 3 + WebKit2GTK 4.1 | GTK 4 + WebKitGTK 6.0 |
+| --- | --- | --- |
+| Arch | `webkit2gtk-4.1` | `webkitgtk-6.0` |
+| Debian／Ubuntu | `libgtk-3-dev libwebkit2gtk-4.1-dev` | `libgtk-4-dev libwebkitgtk-6.0-dev` |
+| Fedora | `gtk3-devel webkit2gtk4.1-devel` | `gtk4-devel webkitgtk6.0-devel` |
+
+在仓库目录运行：
+
+```sh
+make doctor      # 检查构建环境与 GTK 版本
+make run         # 构建 bin/dev/racomi 并启动
+make install     # 默认构建并安装独立 Dev 版
+make uninstall   # 默认卸载 Dev 版，保留数据与部署
+make dist        # 生成 bin/releases 下的 tar.gz 和 SHA-256
+```
+
+默认安装 `~/.local/bin/racomi-dev`，并在 `~/.local/share/applications` 和 `~/.local/share/icons/hicolor` 写入桌面入口与图标；资料位于 `~/.config/racomi-dev`。`CHANNEL=stable` 安装正式身份 `~/.local/bin/racomi`，资料位于 `~/.config/racomi`。可通过 `BIN_DIR`、`DESKTOP_DIR`、`ICON_DIR` 自定义位置，卸载时使用相同参数。安装只替换带有 racomi 管理标记的桌面入口所对应的文件，拒绝覆盖无关命令或软链接；更新后需重启正在运行的应用。
+
+构建时若检测到 GTK 4 开发文件则使用 GTK 4，否则使用 GTK 3（Wails 的 `gtk3` 构建标签），可用 `GTK=3` 或 `GTK=4` 指定，`make check`、`make dev` 同样适用。生成的可执行文件依赖构建时的系统 GTK／WebKitGTK 库。
+
+设置中的“轻量模式”在关闭窗口一分钟后释放页面，应用保留在系统托盘（需桌面提供 StatusNotifierItem 托盘，如 KDE、waybar），点击托盘图标或再次启动 racomi 即可重新打开，托盘菜单也可退出。“开机自启”写入 `~/.config/autostart/<应用标识>.desktop`，由支持 XDG 自启的桌面会话（GNOME、KDE、uwsm 等）在登录时启动；只识别并删除记录本程序路径的登记，临时 `go run` 构建无法开启。
 
 ## 开发与发布
 
@@ -102,7 +142,7 @@ make check       # 前端构建、类型检查、Go vet 和测试
 
 本地打包、首次发版、版本升级及失败续推见 [发布指南](docs/release/README.md)。
 
-当前 CI 发布 macOS Apple Silicon。官方稳定版提供 Sparkle 自动检查与签名更新：在“设置 → 关于”手动检查或开关自动检查；发现新版本后提示，下载完成确认安装，退出前处理保存与草稿。Dev、预览版及本地源码构建不连接正式安装式更新。旧版没有更新器，须手动安装首个包含更新功能的版本。云同步使用用户自己的 S3 兼容存储，无需 racomi 账号。
+当前 CI 发布 macOS Apple Silicon、Windows x64 与 Linux x86_64。官方稳定版在“设置 → 关于”手动检查或开关自动检查，macOS 使用 Sparkle，Windows／Linux 使用同一公钥验证签名更新；退出前处理保存与草稿。Dev、预览版及本地源码构建不连接正式安装式更新。旧版没有更新器，须手动安装首个包含更新功能的版本。云同步使用用户自己的 S3 兼容存储，无需 racomi 账号。
 
 ## 更多资料
 

@@ -4,10 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"racomi/internal/testutil"
 	skillstore "racomi/internal/skills"
+	"racomi/internal/testutil"
 )
 
 func partialCatalogEntry(t *testing.T, source skillstore.Source, subpath string) skillstore.SourceSkill {
@@ -151,6 +152,9 @@ func TestPartialSourceRefreshRetainsSkippedSkillsAndRecovers(t *testing.T) {
 			writeTestSkill(t, repo, "skills/alpha", "alpha", "Recovered alpha", "Recovered content")
 			testGit(t, repo, "add", "-A")
 			testGit(t, repo, "commit", "-m", "Restore alpha as valid skill")
+			if mode := testGit(t, repo, "ls-tree", "HEAD", "skills/alpha/SKILL.md"); !strings.HasPrefix(mode, "100644 ") {
+				t.Fatalf("recovery fixture did not commit a regular document: %s", mode)
+			}
 			recovered, recoveredID, err := client.RefreshSource(context.Background(), updated)
 			if err != nil {
 				t.Fatal(err)

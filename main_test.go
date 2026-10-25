@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"racomi/internal/buildinfo"
+	"racomi/internal/testutil"
 )
 
 func TestSingleInstanceProfiles(t *testing.T) {
@@ -26,8 +29,17 @@ func TestSingleInstanceProfiles(t *testing.T) {
 	if profile == identity || profile == singleInstanceID(identity, t.TempDir()) {
 		t.Fatal("isolated data profiles must have independent locks")
 	}
+	// Hashes of these roots start with digits and letters alike.
+	for i := range 32 {
+		id := singleInstanceID(identity, filepath.Join(root, strconv.Itoa(i)))
+		for _, element := range strings.Split(id, ".") {
+			if element == "" || element[0] >= '0' && element[0] <= '9' {
+				t.Fatalf("profile lock %q is not a valid D-Bus name", id)
+			}
+		}
+	}
 	alias := filepath.Join(t.TempDir(), "alias")
-	if err := os.Symlink(root, alias); err != nil {
+	if err := testutil.Symlink(t, root, alias); err != nil {
 		t.Fatal(err)
 	}
 	if profile != singleInstanceID(identity, alias) {

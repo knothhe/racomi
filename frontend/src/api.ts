@@ -65,7 +65,7 @@ export interface CloudSyncStatus {
 }
 export interface CloudBackup { id: string; createdAt: string; skillCount: number; presetCount: number }
 export interface DirectoryOption { id: string; name: string; path: string; kind: "global" | "project"; description: string }
-export interface DesktopPreferences { lightweight: boolean; openAtLogin: boolean; supported: boolean }
+export interface DesktopPreferences { lightweight: boolean; openAtLogin: boolean; supported: boolean; platform: string }
 export interface BuildInfo { name: string; id: string; version: string; number: string; commit: string; dirty: boolean; channel: string; executor: string; os: string; arch: string; repository: string }
 export interface UpdaterState { available: boolean; reason: string; automatic: boolean; canCheck: boolean }
 export interface AppState {

@@ -48,6 +48,7 @@ type Service struct {
 	legacyPreview       *skillsManagerSession
 	cloud               *cloudSyncRuntime
 	r2                  *r2OAuthRuntime
+	icon                []byte
 }
 
 // NewApplicationService keeps About, updates and error recovery reachable when
@@ -89,6 +90,10 @@ func New(root string) (*Service, error) {
 	return &Service{desktop: desktop, store: store, sources: sources.New(filepath.Join(store.Root(), "cache", "sources")), theme: "system", locale: "zh-CN", cloud: cloud, r2: newR2OAuthRuntime(store.Root())}, nil
 }
 
+// UseIcon gives native surfaces without their own artwork, such as the Linux
+// lightweight tray, the application icon. It is not bound to the frontend.
+func UseIcon(service *Service, icon []byte) { service.icon = icon }
+
 func Attach(service *Service, app *application.App) {
 	service.themeMu.Lock()
 	service.app = app
@@ -100,6 +105,7 @@ func Attach(service *Service, app *application.App) {
 		app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
 			service.lifecycle.started.Store(true)
 			service.configureMenu()
+			service.syncTray()
 			application.InvokeAsync(func() { service.startUpdater() })
 		})
 		app.Event.OnApplicationEvent(events.Common.ThemeChanged, func(_ *application.ApplicationEvent) {

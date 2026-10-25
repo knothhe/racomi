@@ -1,0 +1,98 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      release:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
+        id: msys2
+        with:
+          msystem: UCRT64
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils mingw-w64-ucrt-x86_64-make
+      - name: Select native MinGW tools
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          "$env:MSYS2_LOCATION\ucrt64\bin" >> $env:GITHUB_PATH
+      - name: Validate release identity
+        if: inputs.release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content frontend/package.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
+            if ($env:GITHUB_REF -ne 'refs/heads/main') { throw 'Manual release builds require main' }
+            $env:RELEASE_TAG = "v$version"
+          }
+          if ($env:RELEASE_TAG -cne "v$version") { throw 'Release tag/version mismatch' }
+          node --input-type=module -e 'import {parse} from "./scripts/release.mjs"; parse(process.argv[1])' $version
+          if ($LASTEXITCODE -ne 0) { throw 'Invalid release version' }
+          if (git status --porcelain --untracked-files=normal) { throw 'Dirty checkout' }
+          if ((go env GOARCH) -ne 'amd64') { throw 'Expected Windows x64' }
+          $channel = if (($version -split '\+')[0].Contains('-')) { 'preview' } else { 'stable' }
+          "RELEASE_CHANNEL=$channel" >> $env:GITHUB_ENV
+          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Install dependencies and verify
+        run: |
+          mingw32-make deps
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
+          mingw32-make check
+          if ($LASTEXITCODE -ne 0) { throw 'Windows checks failed' }
+      - name: Verify native window lifecycle
+        env:
+          CGO_ENABLED: '1'
+          CC: gcc
+        run: |
+          go run -tags production,nativeintegration -ldflags="-s=false -w=false" ./internal/desktop/testdata/window-lifecycle-windows
+          if ($LASTEXITCODE -ne 0) { throw 'Windows lifecycle verification failed' }
+      - name: Package build
+        env:
+          RELEASE_BUILD: ${{ inputs.release }}
+        run: |
+          if ($env:RELEASE_BUILD -eq 'true') {
+            mingw32-make dist "CHANNEL=$env:RELEASE_CHANNEL" BUILD_EXECUTOR=ci "VERSION=$env:RELEASE_VERSION" "BUILD_NUMBER=$env:GITHUB_RUN_NUMBER"
+          } else {
+            mingw32-make dist
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows-artifact.test.ps1 -Channel $(if ($env:RELEASE_BUILD -eq 'true') { $env:RELEASE_CHANNEL } else { 'dev' }) -Executor $(if ($env:RELEASE_BUILD -eq 'true') { 'ci' } else { 'local' }) -BuildNumber $(if ($env:RELEASE_BUILD -eq 'true') { $env:GITHUB_RUN_NUMBER } else { '1' })
+          if ($LASTEXITCODE -ne 0) { throw 'Windows artifact verification failed' }
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: racomi-windows-x86_64
+          path: |
+            bin/releases/racomi-*-x86_64-windows.zip
+            bin/releases/racomi-*-x86_64-windows.zip.sha256
+          if-no-files-found: error
