@@ -68,7 +68,9 @@ Sparkle 签名工具只在 macOS 上提供，因此 macOS job 依赖另两个 jo
 
 Windows 客户端还核对解压后 EXE 的版本、提交、通道、架构与 CI 身份，保存后退出；独立助手等待旧进程释放 EXE 后使用 Windows ReplaceFile 创建备份并替换，再重启，失败保留／恢复旧程序。更新目录须可写；助手错误记录在同目录 `.racomi-update-helper-*.exe.log`。此签名不等于 Authenticode，当前 EXE 未接入 Authenticode。
 
-更新签名独立于 Apple Developer ID／公证。当前宿主包仍为 ad-hoc 签名，尚未接入 Developer ID 和公证。`update.json` 从 v0.1.6 开始发布；更早的 Linux／Windows 版本读取旧 Feed 名称，需手动安装一次新版本。
+更新签名独立于 Apple Developer ID／公证。macOS 宿主包的代码签名由 `scripts/package-macos.sh` 完成：设置 `MACOS_SIGN_IDENTITY` 时使用该证书签名，并确认指定要求（designated requirement）绑定证书而非随构建变化的哈希；未设置时退回 ad-hoc 签名。ad-hoc 签名每次构建都不同，钥匙串只信任创建条目的那份签名，因此每次更新后读取 Cloudflare 凭据和同步口令都会再次弹出授权。
+
+tag 构建从仓库 Actions Secret `MACOS_SIGNING_CERTIFICATE`（含私钥的 `.p12`，Base64 编码）和 `MACOS_SIGNING_CERTIFICATE_PASSWORD` 导入临时钥匙串，任务结束后删除；未配置时给出警告并退回 ad-hoc。证书可用“钥匙串访问 → 证书助理 → 创建证书”生成自签名的“代码签名”证书，有效期设长一些；它只固定签名身份，不提供公证，Gatekeeper 的首次打开提示不变。导出 `.p12` 后执行 `base64 -i racomi-signing.p12 | pbcopy` 写入 Secret，并在本机钥匙串留存备份。证书须长期保持不变：更换证书会让钥匙串再弹一次授权。首个使用固定证书的版本，从 ad-hoc 旧版更新后仍会弹一次授权，此后不再出现；该版本发布后应从旧版应用内更新一次，确认 Sparkle 接受新的签名身份（更新包仍由同一 EdDSA 私钥签名）。尚未接入 Developer ID 和公证。`update.json` 从 v0.1.6 开始发布；更早的 Linux／Windows 版本读取旧 Feed 名称，需手动安装一次新版本。
 
 ## 本地验证
 

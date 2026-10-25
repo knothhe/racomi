@@ -61,9 +61,20 @@ if [ "$action" = package ]; then
   /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $minimum_macos" "$bundle/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :RacomiReleaseVersion string $version" "$bundle/Contents/Info.plist"
   /usr/bin/plutil -lint "$bundle/Contents/Info.plist"
-  # Apple Silicon requires a valid code signature. Ad-hoc signing is local only;
-  # it is not a Developer ID signature and does not provide notarization.
-  /usr/bin/codesign --force --sign - "$bundle"
+  # Apple Silicon requires a valid code signature. An ad-hoc signature changes
+  # with every build, so Keychain asks again after each update for items an
+  # older build created. MACOS_SIGN_IDENTITY (a certificate in the keychain
+  # search list) keeps the designated requirement stable instead. Neither is
+  # notarized.
+  if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
+    /usr/bin/codesign --force --sign "$MACOS_SIGN_IDENTITY" "$bundle"
+    requirement=$(/usr/bin/codesign --display --requirements - "$bundle" 2>&1)
+    case "$requirement" in *certificate*) ;; *) fail "signature requirement is not bound to a certificate: $requirement" ;; esac
+    signature='fixed signing identity'
+  else
+    /usr/bin/codesign --force --sign - "$bundle"
+    signature='local ad-hoc signature'
+  fi
   /usr/bin/codesign --verify --strict --deep "$bundle"
   [ ! -L "$app_path" ] || fail "refusing to replace a symlink: $app_path"
   if [ -e "$app_path" ]; then
@@ -78,7 +89,7 @@ if [ "$action" = package ]; then
   mv "$bundle" "$app_path"
   new_app_moved=true
   success=true
-  printf 'Packaged %s (%s, macOS %s+, local ad-hoc signature; not notarized).\n' "$app_path" "$version" "$minimum_macos"
+  printf 'Packaged %s (%s, macOS %s+, %s; not notarized).\n' "$app_path" "$version" "$minimum_macos" "$signature"
   exit 0
 fi
 
