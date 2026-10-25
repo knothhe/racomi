@@ -1,19 +1,22 @@
 #!/usr/bin/env node
 // Creates and uploads the fixed macOS code-signing identity that release.yml
-// imports. A self-signed certificate keeps the designated requirement stable
-// across releases, so Keychain keeps trusting updated builds. It does not
-// replace Developer ID notarization for Gatekeeper.
+// imports, and verifies release bundles against its pinned fingerprint. A
+// self-signed certificate keeps the designated requirement stable across
+// releases, so Keychain keeps trusting updated builds. It does not replace
+// Developer ID notarization for Gatekeeper.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline/promises';
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 export const certificateSecret = 'MACOS_SIGNING_CERTIFICATE';
 export const passwordSecret = 'MACOS_SIGNING_CERTIFICATE_PASSWORD';
 export const defaultIdentityDir = path.join(os.homedir(), '.config/racomi-release/macos-signing');
+// The committed pin names the one certificate releases may be signed with.
+export const defaultPinPath = fileURLToPath(new URL('../build/macos/signing.json', import.meta.url));
 const defaultRepository = 'knothhe/racomi';
 const commonName = 'racomi Release Signing (self-signed)';
 const codeSigningOID = '1.3.6.1.5.5.7.3.3';
@@ -29,6 +32,44 @@ export function certificateFingerprint(pem) {
  requireThat(certificate.keyUsage?.includes(codeSigningOID), 'Signing certificate must allow code signing.');
  requireThat(!certificate.ca, 'Signing certificate must not be a certificate authority.');
  return sha256(certificate.raw);
+}
+
+export function readPin(file = defaultPinPath) {
+ if (!fs.existsSync(file)) return undefined;
+ const pin = JSON.parse(fs.readFileSync(file, 'utf8'));
+ requireThat(pin && typeof pin === 'object' && Object.keys(pin).sort().join() === 'certificateSHA256,schema' && pin.schema === 1 && /^[a-f0-9]{64}$/.test(pin.certificateSHA256),
+  `${file} must contain only schema 1 and a certificateSHA256 fingerprint.`);
+ return pin.certificateSHA256;
+}
+
+const writePin = (file, fingerprint) => fs.writeFileSync(file, `${JSON.stringify({schema: 1, certificateSHA256: fingerprint}, null, 1)}\n`);
+
+export function assertCertificateRequirement(requirement) {
+ requireThat(/designated => .*certificate (leaf|root) = H"[0-9a-f]{40}"/i.test(requirement) && !/cdhash/i.test(requirement), 'Signed bundle must use a certificate-based designated requirement.');
+}
+
+function codesignDisplay(target, ...args) {
+ const result = spawnSync('/usr/bin/codesign', ['--display', ...args, target], {encoding: 'utf8'});
+ requireThat(result.status === 0, `codesign could not read ${target}: ${result.stderr.trim()}`);
+ return `${result.stdout}${result.stderr}`;
+}
+
+// Checks the bundle and its executables after packaging: each must carry the
+// pinned certificate and a designated requirement bound to it.
+export function verify(bundle, {pin = readPin(), codesign = codesignDisplay} = {}) {
+ requireThat(pin, 'No pinned macOS signing certificate; run `node scripts/macos-signing.mjs` and commit build/macos/signing.json.');
+ const work = fs.mkdtempSync(path.join(os.tmpdir(), 'racomi-signature-'));
+ try {
+  const executables = fs.readdirSync(path.join(bundle, 'Contents/MacOS')).map((name) => path.join(bundle, 'Contents/MacOS', name));
+  for (const [index, target] of [bundle, ...executables].entries()) {
+   const prefix = path.join(work, `${index}-`);
+   codesign(target, `--extract-certificates=${prefix}`);
+   requireThat(certificateFingerprint(fs.readFileSync(`${prefix}0`)) === pin, `${target} is not signed with the pinned macOS release certificate.`);
+   assertCertificateRequirement(codesign(target, '--requirements', '-'));
+  }
+ } finally {
+  fs.rmSync(work, {recursive: true, force: true});
+ }
 }
 
 // Replacing an identity keeps the previous files in a sibling directory, so a
@@ -138,66 +179,104 @@ function describe(pem) {
  return `  Certificate: ${certificate.subject.replaceAll('\n', ', ')}\n  SHA-256:     ${certificateFingerprint(pem)}\n  Expires:     ${certificate.validTo}${expired}`;
 }
 
-// Walks through choosing or creating the identity and uploading it. GitHub
-// never returns secret values, so overwriting existing secrets is confirmed
-// explicitly rather than compared.
-export async function wizard({ask, gh = (args, input) => run('gh', args, input), openssl, platform = process.platform, dir: suggestedDir = defaultIdentityDir}) {
+// The menu offers only the actions that make sense for the current state.
+export function setupChoices({pinned, local, missing = [], platform = process.platform}) {
+ const replacesPin = pinned ? ' and replace the pinned one' : '';
+ const choices = [];
+ if (local) {
+  const pin = !pinned ? ' and pin it' : local.fingerprint === pinned ? (missing.length ? ' (restores the missing secrets)' : '') : replacesPin;
+  choices.push({label: `Upload the certificate in this folder${pin}`, value: 'local'});
+ }
+ choices.push({label: `${local ? 'Replace it with a new certificate' : 'Generate a new certificate'}${replacesPin}`, value: 'generate'});
+ if (platform === 'darwin') choices.push({label: 'Choose a certificate from the macOS keychain', value: 'keychain'});
+ choices.push({label: 'Quit', value: 'quit'});
+ return choices;
+}
+
+// Walks through choosing or creating the identity, uploading it and keeping
+// the pin in sync. GitHub never returns secret values, so only their presence
+// is checked and overwriting them is confirmed explicitly.
+export async function wizard({ask, gh = (args, input) => run('gh', args, input), openssl, platform = process.platform, dir: suggestedDir = defaultIdentityDir, pinPath = defaultPinPath}) {
  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'racomi-signing-'));
  try {
+  console.log('racomi macOS release signing\n');
   const dir = path.resolve(await askWithDefault(ask, 'Identity directory', suggestedDir));
-  const local = identityFiles.every((name) => fs.existsSync(path.join(dir, name)));
-  const options = [];
-  if (local) {
-   console.log(`Found a signing identity in ${dir}:\n${describe(fs.readFileSync(path.join(dir, 'certificate.pem')))}`);
-   options.push({label: 'Upload this certificate', value: 'local'}, {label: 'Replace it with a new certificate', value: 'replace'});
-  } else {
-   options.push({label: 'Generate a new certificate', value: 'generate'});
-  }
-  if (platform === 'darwin') options.push({label: 'Choose a certificate from the macOS keychain', value: 'keychain'});
-  options.push({label: 'Quit', value: 'quit'});
-  const action = await choose(ask, 'What would you like to do?', options);
-  if (action === 'quit') return {uploaded: false};
-  if (action === 'replace') {
-   console.log(`The current files move to a replaced-<time> folder in ${dir}. ${replaceWarning}`);
-   requireThat(await confirmWord(ask, 'Replace the certificate?', 'replace'), 'Cancelled; the certificate was kept.');
-  }
-  if (action === 'generate' || action === 'replace') {
-   const created = generate({dir, replace: action === 'replace', openssl});
-   if (created.replaced) console.log(`Moved the previous identity to ${created.replaced}.`);
-   console.log(`Created a new certificate in ${dir}; back up this folder offline.`);
-  }
-  const source = action === 'keychain' ? await readKeychainIdentity(ask, work) : readIdentityDir(dir);
-  const fingerprint = certificateFingerprint(source.certificate);
+  const pinned = readPin(pinPath);
+  const stored = identityFiles.every((name) => fs.existsSync(path.join(dir, name))) ? readIdentityDir(dir) : undefined;
+  const local = stored && {...stored, fingerprint: certificateFingerprint(stored.certificate)};
+  console.log(`Pinned certificate: ${pinned ?? 'none'}`);
+  console.log(`Local certificate:  ${local ? `${local.fingerprint}${local.fingerprint === pinned ? ' (pinned)' : ''}` : 'none'} in ${dir}`);
+  if (local) console.log(describe(local.certificate));
   const repository = await askWithDefault(ask, 'GitHub repository', defaultRepository);
+  requireThat(/^[\w.-]+\/[\w.-]+$/.test(repository), 'Invalid repository; expected OWNER/NAME.');
   gh(['auth', 'status']);
   const names = new Set(gh(['secret', 'list', '--repo', repository, '--json', 'name', '--jq', '.[].name']).split('\n').map((name) => name.trim()));
-  const existing = [certificateSecret, passwordSecret].filter((name) => names.has(name));
+  const present = [certificateSecret, passwordSecret].filter((name) => names.has(name));
+  const missing = [certificateSecret, passwordSecret].filter((name) => !names.has(name));
+  console.log(`GitHub secrets:     ${missing.length ? `missing ${missing.join(', ')}` : 'both present'}`);
+  if (pinned && missing.length && local?.fingerprint !== pinned) console.log('The pinned certificate is not in this folder; choose the folder holding its backup, or replace it.');
+  const action = await choose(ask, 'What would you like to do?', setupChoices({pinned, local, missing, platform}));
+  if (action === 'quit') return {uploaded: false};
+  let replaceConfirmed = false;
+  const confirmReplace = async (message) => {
+   console.log(`${message} ${replaceWarning}`);
+   requireThat(await confirmWord(ask, 'Replace the certificate?', 'replace'), 'Cancelled; nothing was changed.');
+   replaceConfirmed = true;
+  };
+  let source;
+  if (action === 'generate') {
+   if (local || pinned) await confirmReplace(`${local ? `The current files move to a replaced-<time> folder in ${dir}. ` : ''}${pinned ? 'The new certificate replaces the pinned one.' : ''}`.trim());
+   const created = generate({dir, replace: Boolean(local), openssl});
+   if (created.replaced) console.log(`Moved the previous identity to ${created.replaced}.`);
+   console.log(`Created a new certificate in ${dir}; back up this folder offline.`);
+   source = readIdentityDir(dir);
+  } else {
+   source = action === 'keychain' ? await readKeychainIdentity(ask, work) : local;
+  }
+  const fingerprint = certificateFingerprint(source.certificate);
+  if (pinned && pinned !== fingerprint && !replaceConfirmed) await confirmReplace(`This certificate replaces the pinned one (${pinned}).`);
   console.log(`Ready to upload to ${repository}:\n${describe(source.certificate)}`);
-  if (existing.length) {
-   console.log(`${repository} already has ${existing.join(' and ')}; uploading replaces them. ${replaceWarning}`);
+  if (present.length && pinned !== fingerprint && !replaceConfirmed) {
+   console.log(`${repository} already has ${present.join(' and ')}; uploading replaces them. ${replaceWarning}`);
    requireThat(await confirmWord(ask, 'Overwrite the secrets?', 'overwrite'), 'Cancelled; nothing was uploaded.');
   } else {
    requireThat(await confirmWord(ask, `Upload ${certificateSecret} and ${passwordSecret}?`, 'yes'), 'Cancelled; nothing was uploaded.');
   }
   gh(['secret', 'set', certificateSecret, '--repo', repository], source.identity.toString('base64'));
   gh(['secret', 'set', passwordSecret, '--repo', repository], source.password);
-  return {uploaded: true, fingerprint, repository, overwritten: existing};
+  const pinChanged = pinned !== fingerprint;
+  if (pinChanged) writePin(pinPath, fingerprint);
+  return {uploaded: true, fingerprint, repository, overwritten: present, pinChanged};
  } finally {
   fs.rmSync(work, {recursive: true, force: true});
  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
- const prompt = readline.createInterface({input: process.stdin, output: process.stdout});
- try {
-  requireThat(process.argv.length === 2, 'This script takes no arguments; run it without options and answer its questions.');
-  requireThat(process.stdin.isTTY && process.stdout.isTTY, 'Run this script in an interactive terminal.');
-  const result = await wizard({ask: (question) => prompt.question(question)});
-  if (result.uploaded) console.log(`${result.overwritten.length ? 'Overwrote' : 'Uploaded'} the signing secrets in ${result.repository} for certificate ${result.fingerprint}.`);
- } catch (error) {
-  console.error(`macOS signing failed: ${error.message}`);
-  process.exitCode = 1;
- } finally {
-  prompt.close();
+ const [action, ...args] = process.argv.slice(2);
+ if (action === 'verify' && args.length === 1) {
+  try {
+   verify(path.resolve(args[0]));
+   console.log(`Verified the pinned release signature: ${args[0]}`);
+  } catch (error) {
+   console.error(`macOS signing failed: ${error.message}`);
+   process.exitCode = 1;
+  }
+ } else {
+  const terminal = readline.createInterface({input: process.stdin, output: process.stdout});
+  // Ctrl-D or Ctrl-C at a prompt cancels instead of surfacing an AbortError.
+  const ask = (question) => terminal.question(question).catch((error) => { throw error?.code === 'ABORT_ERR' ? Error('Cancelled.') : error; });
+  try {
+   requireThat(action === undefined, 'Run `node scripts/macos-signing.mjs` without arguments and answer its questions; release packaging uses `verify APP_BUNDLE`.');
+   requireThat(process.stdin.isTTY && process.stdout.isTTY, 'Run this script in an interactive terminal.');
+   const result = await wizard({ask});
+   if (result.uploaded) console.log(`${result.overwritten.length ? 'Overwrote' : 'Uploaded'} the signing secrets in ${result.repository} for certificate ${result.fingerprint}.`);
+   if (result.pinChanged) console.log('Pinned it in build/macos/signing.json; commit that file before the next release.');
+  } catch (error) {
+   console.error(`macOS signing failed: ${error.message}`);
+   process.exitCode = 1;
+  } finally {
+   terminal.close();
+  }
  }
 }

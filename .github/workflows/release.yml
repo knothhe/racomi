@@ -177,9 +177,19 @@ jobs:
           MACOS_SIGNING_CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
           MACOS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_CERTIFICATE_PASSWORD }}
         run: |
-          if [ -z "$MACOS_SIGNING_CERTIFICATE" ]; then
+          # Once a certificate is pinned, releases must carry it: a missing
+          # secret or pin fails instead of silently falling back to ad-hoc.
+          if [ -z "$MACOS_SIGNING_CERTIFICATE" ] || [ -z "$MACOS_SIGNING_CERTIFICATE_PASSWORD" ]; then
+            if [ -f build/macos/signing.json ]; then
+              echo "::error::build/macos/signing.json pins a signing certificate, but MACOS_SIGNING_CERTIFICATE or its password secret is missing. Run node scripts/macos-signing.mjs to upload it."
+              exit 1
+            fi
             echo "::warning::MACOS_SIGNING_CERTIFICATE is not set; the app is ad-hoc signed and Keychain asks again after every update."
             exit 0
+          fi
+          if [ ! -f build/macos/signing.json ]; then
+            echo "::error::MACOS_SIGNING_CERTIFICATE is set but build/macos/signing.json is not committed. Run node scripts/macos-signing.mjs and commit the pin."
+            exit 1
           fi
           keychain="$RUNNER_TEMP/racomi-signing.keychain-db"
           password=$(openssl rand -hex 24)
@@ -189,7 +199,7 @@ jobs:
           printf '%s' "$MACOS_SIGNING_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/racomi-signing.p12"
           security import "$RUNNER_TEMP/racomi-signing.p12" -k "$keychain" -P "$MACOS_SIGNING_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           rm -f "$RUNNER_TEMP/racomi-signing.p12"
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" > /dev/null
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
           # A self-signed certificate is not trusted, so list identities without -v.
           identity=$(security find-identity -p codesigning "$keychain" | awk '$2 ~ /^[0-9A-F]{40}$/ { print $2; exit }')

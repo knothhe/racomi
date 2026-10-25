@@ -64,12 +64,17 @@ if [ "$action" = package ]; then
   # Apple Silicon requires a valid code signature. An ad-hoc signature changes
   # with every build, so Keychain asks again after each update for items an
   # older build created. MACOS_SIGN_IDENTITY (a certificate in the keychain
-  # search list) keeps the designated requirement stable instead. Neither is
-  # notarized.
+  # search list) keeps the designated requirement stable instead; with a
+  # committed build/macos/signing.json the bundle must carry that certificate.
+  # Neither is notarized.
   if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
     /usr/bin/codesign --force --sign "$MACOS_SIGN_IDENTITY" "$bundle"
-    requirement=$(/usr/bin/codesign --display --requirements - "$bundle" 2>&1)
-    case "$requirement" in *certificate*) ;; *) fail "signature requirement is not bound to a certificate: $requirement" ;; esac
+    if [ -f "$project_dir/build/macos/signing.json" ]; then
+      node "$project_dir/scripts/macos-signing.mjs" verify "$bundle"
+    else
+      requirement=$(/usr/bin/codesign --display --requirements - "$bundle" 2>&1)
+      case "$requirement" in *certificate*) ;; *) fail "signature requirement is not bound to a certificate: $requirement" ;; esac
+    fi
     signature='fixed signing identity'
   else
     /usr/bin/codesign --force --sign - "$bundle"
