@@ -576,6 +576,62 @@ window.H2_DESIGN_CANVAS = {
       "y": 15140,
       "w": 640,
       "h": 760
+    },
+    {
+      "file": "cloud-r2-connect.html",
+      "title": "R2 OAuth · connect",
+      "x": 0,
+      "y": 25600,
+      "w": 680,
+      "h": 820
+    },
+    {
+      "file": "cloud-r2-waiting.html",
+      "title": "R2 OAuth · waiting",
+      "x": 720,
+      "y": 25600,
+      "w": 680,
+      "h": 820
+    },
+    {
+      "file": "cloud-r2-error.html",
+      "title": "R2 OAuth · error",
+      "x": 1440,
+      "y": 25600,
+      "w": 680,
+      "h": 820
+    },
+    {
+      "file": "cloud-r2-bucket.html",
+      "title": "R2 OAuth · bucket",
+      "x": 2160,
+      "y": 25600,
+      "w": 680,
+      "h": 820
+    },
+    {
+      "file": "cloud-r2-ready.html",
+      "title": "R2 OAuth · ready",
+      "x": 2880,
+      "y": 25600,
+      "w": 680,
+      "h": 820
+    },
+    {
+      "file": "cloud-r2-manual.html",
+      "title": "R2 OAuth · manual",
+      "x": 3600,
+      "y": 25600,
+      "w": 680,
+      "h": 820
+    },
+    {
+      "file": "cloud-r2-ready.html?theme=dark",
+      "title": "R2 OAuth · 深色窄屏",
+      "x": 0,
+      "y": 26500,
+      "w": 540,
+      "h": 820
     }
   ],
   "notes": [
@@ -661,6 +717,12 @@ window.H2_DESIGN_CANVAS = {
       "text": "Git 和 skills.sh 按同一规则合并同仓库的同名分发副本。内容相同只展示一份；有差异时在该技能下选择一个变体，计数和全选按技能计算。来源同步默认保留已安装变体，切换时保留技能 ID、预设与项目引用。",
       "x": 0,
       "y": 24500,
+      "w": 1280
+    },
+    {
+      "text": "Cloudflare R2 与手动 S3 分别保留配置。切换仅切换草稿；保存后才改变实际同步。OAuth 授权只在 Go 后端处理。选桶生成凭据后仍需测试与保存；失败保留前一配置和用户输入。取消授权不影响已有 S3 配置。",
+      "x": 0,
+      "y": 27380,
       "w": 1280
     }
   ]

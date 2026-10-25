@@ -127,3 +127,58 @@ test("cloud restore entries show the concrete version and counts for review", ()
   assert.match(html, /data-id="revision&quot;&lt;1&gt;"/);
   assert.match(ui.cloudBackupsList([]), /No cloud backups yet/);
 });
+
+test("manual and OAuth profiles produce independent drafts without returned secret values", () => {
+  const ui = module();
+  const manual = { ...ui.defaultCloudSyncConfig(), endpoint: "https://manual.example.com", bucket: "manual", secretAccessKey: "unexpected-secret", passphrase: "unexpected-passphrase", hasSecretAccessKey: true };
+  const oauth = { ...ui.defaultCloudSyncConfig(), provider: "r2-oauth", endpoint: "https://account.r2.cloudflarestorage.com", bucket: "oauth", r2ConnectionId: "connection-id", hasSecretAccessKey: true };
+  const drafts = ui.cloudSyncDrafts({ config: oauth, manualConfig: manual, r2Config: oauth });
+  assert.equal(drafts.s3.bucket, "manual");
+  assert.equal(drafts["r2-oauth"].bucket, "oauth");
+  assert.equal(drafts.s3.secretAccessKey, "");
+  assert.equal(drafts.s3.passphrase, "");
+  drafts.s3.bucket = "edited-manual";
+  assert.equal(manual.bucket, "manual");
+  assert.equal(drafts["r2-oauth"].bucket, "oauth");
+  assert.equal(ui.cloudSyncDrafts({ config: manual }).s3.provider, "s3");
+});
+
+test("OAuth submits prepared destination identity and common sync settings without accepting manual credentials", () => {
+  const ui = module();
+  const saved = { ...ui.defaultCloudSyncConfig(), provider: "r2-oauth", endpoint: "https://account.eu.r2.cloudflarestorage.com", bucket: "chosen", accountId: "account-id", jurisdiction: "eu", r2ConnectionId: "prepared-connection", accessKeyId: "issued-key", hasSecretAccessKey: true };
+  const config = ui.readCloudSyncConfig({ endpoint: "https://untrusted.example.com", bucket: "other", accessKeyId: "forged", secretAccessKey: "forged-secret", prefix: "shared/library", passphrase: "  twelve character phrase  ", autoSync: "on", intervalMinutes: "13" }, saved);
+  assert.equal(config.endpoint, saved.endpoint);
+  assert.equal(config.bucket, saved.bucket);
+  assert.equal(config.accessKeyId, saved.accessKeyId);
+  assert.equal(config.r2ConnectionId, "prepared-connection");
+  assert.equal(config.accountId, "account-id");
+  assert.equal(config.jurisdiction, "eu");
+  assert.equal(config.secretAccessKey, "");
+  assert.equal(config.passphrase, "  twelve character phrase  ");
+  assert.equal(config.prefix, "shared/library");
+  assert.equal(config.intervalMinutes, 13);
+  assert.equal(config.autoSync, true);
+  assert.equal(config.pathStyle, true);
+});
+
+test("OAuth editor escapes external account, bucket and error text and never renders credentials", () => {
+  const ui = module();
+  const config = { ...ui.defaultCloudSyncConfig(), provider: "r2-oauth", bucket: "<bucket>", endpoint: "https://account.r2.cloudflarestorage.com", secretAccessKey: "DO-NOT-SHOW-KEY", sessionToken: "DO-NOT-SHOW-TOKEN", passphrase: "DO-NOT-SHOW-PHRASE", hasSecretAccessKey: true };
+  const html = ui.r2SyncConfigFields(config, { oauth: { available: true, connected: true, authorizing: false, lastError: "" }, accounts: [{ id: "account", name: "<script>account</script>" }], buckets: [{ name: '<bucket>"', jurisdiction: "default" }], accountId: "account", jurisdiction: "default", bucket: "", busy: false, error: "<img src=x>" });
+  for (const secret of [config.secretAccessKey, config.sessionToken, config.passphrase]) assert.equal(html.includes(secret), false);
+  assert.doesNotMatch(html, /<script>|<img src=x>|name="secretAccessKey"|name="accessKeyId"/);
+  assert.match(html, /&lt;script&gt;account&lt;\/script&gt;/);
+  assert.match(html, /&lt;img src=x&gt;/);
+  assert.match(html, /R2 credentials ready/);
+});
+
+test("unconfigured OAuth shows one localized notice while damaged authorization metadata stays visible", () => {
+  const ui = module();
+  const view = { accounts: [], buckets: [], accountId: "", jurisdiction: "default", bucket: "", busy: false, error: "" };
+  const unavailable = ui.r2SyncConfigFields(ui.defaultCloudSyncConfig(), { ...view, oauth: { available: false, connected: false, authorizing: false, lastError: "Cloudflare sign-in is not configured in this build. You can use manual S3 configuration." } });
+  assert.match(unavailable, /Cloudflare connection is not enabled in this build/);
+  assert.doesNotMatch(unavailable, /Cloudflare sign-in is not configured|role="alert"/);
+  const damaged = ui.r2SyncConfigFields(ui.defaultCloudSyncConfig(), { ...view, oauth: { available: false, connected: false, authorizing: false, lastError: "Cannot read Cloudflare authorization metadata; the original file has been preserved." } });
+  assert.match(damaged, /role="alert"/);
+  assert.match(damaged, /original file has been preserved/);
+});

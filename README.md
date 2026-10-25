@@ -6,7 +6,7 @@
 - 发现页后台核验 Git 技能，标记上游已移除或改名的条目，并可直接查看仓库当前技能。
 - 按来源选择全部已安装技能，与多个预设及直接选择的技能合并去重，支持多目录、复制与软链接部署。
 - 提供本地快照、ZIP 备份恢复和 skills-manager 数据导入。
-- 可选 S3 / Cloudflare R2 加密双向同步，跨设备共享来源、技能、预设及设置，并支持云端历史恢复。
+- 可选 S3 / Cloudflare R2 加密双向同步，跨设备共享来源、技能、预设及设置，并支持云端历史恢复；R2 可通过 OAuth 自动配置，亦保留独立的手动 S3 配置。
 - 支持侧边栏／顶部导航切换、明暗主题、文字缩放、界面字体，以及简体中文、繁體中文和 English。
 - macOS 可开启轻量模式与开机自启。
 
@@ -96,6 +96,8 @@ make check       # 前端构建、类型检查、Go vet 和测试
 
 在两个终端分别运行 `make frontend-dev` 和 `make dev`。前端默认端口为 `9245`，可通过 `VITE_PORT` 修改；Go 代码修改后需重启桌面应用。
 
+发行者在 [Cloudflare 注册配置](internal/desktop/cloudflare-registration.json) 中填写 racomi 的公开 `ClientID` 后重新构建，即可启用 R2 OAuth。回调地址和四项控制台权限见 [OAuth 接入与验证](docs/r2-oauth-poc.md)；普通用户无需填写 Client ID 或访问密钥。
+
 浏览器验证入口为 [内存测试工作空间](http://127.0.0.1:9245/tests/browser.html?projects=40)，包含 40 个项目，不访问本机技能或部署目录，刷新即可重置。实际管理功能需要桌面后端。
 
 本地打包、首次发版、版本升级及失败续推见 [发布指南](docs/release/README.md)。
@@ -106,6 +108,7 @@ make check       # 前端构建、类型检查、Go vet 和测试
 
 - [功能与数据规则](docs/requirements.md)
 - [S3 / R2 同步配置指南](docs/s3-r2-sync.md)
+- [R2 OAuth 发行者配置与 PoC](docs/r2-oauth-poc.md)
 - [安装与卸载说明](build/macos/INSTALL.txt)
 - [图标设计与生成](build/design/README.md)
 - [第三方许可](frontend/public/THIRD_PARTY_NOTICES.txt)（Agent 品牌图标来自 Magpie／Lobe Icons；通用操作图标为本地 SVG，Markdown 解析使用 markdown-it）

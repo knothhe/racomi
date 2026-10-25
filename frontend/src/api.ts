@@ -41,7 +41,16 @@ export interface GlobalApplication {
 }
 export interface Snapshot { id: string; createdAt: string; reason: string; skillCount: number; presetCount: number }
 export interface InterfaceFontFamily { family: string; styles: { name: string; postscriptName: string }[] }
+export type CloudSyncProvider = "s3" | "r2-oauth";
+export interface R2OAuthStatus {
+  available: boolean; connected: boolean; authorizing: boolean; lastError: string;
+  accountId?: string; bucket?: string; jurisdiction?: string;
+}
+export interface R2Account { id: string; name: string }
+export interface R2Bucket { name: string; jurisdiction: string }
 export interface CloudSyncConfig {
+  provider?: CloudSyncProvider;
+  r2ConnectionId?: string; accountId?: string; jurisdiction?: string;
   endpoint: string; region: string; bucket: string; prefix: string;
   accessKeyId: string; secretAccessKey: string; sessionToken: string; passphrase: string;
   clearSessionToken?: boolean;
@@ -51,6 +60,7 @@ export interface CloudSyncConfig {
 export interface SyncConflict { key: string; kind: string; name: string; local: unknown; remote: unknown }
 export interface CloudSyncStatus {
   config: CloudSyncConfig; configured: boolean; syncing: boolean;
+  manualConfig?: CloudSyncConfig; r2Config?: CloudSyncConfig; r2OAuth?: R2OAuthStatus;
   lastSyncAt: string; lastError: string; conflicts: SyncConflict[];
 }
 export interface CloudBackup { id: string; createdAt: string; skillCount: number; presetCount: number }
@@ -115,6 +125,14 @@ export const api = {
   listInterfaceFonts: () => invoke<InterfaceFontFamily[]>("ListInterfaceFonts"),
   state: () => invoke<AppState>("GetState"),
   cloudSyncStatus: () => invoke<CloudSyncStatus>("GetCloudSyncStatus"),
+  getR2OAuthStatus: () => invoke<R2OAuthStatus>("GetR2OAuthStatus"),
+  startR2OAuth: () => invoke<R2OAuthStatus>("StartR2OAuth"),
+  cancelR2OAuth: () => invoke<R2OAuthStatus>("CancelR2OAuth"),
+  disconnectR2OAuth: () => invoke<R2OAuthStatus>("DisconnectR2OAuth"),
+  discardR2Connection: (connectionID: string) => invoke<void>("DiscardR2Connection", connectionID),
+  listR2Accounts: () => invoke<R2Account[]>("ListR2Accounts"),
+  listR2Buckets: (accountID: string, jurisdiction: string) => invoke<R2Bucket[]>("ListR2Buckets", accountID, jurisdiction),
+  configureR2Bucket: (accountID: string, bucket: string, jurisdiction: string) => invoke<CloudSyncConfig>("ConfigureR2Bucket", accountID, bucket, jurisdiction),
   saveCloudSyncConfig: (config: CloudSyncConfig) => invoke<AppState>("SaveCloudSyncConfig", config),
   testCloudSyncConnection: (config: CloudSyncConfig) => invoke<void>("TestCloudSyncConnection", config),
   syncCloud: () => invoke<AppState>("SyncCloud"),

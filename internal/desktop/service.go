@@ -47,6 +47,7 @@ type Service struct {
 	app                 *application.App
 	legacyPreview       *skillsManagerSession
 	cloud               *cloudSyncRuntime
+	r2                  *r2OAuthRuntime
 }
 
 // NewApplicationService keeps About, updates and error recovery reachable when
@@ -85,7 +86,7 @@ func New(root string) (*Service, error) {
 		cloud = newCloudSyncRuntime(store.Root())
 		cloud.lastError = err.Error()
 	}
-	return &Service{desktop: desktop, store: store, sources: sources.New(filepath.Join(store.Root(), "cache", "sources")), theme: "system", locale: "zh-CN", cloud: cloud}, nil
+	return &Service{desktop: desktop, store: store, sources: sources.New(filepath.Join(store.Root(), "cache", "sources")), theme: "system", locale: "zh-CN", cloud: cloud, r2: newR2OAuthRuntime(store.Root())}, nil
 }
 
 func Attach(service *Service, app *application.App) {
@@ -93,6 +94,9 @@ func Attach(service *Service, app *application.App) {
 	service.app = app
 	service.themeMu.Unlock()
 	if app != nil {
+		if service.r2 != nil {
+			service.r2.openURL = app.Browser.OpenURL
+		}
 		app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
 			service.lifecycle.started.Store(true)
 			service.configureMenu()
@@ -119,6 +123,13 @@ func (s *Service) ServiceStartup(ctx context.Context, _ application.ServiceOptio
 	s.themeMu.Lock()
 	defer s.themeMu.Unlock()
 	s.applyThemeLocked()
+	return nil
+}
+
+// Stop the temporary OAuth listener when the desktop application exits. A
+// window close alone does not revoke an existing Cloudflare connection.
+func (s *Service) ServiceShutdown() error {
+	s.CancelR2OAuth()
 	return nil
 }
 

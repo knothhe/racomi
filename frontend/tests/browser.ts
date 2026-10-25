@@ -1,6 +1,6 @@
 // An isolated browser fixture. All mutations affect this in-memory workspace;
 // no Wails service, user's skills or deployment directory is accessed.
-import { api, type AppState, type ApplyPlan, type Target } from "../src/api";
+import { api, type AppState, type ApplyPlan, type Target, type R2OAuthStatus, type CloudSyncConfig } from "../src/api";
 import { defaultCloudSyncConfig } from "../src/cloud-sync";
 import { getLocalePreference } from "../src/i18n";
 import { getThemePreference } from "../src/theme";
@@ -37,6 +37,13 @@ if (testParameters.has("cloud-sync") || testParameters.has("cloud-conflicts") ||
   state.cloudSync.config = { ...defaultCloudSyncConfig(), endpoint: "https://example.r2.cloudflarestorage.com", bucket: "racomi-test", accessKeyId: "test-access-id", hasSecretAccessKey: true, hasPassphrase: true };
   state.cloudSync.configured = true;
 }
+const fixtureOAuth: R2OAuthStatus = { available: testParameters.has("cloud-r2"), connected: testParameters.has("cloud-r2-connected"), authorizing: false, lastError: "" };
+if (testParameters.has("cloud-r2-connected")) fixtureOAuth.available = true;
+if (testParameters.has("cloud-r2-unavailable")) fixtureOAuth.available = false;
+state.cloudSync.r2OAuth = { ...fixtureOAuth };
+state.cloudSync.manualConfig = { ...state.cloudSync.config, provider: "s3" };
+let fixtureOAuthPolls = 0;
+let fixtureR2Candidate: CloudSyncConfig | undefined;
 const fixtureCloudConflicts: AppState["cloudSync"]["conflicts"] = [
   { key: "preset/preset-dev", kind: "preset", name: "Development", local: { name: "Development", skillIds: ["design", "code"] }, remote: { name: "Development on laptop", skillIds: ["code"] } },
   { key: "source/source-design", kind: "source", name: "Design source", local: null, remote: { repository: "https://example.com/team/design", ref: "main" } },
@@ -419,12 +426,48 @@ Object.assign(api, {
     if (testParameters.has("cloud-conflicts-on-poll") && cloudPolls++ === 0) state.cloudSync.conflicts = structuredClone(fixtureCloudConflicts);
     return structuredClone(state.cloudSync);
   },
+  getR2OAuthStatus: async () => {
+    if (fixtureOAuth.authorizing && ++fixtureOAuthPolls > 1 && !testParameters.has("cloud-r2-wait")) {
+      fixtureOAuth.authorizing = false;
+      fixtureOAuth.connected = !testParameters.has("cloud-r2-denied");
+      fixtureOAuth.lastError = fixtureOAuth.connected ? "" : "Cloudflare authorization was denied.";
+    }
+    state.cloudSync.r2OAuth = { ...fixtureOAuth };
+    return { ...fixtureOAuth };
+  },
+  startR2OAuth: async () => {
+    fixtureOAuthPolls = 0;
+    Object.assign(fixtureOAuth, { authorizing: true, lastError: "" });
+    return { ...fixtureOAuth };
+  },
+  cancelR2OAuth: async () => { fixtureOAuth.authorizing = false; return { ...fixtureOAuth }; },
+  discardR2Connection: async (connectionID: string) => { if (fixtureR2Candidate?.r2ConnectionId === connectionID && state.cloudSync.r2Config?.r2ConnectionId !== connectionID) fixtureR2Candidate = undefined; },
+  disconnectR2OAuth: async () => {
+    Object.assign(fixtureOAuth, { connected: false, authorizing: false });
+    if (state.cloudSync.r2Config) state.cloudSync.r2Config.hasSecretAccessKey = false;
+    if (state.cloudSync.config.provider === "r2-oauth") state.cloudSync.configured = false;
+    state.cloudSync.r2OAuth = { ...fixtureOAuth };
+    document.documentElement.dataset.r2Disconnected = "true";
+    return { ...fixtureOAuth };
+  },
+  listR2Accounts: async () => [{ id: "fixture-account", name: "Test account" }],
+  listR2Buckets: async (_accountID: string, jurisdiction: string) => [{ name: "racomi-oauth-test", jurisdiction }],
+  configureR2Bucket: async (accountID: string, bucket: string, jurisdiction: string) => {
+    if (testParameters.has("cloud-r2-provision-fail")) throw new Error("R2 credential provisioning was denied.");
+    fixtureR2Candidate = { ...defaultCloudSyncConfig(), provider: "r2-oauth", r2ConnectionId: "fixture-r2-connection", accountId: accountID, jurisdiction, endpoint: `https://fixture-account${jurisdiction === "default" ? "" : `.${jurisdiction}`}.r2.cloudflarestorage.com`, bucket, accessKeyId: "fixture-provisioned-key", hasSecretAccessKey: true };
+    document.documentElement.dataset.r2Provisioned = "true";
+    return { ...fixtureR2Candidate };
+  },
   saveCloudSyncConfig: async (config: AppState["cloudSync"]["config"]) => {
+    const previous = config.provider === "r2-oauth" ? fixtureR2Candidate || state.cloudSync.r2Config : state.cloudSync.manualConfig || state.cloudSync.config;
     if (!config.endpoint || !config.bucket || !config.accessKeyId) throw new Error("Endpoint, bucket, and access key are required");
-    if (!config.secretAccessKey && !state.cloudSync.config.hasSecretAccessKey) throw new Error("Secret access key is required");
-    if (!config.passphrase && !state.cloudSync.config.hasPassphrase || config.passphrase && config.passphrase.length < 12) throw new Error("Encryption passphrase must contain at least 12 characters");
-    state.cloudSync.config = { ...config, clearSessionToken: false, secretAccessKey: "", sessionToken: "", passphrase: "", hasSecretAccessKey: !!config.secretAccessKey || state.cloudSync.config.hasSecretAccessKey, hasSessionToken: !config.clearSessionToken && (!!config.sessionToken || state.cloudSync.config.hasSessionToken), hasPassphrase: !!config.passphrase || state.cloudSync.config.hasPassphrase };
+    if (!config.secretAccessKey && !previous?.hasSecretAccessKey) throw new Error("Secret access key is required");
+    if (!config.passphrase && !previous?.hasPassphrase || config.passphrase && config.passphrase.length < 12) throw new Error("Encryption passphrase must contain at least 12 characters");
+    state.cloudSync.config = { ...config, clearSessionToken: false, secretAccessKey: "", sessionToken: "", passphrase: "", hasSecretAccessKey: !!config.secretAccessKey || !!previous?.hasSecretAccessKey, hasSessionToken: !config.clearSessionToken && (!!config.sessionToken || !!previous?.hasSessionToken), hasPassphrase: !!config.passphrase || !!previous?.hasPassphrase };
+    if (config.provider === "r2-oauth") state.cloudSync.r2Config = { ...state.cloudSync.config };
+    else state.cloudSync.manualConfig = { ...state.cloudSync.config };
     state.cloudSync.configured = true;
+    document.documentElement.dataset.cloudProvider = config.provider || "s3";
     return copy();
   },
   testCloudSyncConnection: async () => { document.documentElement.dataset.cloudConnectionTested = "true"; },

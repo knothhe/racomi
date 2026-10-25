@@ -33,4 +33,7 @@ if [ "$channel" = stable ]; then
 fi
 mkdir -p "bin/$channel"
 flags="-s -w -extldflags=-mmacosx-version-min=$minimum -X racomi/internal/buildinfo.Version=$version -X racomi/internal/buildinfo.Number=$number -X racomi/internal/buildinfo.Commit=$commit -X racomi/internal/buildinfo.Dirty=$dirty -X racomi/internal/buildinfo.Channel=$channel -X racomi/internal/buildinfo.Executor=$executor -X racomi/internal/buildinfo.FeedURL=$feed -X racomi/internal/buildinfo.PublicKey=$key"
+oauth_client_id=${RACOMI_CLOUDFLARE_CLIENT_ID:-}
+case "$oauth_client_id" in *[!A-Za-z0-9._-]*) echo 'invalid RACOMI_CLOUDFLARE_CLIENT_ID' >&2; exit 1 ;; esac
+flags="$flags -X racomi/internal/desktop.cloudflareOAuthClientID=$oauth_client_id"
 CGO_ENABLED=1 GOARCH="$architecture" "${GO:-go}" build -trimpath -tags production -ldflags="$flags" -o "bin/$channel/racomi" .

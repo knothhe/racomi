@@ -14,7 +14,8 @@ import { changeSelection } from "./skill-selection";
 import { matchesProject, matchesProjectSkill, projectSkillApplied, sortProjects, moveProject, type ProjectSort } from "./project-browser";
 import { applicationPlanDisposition, hasApplicationChanges } from "./application-plan";
 import { createSettingsAutosave } from "./settings-autosave";
-import { cloudBackupsList, cloudConflictBanner, cloudConflictFields, setCloudResolutionChoice, cloudSyncConfigFields, cloudSyncSection, readCloudResolutions, readCloudSyncConfig } from "./cloud-sync";
+import { cloudBackupsList, cloudConflictBanner, cloudConflictFields, setCloudResolutionChoice, cloudSyncConfigFields, cloudSyncDrafts, cloudSyncMethodFields, r2SyncConfigFields, cloudSyncSection, readCloudResolutions, readCloudSyncConfig } from "./cloud-sync";
+import type { CloudSyncConfig, CloudSyncProvider, R2OAuthStatus, R2Account, R2Bucket } from "./api";
 import { showFeedback } from "./feedback";
 import { getNavLayout, getNavLayoutPreference, installSidebarResize, setNavLayoutPreference, syncSidebarWidth, toggleNavLayout, type NavLayoutPreference } from "./layout";
 import { icon, projectIcons, projectIconName, presetIcons, presetIconName } from "./icons";
@@ -110,6 +111,14 @@ let cloudPollBusy = false;
 let loadedCloudSyncAt = "";
 let cloudConflictDraft: SyncConflict[] = [];
 let cloudBackupDraft: CloudBackup[] = [];
+interface CloudEditorState {
+  provider: CloudSyncProvider; drafts: Record<CloudSyncProvider, CloudSyncConfig>;
+  oauth?: R2OAuthStatus; accounts: R2Account[]; buckets: R2Bucket[];
+  accountsState: "idle" | "loading" | "loaded" | "failed"; accountsEpoch: number;
+  accountId: string; jurisdiction: string; bucket: string; busy: boolean; error: string;
+  request: number; poll?: number; disconnectConfirm: boolean;
+}
+let cloudEditor: CloudEditorState | null = null;
 const sourceEditorBaselines = new WeakMap<HTMLFormElement, Source | null>();
 const presetEditorBaselines = new WeakMap<HTMLFormElement, Preset | null>();
 const documents = new Map<string, { hash: string; text: string; rendered?: { locale: string; wrap: boolean; html: string } }>();
@@ -1239,6 +1248,12 @@ function skillsManagerResultView(result: ImportResult) {
   return `<table class="import-result-table"><thead><tr><th scope="col">${t("内容")}</th><th scope="col">${t("新增")}</th><th scope="col">${t("跳过")}</th></tr></thead><tbody>${[[t("技能"), result.addedSkills, result.skippedSkills], [t("预设"), result.addedPresets, result.skippedPresets], [t("来源"), result.addedSources, result.skippedSources]].map(([name, added, skipped]) => `<tr><th scope="row">${e(name)}</th><td>${e(added)}</td><td>${e(skipped)}</td></tr>`).join("")}</tbody></table>`;
 }
 function closeModal(result = false) {
+  if (cloudEditor) {
+    window.clearTimeout(cloudEditor.poll);
+    discardR2Candidate(cloudEditor.drafts["r2-oauth"].r2ConnectionId);
+    if (cloudEditor.oauth?.authorizing) void api.cancelR2OAuth().catch(() => {});
+    cloudEditor = null;
+  }
   if (modalRoot.querySelector("#skills-manager-import")) skillsManagerPreview = null;
   const previous = modalPreviousFocus;
   const resolve = confirmResolve;
@@ -1272,8 +1287,148 @@ function confirm(title: string, description: string, body = "", label = t("确�
   modalRoot.querySelector<HTMLElement>('.modal-footer [data-action="close-modal"]')?.focus();
   return new Promise((resolve) => { confirmResolve = resolve; });
 }
+function discardR2Candidate(connectionID?: string) {
+  if (connectionID) void api.discardR2Connection(connectionID).catch(() => toast(t("Temporary R2 credentials could not be removed. They expire automatically; reconnect to retry cleanup."), true));
+}
 function cloudSyncEditor() {
-  modal(t("S3 / R2 sync"), t("Connect a private bucket and use the same encryption passphrase on every device."), cloudSyncConfigFields(data?.cloudSync?.config), `<button type="button" class="button" data-action="test-cloud-sync">${t("Test connection")}</button><button class="button primary" type="submit">${t("Save sync settings")}</button>`, "cloud-sync-editor");
+  modal(t("S3 / R2 sync"), t("Connect a private bucket and use the same encryption passphrase on every device."), "", `<button type="button" class="button" data-action="test-cloud-sync">${t("Test connection")}</button><button class="button primary" type="submit">${t("Save sync settings")}</button>`, "cloud-sync-editor");
+  const drafts = cloudSyncDrafts(data?.cloudSync);
+  const config = drafts["r2-oauth"];
+  cloudEditor = {
+    provider: data?.cloudSync?.config.provider === "r2-oauth" ? "r2-oauth" : "s3", drafts,
+    oauth: data?.cloudSync?.r2OAuth, accounts: [], buckets: [], accountsState: "idle", accountsEpoch: 0,
+    accountId: config.accountId || "", jurisdiction: config.jurisdiction || "default", bucket: config.bucket,
+    busy: false, error: "", request: 0, disconnectConfirm: false,
+  };
+  renderCloudSyncEditor(false);
+  void refreshR2Editor(cloudEditor);
+}
+function captureCloudSyncDraft() {
+  const form = modalRoot.querySelector<HTMLFormElement>("#cloud-sync-editor");
+  if (form && cloudEditor) cloudEditor.drafts[cloudEditor.provider] = readCloudSyncConfig(form, cloudEditor.drafts[cloudEditor.provider]);
+}
+function renderCloudSyncEditor(capture = true) {
+  const editor = cloudEditor;
+  const form = modalRoot.querySelector<HTMLFormElement>("#cloud-sync-editor");
+  if (!editor || !form) return;
+  if (capture) captureCloudSyncDraft();
+  const config = editor.drafts[editor.provider];
+  const disconnect = editor.provider === "r2-oauth" && editor.oauth?.connected ? editor.disconnectConfirm
+    ? `<div class="r2-disconnect-confirm" role="alert"><p>${e(t("Disconnecting deletes the R2 credentials created by racomi and revokes Cloudflare authorization. Sync with this connection will stop. Your bucket data is kept."))}</p><button type="button" class="button" data-action="keep-r2-connection">${e(t("Keep connection"))}</button><button type="button" class="button danger" data-action="confirm-disconnect-r2" ${editor.busy ? "disabled" : ""}>${e(t("Disconnect Cloudflare"))}</button></div>`
+    : `<button type="button" class="button quiet r2-disconnect" data-action="disconnect-r2-oauth" ${editor.busy ? "disabled" : ""}>${e(t("Disconnect Cloudflare"))}</button>` : "";
+  form.querySelector(".modal-body")!.innerHTML = cloudSyncMethodFields(editor.provider) + (editor.provider === "s3" ? cloudSyncConfigFields(config) : r2SyncConfigFields(config, editor)) + disconnect;
+  // Secret drafts stay in memory and are restored as DOM properties only.
+  for (const name of ["secretAccessKey", "sessionToken", "passphrase"] as const) {
+    const input = form.querySelector<HTMLInputElement>(`[name="${name}"]`);
+    if (input) input.value = config[name];
+  }
+  const ready = editor.provider === "s3" || !!(config.hasSecretAccessKey && config.r2ConnectionId);
+  for (const control of form.querySelectorAll<HTMLButtonElement>('.modal-footer button:not([data-action="close-modal"])')) control.disabled = !ready || editor.busy;
+  form.querySelectorAll<HTMLButtonElement>('[data-action="cloud-provider"]').forEach(control => control.disabled = editor.busy);
+  syncBusyControls();
+}
+async function refreshR2Editor(editor: CloudEditorState) {
+  try {
+    const oauth = await api.getR2OAuthStatus();
+    if (cloudEditor !== editor) return;
+    const changed = JSON.stringify(oauth) !== JSON.stringify(editor.oauth);
+    if (editor.oauth?.authorizing && !oauth.authorizing && oauth.connected && !oauth.lastError) {
+      editor.accounts = []; editor.buckets = []; editor.accountsState = "idle"; ++editor.accountsEpoch; ++editor.request;
+    }
+    editor.oauth = oauth;
+    if (changed && editor.provider === "r2-oauth") renderCloudSyncEditor();
+    if (editor.provider === "r2-oauth" && oauth.connected && !oauth.authorizing && editor.accountsState === "idle") await loadR2Accounts(editor);
+    if (oauth.authorizing && cloudEditor === editor) editor.poll = window.setTimeout(() => { void refreshR2Editor(editor); }, 1000);
+  } catch (error) {
+    if (cloudEditor !== editor) return;
+    editor.error = error instanceof Error ? error.message : String(error);
+    if (editor.provider === "r2-oauth") renderCloudSyncEditor();
+  }
+}
+async function loadR2Accounts(editor: CloudEditorState) {
+  if (editor.provider !== "r2-oauth" || editor.oauth?.authorizing || editor.accountsState !== "idle") return;
+  editor.accountsState = "loading";
+  const epoch = editor.accountsEpoch;
+  try {
+    const accounts = await api.listR2Accounts();
+    if (cloudEditor !== editor || epoch !== editor.accountsEpoch) return;
+    editor.accountsState = "loaded";
+    editor.accounts = accounts || [];
+    if (!editor.accountId && editor.accounts.length === 1) editor.accountId = editor.accounts[0].id;
+    if (editor.provider === "r2-oauth") renderCloudSyncEditor();
+    if (editor.accountId && editor.provider === "r2-oauth") await loadR2Buckets(editor);
+  } catch (error) {
+    if (cloudEditor !== editor || epoch !== editor.accountsEpoch) return;
+    editor.accountsState = "failed";
+    editor.error = error instanceof Error ? error.message : String(error);
+    if (editor.provider === "r2-oauth") renderCloudSyncEditor();
+  }
+}
+async function loadR2Buckets(editor: CloudEditorState) {
+  if (editor.provider !== "r2-oauth" || editor.oauth?.authorizing) return;
+  const request = ++editor.request;
+  const accountId = editor.accountId, jurisdiction = editor.jurisdiction;
+  editor.buckets = [];
+  editor.busy = true;
+  editor.error = "";
+  renderCloudSyncEditor();
+  try {
+    const buckets = await api.listR2Buckets(accountId, jurisdiction);
+    if (cloudEditor !== editor || request !== editor.request) return;
+    editor.buckets = buckets || [];
+    if (!editor.buckets.some(bucket => bucket.name === editor.bucket)) editor.bucket = "";
+  } catch (error) {
+    if (cloudEditor !== editor || request !== editor.request) return;
+    editor.error = error instanceof Error ? error.message : String(error);
+  } finally {
+    if (cloudEditor === editor && request === editor.request) { editor.busy = false; renderCloudSyncEditor(); }
+  }
+}
+async function r2EditorAction(action: string) {
+  const editor = cloudEditor;
+  if (!editor || editor.busy) return;
+  if (action === "disconnect-r2-oauth" || action === "keep-r2-connection") {
+    editor.disconnectConfirm = action === "disconnect-r2-oauth";
+    renderCloudSyncEditor(); return;
+  }
+  if (!["start-r2-oauth", "cancel-r2-oauth", "configure-r2-bucket", "confirm-disconnect-r2"].includes(action)) return;
+  captureCloudSyncDraft();
+  ++editor.request;
+  window.clearTimeout(editor.poll);
+  const selectedAccount = editor.accountId, selectedBucket = editor.bucket, selectedJurisdiction = editor.jurisdiction;
+  if (action === "start-r2-oauth") ++editor.accountsEpoch;
+  editor.busy = true; editor.error = ""; renderCloudSyncEditor(false);
+  try {
+    if (action === "configure-r2-bucket") {
+      const config = await api.configureR2Bucket(selectedAccount, selectedBucket, selectedJurisdiction);
+      if (cloudEditor !== editor) { discardR2Candidate(config.r2ConnectionId); return; }
+      const draft = editor.drafts["r2-oauth"];
+      if (draft.r2ConnectionId !== config.r2ConnectionId) discardR2Candidate(draft.r2ConnectionId);
+      editor.drafts["r2-oauth"] = { ...config, provider: "r2-oauth", prefix: draft.prefix, passphrase: draft.passphrase, hasPassphrase: draft.hasPassphrase || config.hasPassphrase, autoSync: draft.autoSync, intervalMinutes: draft.intervalMinutes };
+    } else {
+      const oauth = await (action === "start-r2-oauth" ? api.startR2OAuth() : action === "cancel-r2-oauth" ? api.cancelR2OAuth() : api.disconnectR2OAuth());
+      if (cloudEditor !== editor) return;
+      editor.oauth = oauth;
+      editor.disconnectConfirm = false;
+      window.clearTimeout(editor.poll);
+      if (action === "confirm-disconnect-r2") {
+        editor.accounts = []; editor.buckets = [];
+        editor.drafts["r2-oauth"] = { ...editor.drafts["r2-oauth"], r2ConnectionId: "", accessKeyId: "", hasSecretAccessKey: false };
+        const status = await api.cloudSyncStatus();
+        if (data) data.cloudSync = status;
+      }
+      if (oauth.authorizing) editor.poll = window.setTimeout(() => { void refreshR2Editor(editor); }, 1000);
+      else if (oauth.connected && !oauth.lastError && action === "start-r2-oauth") {
+        editor.accounts = []; editor.buckets = []; editor.accountsState = "idle"; ++editor.accountsEpoch;
+        await loadR2Accounts(editor);
+      }
+    }
+  } catch (error) {
+    if (cloudEditor !== editor) return;
+    editor.error = error instanceof Error ? error.message : String(error);
+  } finally {
+    if (cloudEditor === editor) { editor.busy = false; renderCloudSyncEditor(false); }
+  }
 }
 function cloudConflictsEditor() {
   cloudConflictDraft = structuredClone(arr(data?.cloudSync?.conflicts));
@@ -1719,6 +1874,17 @@ app.addEventListener("toggle", (ev) => {
   projectDetailsOpen.set(details.dataset.id!, open);
 }, true);
 modalRoot.addEventListener("change", (ev) => {
+  const control = ev.target as HTMLSelectElement;
+  const editor = cloudEditor;
+  if (control.form?.id === "cloud-sync-editor" && editor && ["r2Account", "r2Jurisdiction", "r2Bucket"].includes(control.name)) {
+    captureCloudSyncDraft();
+    if (control.name === "r2Bucket") { editor.bucket = control.value; renderCloudSyncEditor(); return; }
+    if (control.name === "r2Account") editor.accountId = control.value;
+    else editor.jurisdiction = control.value;
+    editor.bucket = "";
+    if (editor.accountId) void loadR2Buckets(editor); else { editor.buckets = []; renderCloudSyncEditor(); }
+    return;
+  }
   if (["project-directory", "project-custom-path"].includes((ev.target as HTMLInputElement).name)) updateProjectDestination();
 });
 modalRoot.addEventListener("input", (ev) => {
@@ -1747,7 +1913,7 @@ document.addEventListener("submit", async (ev) => {
   if (submit && formID !== "hub-search") submit.disabled = true;
   try {
     if (formID === "cloud-sync-editor") {
-      const config = readCloudSyncConfig(form, data?.cloudSync?.config);
+      const config = readCloudSyncConfig(form, cloudEditor?.drafts[cloudEditor.provider] || data?.cloudSync?.config);
       const next = await task("Saving sync settings…", () => api.saveCloudSyncConfig(config));
       if (next) { accept(next); closeSubmittedModal(form); toast(t("Sync settings saved. You can now sync this device.")); }
     } else if (formID === "cloud-conflicts-editor") {
@@ -1866,7 +2032,7 @@ document.addEventListener("submit", async (ev) => {
       } else if (!modalRoot.children.length) backupEditor(true, path);
 
     }
-  } finally { if (submit) submit.disabled = false; }
+  } finally { if (submit) submit.disabled = false; if (formID === "cloud-sync-editor") renderCloudSyncEditor(); }
 });
 // Chapter links scroll only the document; native fragment navigation can also
 // move overflow-hidden ancestors and hide the inspector's fixed controls.
@@ -1913,6 +2079,18 @@ document.addEventListener("click", async (ev) => {
   }
   if (action === "open-cloud-settings") { currentPage = "settings"; settingsAbout = false; settingsBackups = true; render(); document.querySelector<HTMLElement>("#settings-tab-panel")?.focus({ preventScroll: true }); document.querySelector("#settings-cloud-title")?.scrollIntoView({ block: "start" }); return; }
   if (action === "configure-cloud-sync") { cloudSyncEditor(); return; }
+  if (action === "cloud-provider") {
+    if (!cloudEditor || cloudEditor.busy) return;
+    const provider = target.dataset.provider === "r2-oauth" ? "r2-oauth" : "s3";
+    captureCloudSyncDraft();
+    cloudEditor.provider = provider;
+    renderCloudSyncEditor(false);
+    if (provider === "r2-oauth" && cloudEditor.oauth?.connected && !cloudEditor.accounts.length) void loadR2Accounts(cloudEditor);
+    else if (provider === "r2-oauth" && cloudEditor.accountId && !cloudEditor.buckets.length) void loadR2Buckets(cloudEditor);
+    modalRoot.querySelector<HTMLButtonElement>(`[data-provider="${provider}"]`)?.focus();
+    return;
+  }
+  if (["start-r2-oauth", "cancel-r2-oauth", "configure-r2-bucket", "disconnect-r2-oauth", "keep-r2-connection", "confirm-disconnect-r2"].includes(action)) { await r2EditorAction(action); return; }
   if (action === "toggle-project-selection") {
     if (!applicationBusy()) {
       projectSelectionMode = !projectSelectionMode;
@@ -1937,7 +2115,7 @@ document.addEventListener("click", async (ev) => {
   if (action === "test-cloud-sync") {
     const form = modalRoot.querySelector<HTMLFormElement>("#cloud-sync-editor");
     if (!form || !form.reportValidity()) return;
-    const config = readCloudSyncConfig(form, data?.cloudSync?.config);
+    const config = readCloudSyncConfig(form, cloudEditor?.drafts[cloudEditor.provider] || data?.cloudSync?.config);
     const success = await task("Testing cloud connection…", async () => { await api.testCloudSyncConnection(config); return true; });
     if (success) toast(t("Connection successful. The bucket supports sync reads and writes."));
     return;

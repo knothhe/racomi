@@ -157,7 +157,11 @@ function Build-App {
         if ($LASTEXITCODE -ne 0) { throw 'Unable to read GCC specs.' }
         $specs = $specs.Replace('%{!shared:%:if-exists(default-manifest.o%s)}', '')
         [System.IO.File]::WriteAllText((Join-Path $root 'bin/windows/gcc.specs'), $specs + "`n", [System.Text.Encoding]::ASCII)
-        Invoke-Tool $Go @('build', '-trimpath', '-tags', 'production', '-ldflags', '-s -w -H windowsgui -extldflags "-static -specs=bin/windows/gcc.specs"', '-o', 'bin/racomi.exe', '.')
+        $oauthClientID = [string]$env:RACOMI_CLOUDFLARE_CLIENT_ID
+        if ($oauthClientID -and $oauthClientID -notmatch '^[A-Za-z0-9._-]+$') { throw 'Invalid RACOMI_CLOUDFLARE_CLIENT_ID' }
+        $linkFlags = '-s -w -H windowsgui -extldflags "-static -specs=bin/windows/gcc.specs"'
+        if ($oauthClientID) { $linkFlags += " -X racomi/internal/desktop.cloudflareOAuthClientID=$oauthClientID" }
+        Invoke-Tool $Go @('build', '-trimpath', '-tags', 'production', '-ldflags', $linkFlags, '-o', 'bin/racomi.exe', '.')
     } finally {
         if (Test-Path -LiteralPath $resource) { Remove-Item -LiteralPath $resource }
     }

@@ -18,6 +18,22 @@ racomi 默认读写本地资料，关闭同步时无需账号或网络服务。�
 
 ## Cloudflare R2
 
+设置同步时可以选择 **Cloudflare R2** 或 **手动 S3**。两种方式分别保留设置，只有点击 **保存同步设置** 后才切换当前同步方式；切换选项或取消弹窗不会改变后台同步目标。
+
+### 通过 Cloudflare 授权
+
+1. 选择 **Cloudflare R2 → 连接 Cloudflare**，在系统浏览器中登录并授权访问指定账号。
+2. 返回 racomi，选择账号、存储桶的司法辖区及私有存储桶，再选择使用该桶。应用自动生成该桶范围的对象读写凭据，填写端点与区域。
+3. 填写对象前缀与加密口令，测试连接后保存。所有设备继续使用相同的端点、桶、前缀和加密口令。
+
+OAuth 负责授权与凭据配置；同步仍使用同一个 S3 协议和加密引擎，同步范围、冲突、条件写入和历史恢复与手动配置一致。仍需先在 Cloudflare 开通 R2；账号成员须有创建 Account API Token 的权限。
+
+OAuth 令牌与自动创建的 S3 凭据仅存于本机系统凭据存储（macOS Keychain / Windows Credential Manager），不返回前端或进入备份。同步加密口令继续按现有方式保存在本机 `0600` 配置文件。OAuth 不要求离线访问：有效的 S3 凭据可继续同步；授权过期后，选择桶、续期凭据或断开连接时需重新授权。**断开 Cloudflare** 会删除应用生成的远端凭据并撤销授权，保留手动 S3 设置。
+
+若构建尚未配置发行者的 OAuth Client ID，连接入口会说明不可用，仍可使用手动配置。发行者在 `internal/desktop/cloudflare-registration.json` 中填写公开 Client ID 后重新构建；普通用户无需填写。注册参数及真实 PoC 验证见 [OAuth 接入与验证](r2-oauth-poc.md)。
+
+### 手动 S3 配置
+
 1. 在 Cloudflare 控制台的 R2 中创建私有存储桶，例如 `racomi-sync`。
 2. 在 R2 的 **Manage API tokens** 中创建账号或用户令牌，权限选 **Object Read & Write**，范围限定为刚创建的桶。记录页面提供的 **Access Key ID** 和 **Secret Access Key**；应用需要这两个 S3 凭据，不填写 Cloudflare API Token 原文。
 3. 在 racomi 打开 **设置 → 备份与迁移 → S3 / R2 同步 → 设置同步**：
@@ -98,7 +114,7 @@ AWS IAM 策略示例，使用前请替换桶名和前缀：
 
 共享清单、技能内容和历史在客户端进行 AES-256-GCM 加密；口令通过 PBKDF2-SHA256（210,000 次迭代）派生密钥。密钥身份与端点、桶及前缀绑定，因此这些配置和口令须在各设备一致。对象服务仍能看到对象键、大小、请求和时间等存储元数据。
 
-凭据和口令存于本机数据目录中的 `cloud-sync-config.json`，以 `0600` 文件权限限制访问；当前未使用 macOS Keychain。它们不进入共享资料或 ZIP 备份。设置界面只显示是否已保存，不回显敏感值；留空保留原值，更换端点或 Access Key ID 时须重新填写 Secret Access Key。已保存的 Session Token 可勾选“清除已保存的 Session Token”后保存来移除；勾选时测试连接也不使用该 Token，但测试不会修改已保存的配置。普通 R2 长期凭据不需要 Session Token，请勿在该字段填写 Cloudflare API Token。临时凭据过期后需手动更新。
+手动 S3 凭据和同步口令存于本机数据目录中的 `cloud-sync-config.json`，以 `0600` 文件权限限制访问；Cloudflare OAuth 令牌和自动生成的 S3 凭据单独存入系统凭据存储。它们不进入共享资料或 ZIP 备份。设置界面只显示是否已保存，不回显敏感值；留空保留原值，更换端点或 Access Key ID 时须重新填写 Secret Access Key。已保存的 Session Token 可勾选“清除已保存的 Session Token”后保存来移除；勾选时测试连接也不使用该 Token，但测试不会修改已保存的配置。普通 R2 长期凭据不需要 Session Token，请勿在该字段填写 Cloudflare API Token。临时凭据过期后需手动更新。
 
 请在可靠位置额外保存加密口令。丢失所有设备上的口令后，存储提供方也无法恢复密文。需要更换口令时，先用现有设备确认本地资料完整，再使用新的前缀和口令建立新的同步空间，逐台更新配置；不要直接在现有空间更换口令。
 
