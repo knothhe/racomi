@@ -98,6 +98,47 @@ test("a failed save in the Windows WebView refuses update installation and keeps
   assert.match(errors[0], /disk full/);
 });
 
+test("Sparkle termination can be retried after a failed save in the macOS WebView", async () => {
+  const h = lifecycleHarness("wails://localhost/");
+  let attempts = 0;
+  const errors: string[] = [];
+  h.install({ flush: async () => { if (++attempts === 1) throw Error("disk full"); }, busy: () => false, failed: () => false, dirty: () => false, retry() {}, discard() {}, error: (message: string) => errors.push(message) });
+  const handler = h.handlers.get("racomi:lifecycle")!;
+  await handler({ data: { id: 1, page: 1, action: "quit" } });
+  assert.deepEqual(h.requests, [[1, 1, false]], "a failed save must block Sparkle's termination request");
+  assert.equal(h.body.dataset.lifecycleBlocked, "false");
+  assert.equal(h.app.inert, false);
+  await handler({ data: { id: 2, page: 1, action: "quit" } });
+  assert.deepEqual(h.requests, [[1, 1, false], [2, 1, true]], "the retried termination must wait for a successful save");
+  assert.equal(attempts, 2);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /disk full/);
+});
+
+test("cancelling a Sparkle termination keeps unsaved edits until a retry is confirmed", async () => {
+  const h = lifecycleHarness("wails://localhost/");
+  let saves = 0;
+  let discards = 0;
+  h.install({ flush: async () => { saves++; }, busy: () => false, failed: () => false, dirty: () => true, retry() {}, discard() { discards++; }, error: assert.fail });
+  const handler = h.handlers.get("racomi:lifecycle")!;
+  const first = handler({ data: { id: 1, page: 1, action: "quit" } });
+  await Promise.resolve();
+  const choices = h.body.children[0].querySelector(".modal-footer");
+  choices.children[0].onclick!(); // Continue editing.
+  await first;
+  assert.deepEqual(h.requests, [[1, 1, false]]);
+  assert.equal(h.app.inert, false);
+  assert.equal(saves, 0);
+  assert.equal(discards, 0);
+  const second = handler({ data: { id: 2, page: 1, action: "quit" } });
+  await Promise.resolve();
+  choices.children.at(-1)!.onclick!(); // Discard edits and continue.
+  await second;
+  assert.deepEqual(h.requests, [[1, 1, false], [2, 1, true]]);
+  assert.equal(saves, 1);
+  assert.equal(discards, 1);
+});
+
 test("browser fixtures do not register native lifecycle calls", () => {
   for (const url of browserOrigins) {
     const h = lifecycleHarness(url);

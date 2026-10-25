@@ -1,16 +1,6 @@
 package desktop
 
-/*
-void racomiResumeUpdate(void);
-*/
 import "C"
-
-//export racomiPrepareUpdate
-func racomiPrepareUpdate() {
-	if updaterService != nil {
-		go updaterService.requestLifecycle("update", func() { C.racomiResumeUpdate() })
-	}
-}
 
 //export racomiUpdateAborted
 func racomiUpdateAborted() {

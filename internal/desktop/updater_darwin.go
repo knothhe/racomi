@@ -17,26 +17,22 @@ package desktop
 - (BOOL)automaticallyChecksForUpdates;
 - (void)setAutomaticallyChecksForUpdates:(BOOL)on;
 @end
-extern void racomiPrepareUpdate(void);
 extern void racomiUpdateAborted(void);
 static id racomiUpdaterController;
 static NSString *racomiUpdateError;
 static NSString *racomiTrustedFeed;
-static void (^racomiInstallHandler)(void);
 @interface RacomiUpdaterDelegate : NSObject
 @end
 @implementation RacomiUpdaterDelegate
 // Launch Services does not preserve these profile environments. An explicit
 // profile can install and exit, then be started again with its original profile.
 - (BOOL)updaterShouldRelaunchApplication:(id)updater { return getenv("RACOMI_DATA_DIR") == NULL && getenv("CFFIXED_USER_HOME") == NULL; }
-- (void)updater:(id)updater didAbortWithError:(NSError *)error { if(racomiInstallHandler) { [racomiInstallHandler release]; racomiInstallHandler=nil; } racomiUpdateAborted(); }
+- (void)updater:(id)updater didAbortWithError:(NSError *)error { racomiUpdateAborted(); }
 - (NSString *)feedURLStringForUpdater:(id)updater { return racomiTrustedFeed; }
-- (BOOL)updater:(id)updater shouldPostponeRelaunchForUpdate:(id)item untilInvokingBlock:(void (^)(void))handler {
- if (racomiInstallHandler) { [racomiInstallHandler release]; }
- racomiInstallHandler = [handler copy];
- racomiPrepareUpdate();
- return YES;
-}
+// Sparkle requests normal AppKit termination and waits for the process to exit
+// before replacing the bundle. Service.ShouldQuit performs the save handshake.
+// Do not postpone here: the standard driver's initial install reply is one-shot,
+// so a cancelled save would leave its still-visible button without an action.
 @end
 static RacomiUpdaterDelegate *racomiUpdaterDelegate;
 
@@ -73,21 +69,13 @@ static void racomiStartUpdater(const char *identity, const char *version, const 
 }
 static char *racomiUpdaterStatus(void) {
  id updater = [racomiUpdaterController updater];
- NSDictionary *status = @{@"available":@((BOOL)(updater != nil)), @"canCheck":@((BOOL)([updater canCheckForUpdates] || racomiInstallHandler != nil)),
+ NSDictionary *status = @{@"available":@((BOOL)(updater != nil)), @"canCheck":@([updater canCheckForUpdates]),
   @"automatic":@([updater automaticallyChecksForUpdates]), @"reason":racomiUpdateError ?: @""};
  NSString *json = [[[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:status options:0 error:nil] encoding:NSUTF8StringEncoding] autorelease];
  return strdup(json.UTF8String);
 }
 static void racomiCheckUpdates(void) {
- if (racomiInstallHandler) { racomiPrepareUpdate(); return; }
  [racomiUpdaterController checkForUpdates:nil];
-}
-void racomiResumeUpdate(void) {
- if (racomiInstallHandler) {
-  void (^handler)(void) = racomiInstallHandler;
-  racomiInstallHandler = nil;
-  handler(); [handler release];
- }
 }
 static void racomiSetAutomaticUpdates(BOOL on) { [[racomiUpdaterController updater] setAutomaticallyChecksForUpdates:on]; }
 */

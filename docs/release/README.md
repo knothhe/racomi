@@ -56,6 +56,8 @@ macOS 本地 Make 默认 `CHANNEL=dev`，输出位于 `bin/dev/`。`CHANNEL=stab
 
 稳定 Release 使用 Sparkle 2.9.5，下载版本与 SHA-256 固定在 `build/updates.json`。它也是更新 Feed URL 和公钥的唯一配置来源。更新复用普通 Apple Silicon ZIP，默认自动检查、关闭自动下载，安装由原生窗口确认，退出前处理保存和未提交编辑。Dev 没有正式 Feed，预览版和本地源码构建使用手动更新；不支持的平台、未安装的副本或身份不匹配会显示原因。
 
+macOS 安装确认后由 Sparkle 请求正常退出，`Service.ShouldQuit` 完成保存屏障后才允许退出和替换应用。取消或保存失败时保留当前编辑；从“检查应用更新…”重新打开待安装窗口可再次尝试。不要用 `shouldPostponeRelaunchForUpdate` 持有初次安装回调：Sparkle 的初次安装按钮只调用一次，保存取消后会留下没有动作的按钮。原生委托与前端退出重试回归测试包含在 `go test ./internal/desktop` 和 `npm test --prefix frontend` 中。
+
 `SPARKLE_PRIVATE_KEY` 已配置为仓库 Actions Secret，只交给 tag 构建中的签名步骤。公钥可以提交；私钥不得加入源码、artifact 或日志。本机备份在 macOS 钥匙串的 Sparkle `com.knothhe.racomi` account 中，不依赖共享默认签名账户。更换密钥须设计旧客户端的信任迁移，不能直接覆盖公钥。
 
 CI 先完成包签名检查，再使用 Sparkle 的 `generate_appcast --maximum-deltas 0` 对完整 ZIP 签名，生成并签署 `appcast.xml`。发布前以嵌入的公钥校验 ZIP 的 Ed25519 签名、版本、构建号、下载地址和大小。发布 job 收齐确切附件后创建草稿，全部就绪才公开，并回读公开附件比较内容。重跑仅恢复同 tag 的草稿，已存在的附件内容不同或 Release 已公开时停止，不覆盖历史资产。稳定 Feed 使用最新稳定 Release 的 `appcast.xml` 附件，预览 Release 不参与。
