@@ -241,6 +241,9 @@ jobs:
             sha256sum --check "$file.sha256"
             assets+=("$file" "$file.sha256")
           done
+          # releases/latest/download/install.sh always matches the latest archives.
+          cp ../scripts/install.sh install.sh
+          assets+=(install.sh)
           args=()
           if [[ "${RELEASE_TAG%%+*}" == *-* ]]; then
             args+=(--prerelease)

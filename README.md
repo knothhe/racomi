@@ -21,7 +21,13 @@
 
 - **macOS**：`shasum -a 256 -c racomi-*-macos.zip.sha256` 校验后，将 `racomi.app` 拖入 `/Applications` 或 `~/Applications`。应用仅有 ad-hoc 签名、未经公证，若被拦截，到“系统设置 → 隐私与安全性”选择“仍要打开”，或执行 `xattr -dr com.apple.quarantine /Applications/racomi.app`。详见 [安装说明](build/macos/INSTALL.txt)。
 - **Windows**：解压后运行 `racomi.exe`（目录需当前用户可写）。EXE 尚未做 Authenticode 签名。
-- **Linux**：
+- **Linux**：一条命令完成安装，适用于 Arch、Debian／Ubuntu、Fedora、openSUSE 及其衍生发行版：
+
+  ```sh
+  curl -fsSL https://github.com/knothhe/racomi/releases/latest/download/install.sh | sh
+  ```
+
+  脚本按 `/etc/os-release` 选择包管理器，补装缺少的 WebKit2GTK 4.1 与 Git（仅这一步使用 `sudo`），下载最新正式版并校验 SHA-256，安装到 `~/.local/bin/racomi`，同时写入桌面入口和图标。之后的升级由应用内更新完成。参数写在 `sh -s --` 后：`--version X.Y.Z` 安装指定版本，`--skip-deps` 跳过依赖安装（无法识别的发行版需先手动安装上表中的依赖），`--uninstall` 卸载（保留数据）；`RACOMI_BIN_DIR` 可修改安装目录。也可以手动安装：
 
   ```sh
   sha256sum -c racomi-*-x86_64-linux.tar.gz.sha256

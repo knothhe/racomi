@@ -41,7 +41,7 @@ help:
 	@echo "dist          Create a versioned Linux tar.gz and SHA-256 checksum in bin/releases"
 	@echo "release       Preview a SemVer upgrade (VERSION_BUMP=patch|minor|major|version; RELEASE_FLAGS=--apply to publish)"
 	@echo "release-initial Preview publishing the current version (RELEASE_FLAGS=--apply to publish)"
-	@echo "test-install  Check install, replacement and uninstall using temporary directories"
+	@echo "test-install  Check make install and the release installer using temporary directories"
 	@echo "test-release  Check the release workflow using temporary Git repositories"
 	@echo "run           Build and launch the Linux executable"
 
@@ -85,6 +85,7 @@ test:
 
 test-install:
 	sh scripts/install-linux.test.sh
+	sh scripts/install.test.sh
 
 test-release:
 	$(NODE) --test scripts/release.test.mjs scripts/updates.test.mjs

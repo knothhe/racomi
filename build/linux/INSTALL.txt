@@ -3,14 +3,19 @@ racomi for Linux
 Requirements: GTK 3 with WebKit2GTK 4.1, and Git for Git sources.
   Arch: webkit2gtk-4.1   Debian/Ubuntu: libwebkit2gtk-4.1-0   Fedora: webkit2gtk4.1
 
-Install:
+Install in one step (installs the requirements, verifies the download and adds
+a desktop entry):
+  curl -fsSL https://github.com/knothhe/racomi/releases/latest/download/install.sh | sh
+
+Or by hand:
   sha256sum -c racomi-*-linux.tar.gz.sha256
   Extract and run ./racomi from a folder you can write, such as ~/.local/bin.
 
 Updates: stable builds check signed updates in Settings -> About and replace
 the executable in place.
 
-Uninstall: quit racomi and delete the files. Data in ~/.config/racomi and
+Uninstall: run the install command with `sh -s -- --uninstall`, or quit racomi
+and delete the files. Data in ~/.config/racomi and
 deployed skills are kept.
 
 Building from source (GTK 3 or GTK 4): see README.md (make install / make uninstall).
