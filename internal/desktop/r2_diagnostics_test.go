@@ -2,10 +2,8 @@ package desktop
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
-	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"racomi/internal/cloudflare"
+	"github.com/knothhe/r2connect"
 )
 
 func waitR2DiagnosticClose(t *testing.T, d *r2DiagnosticLog) []r2DiagnosticEvent {
@@ -72,7 +70,7 @@ func TestR2DiagnosticsTerminalResults(t *testing.T) {
 			d := newR2DiagnosticLog(s.store.Root(), true)
 			s.r2.diagnostics = d
 			if test.name == "cleanup warning" {
-				s.r2.secrets = r2DiagnosticCleanupFailureStore{s.r2.secrets}
+				s.r2.use(s.r2.client, r2DiagnosticCleanupFailureStore{s.r2.secrets})
 			}
 			callback, auth := beginR2Authorization(t, s, urls)
 			switch test.name {
@@ -80,9 +78,9 @@ func TestR2DiagnosticsTerminalResults(t *testing.T) {
 				s.CancelR2OAuth()
 			case "unexpected listener close":
 				s.r2.mu.Lock()
-				listener := s.r2.listener
+				flow := s.r2.flow
 				s.r2.mu.Unlock()
-				_ = listener.Close()
+				_ = flow.Close()
 			default:
 				query := url.Values{"state": {auth.Get("state")}, "code": {"synthetic-code"}}
 				if test.name == "denied" {
@@ -132,21 +130,11 @@ func TestR2DiagnosticsTerminalResults(t *testing.T) {
 }
 
 func TestR2DiagnosticsTimeoutIsDistinctFromCancellation(t *testing.T) {
-	s, _, _, _ := r2TestService(t)
+	s, _, _, urls := r2TestService(t)
 	d := newR2DiagnosticLog(s.store.Root(), true)
 	s.r2.diagnostics = d
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
-	defer cancel()
-	s.r2.mu.Lock()
-	s.r2.generation++
-	generation := s.r2.generation
-	s.r2.authorizing = true
-	s.r2.mu.Unlock()
-	go s.serveR2OAuth(ctx, listener, "localhost:1", "/callback", "synthetic-state", "synthetic-verifier", s.r2.redirectURI, generation)
+	s.r2.timeout = 150 * time.Millisecond
+	beginR2Authorization(t, s, urls)
 	var finished int
 	for _, event := range waitR2DiagnosticClose(t, d) {
 		if event.Stage == "finished" {
@@ -202,7 +190,7 @@ func TestR2DiagnosticsTraceCallbackWithoutSecrets(t *testing.T) {
 	s, _, _, urls := r2TestService(t)
 	d := newR2DiagnosticLog(s.store.Root(), true)
 	s.r2.diagnostics = d
-	s.r2.client.Diagnostic = func(event cloudflare.DiagnosticEvent) {
+	s.r2.client.Diagnostic = func(event r2connect.DiagnosticEvent) {
 		d.write(r2DiagnosticEvent{Stage: "cloudflare_api", API: &event})
 	}
 	callback, auth := beginR2Authorization(t, s, urls)
@@ -289,13 +277,5 @@ func TestR2DiagnosticsAreDevOnlyBoundedAndRejectSymlinks(t *testing.T) {
 	d.write(r2DiagnosticEvent{Stage: "start_requested"})
 	if data, err := os.ReadFile(target); err != nil || string(data) != "preserved" {
 		t.Fatal("diagnostic logger followed a symlink")
-	}
-}
-
-func TestR2OAuthErrorCodeKeepsOnlyStandardCodes(t *testing.T) {
-	for value, want := range map[string]string{"": "", "invalid_scope": "invalid_scope", "access_denied": "access_denied", "invalid_scope extra": "other", "secret\nvalue": "other"} {
-		if got := r2OAuthErrorCode(value); got != want {
-			t.Fatalf("r2OAuthErrorCode(%q) = %q, want %q", value, got, want)
-		}
 	}
 }

@@ -8,10 +8,12 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/knothhe/r2connect/keyring"
 )
 
 func cloudSecretsTestStore(backend *memoryR2SecretBackend) *r2SystemSecretStore {
-	return &r2SystemSecretStore{service: r2SecretService("/isolated/cloud-secrets"), backend: backend}
+	return testR2SecretStore(r2SecretService("/isolated/cloud-secrets"), backend)
 }
 
 func readSavedCloudSync(t *testing.T, path string) (savedCloudSync, string) {
@@ -78,7 +80,7 @@ func TestManualCloudSecretsLiveInCredentialStore(t *testing.T) {
 
 func TestManualCloudSecretsFallBackToFileWithoutCredentialStore(t *testing.T) {
 	root := t.TempDir()
-	backend := &memoryR2SecretBackend{items: map[string][]byte{}, err: errR2SecretStoreMissing}
+	backend := &memoryR2SecretBackend{items: map[string][]byte{}, err: keyring.ErrStoreMissing}
 	c, err := loadCloudSync(root, cloudSecretsTestStore(backend))
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +103,7 @@ func TestManualCloudSecretsFallBackToFileWithoutCredentialStore(t *testing.T) {
 	// falls back to plaintext.
 	r2 := defaultCloudSyncConfig()
 	r2.Provider, r2.Endpoint, r2.Passphrase = "r2-oauth", "https://account.r2.cloudflarestorage.com", "r2 test encryption passphrase"
-	if _, _, _, err = c.r2Secrets.prepare(c.secrets, r2); !errors.Is(err, errR2SecretStoreMissing) {
+	if _, _, _, err = c.r2Secrets.prepare(c.secrets, r2); !errors.Is(err, keyring.ErrStoreMissing) {
 		t.Fatalf("R2 passphrase without a credential store: %v", err)
 	}
 	// Once the store works again, the next save moves the secrets out of the file.

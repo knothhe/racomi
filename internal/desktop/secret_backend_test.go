@@ -14,7 +14,7 @@ type lockedMemorySecretBackend struct {
 	items map[string][]byte
 }
 
-func (b *lockedMemorySecretBackend) load(service, key string) ([]byte, error) {
+func (b *lockedMemorySecretBackend) Load(service, key string) ([]byte, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	value, ok := b.items[service+"/"+key]
@@ -24,14 +24,14 @@ func (b *lockedMemorySecretBackend) load(service, key string) ([]byte, error) {
 	return bytes.Clone(value), nil
 }
 
-func (b *lockedMemorySecretBackend) save(service, key string, value []byte) error {
+func (b *lockedMemorySecretBackend) Save(service, key string, value []byte) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.items[service+"/"+key] = bytes.Clone(value)
 	return nil
 }
 
-func (b *lockedMemorySecretBackend) delete(service, key string) error {
+func (b *lockedMemorySecretBackend) Delete(service, key string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if _, ok := b.items[service+"/"+key]; !ok {

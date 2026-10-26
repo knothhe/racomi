@@ -2,7 +2,6 @@ package desktop
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -22,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"racomi/internal/cloudflare"
+	"github.com/knothhe/r2connect"
 	skillstore "racomi/internal/skills"
 )
 
@@ -73,7 +72,7 @@ func (f *r2ControlFixture) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		if expiresIn == 0 {
 			expiresIn = 3600
 		}
-		response := map[string]any{"access_token": "synthetic-oauth-access", "expires_in": expiresIn, "token_type": "Bearer", "scope": cloudflare.OAuthScopes}
+		response := map[string]any{"access_token": "synthetic-oauth-access", "expires_in": expiresIn, "token_type": "Bearer", "scope": r2connect.OAuthScopes}
 		if !omitRefresh {
 			response["refresh_token"] = "synthetic-oauth-refresh"
 		}
@@ -145,12 +144,12 @@ func TestR2OAuthCodeOnlyGrantSyncsAfterAuthorizationExpiresAndRevokesAccessToken
 	if _, err = s.SyncCloud(t.Context()); err != nil {
 		t.Fatal("code-only sync failed:", err)
 	}
-	key := s.r2.oauthKey()
+	key := s.r2.manager.OAuthSecretKey()
 	data, err := s.r2.secrets.Load(key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var tokens cloudflare.TokenSet
+	var tokens r2connect.TokenSet
 	if err = json.Unmarshal(data, &tokens); err != nil {
 		t.Fatal(err)
 	}
@@ -198,24 +197,6 @@ func TestR2OAuthCodeOnlyGrantSyncsAfterAuthorizationExpiresAndRevokesAccessToken
 	}
 }
 
-func TestR2OAuthCodeOnlyShortLivedTokenRemainsUsable(t *testing.T) {
-	s, control, _, urls := r2TestService(t)
-	control.mu.Lock()
-	control.omitRefresh, control.expiresIn = true, 30
-	control.mu.Unlock()
-	authorizeR2Fixture(t, s, urls)
-	accounts, err := s.ListR2Accounts(t.Context())
-	if err != nil || len(accounts) != 1 {
-		t.Fatalf("a still-valid code-only token was treated as expired: %v", err)
-	}
-	control.mu.Lock()
-	exchanges := control.exchanges
-	control.mu.Unlock()
-	if exchanges != 1 {
-		t.Fatal("a short-lived code-only token triggered an unsupported refresh")
-	}
-}
-
 func r2TestService(t *testing.T) (*Service, *r2ControlFixture, *memoryR2SecretBackend, <-chan string) {
 	t.Helper()
 	s, err := New(t.TempDir())
@@ -234,12 +215,12 @@ func r2TestService(t *testing.T) (*Service, *r2ControlFixture, *memoryR2SecretBa
 	backend := &memoryR2SecretBackend{items: map[string][]byte{}}
 	urls := make(chan string, 3)
 	r := newR2OAuthRuntime(s.store.Root())
-	r.client = cloudflare.NewClient("synthetic-racomi-client")
-	r.client.APIBaseURL, r.client.OAuthBaseURL = server.URL+"/client/v4", server.URL+"/oauth2"
+	client := r2connect.NewClient("synthetic-racomi-client")
+	client.APIBaseURL, client.OAuthBaseURL = server.URL+"/client/v4", server.URL+"/oauth2"
 	// Capture the original transport, since the S3 fixture below only intercepts
 	// its one expected official R2 hostname through DefaultTransport.
-	r.client.HTTPClient = &http.Client{Transport: http.DefaultTransport, Timeout: 3 * time.Second}
-	r.secrets = &r2SystemSecretStore{service: r2SecretService(s.store.Root()), backend: backend}
+	client.HTTPClient = &http.Client{Transport: http.DefaultTransport, Timeout: 3 * time.Second}
+	r.use(client, testR2SecretStore(r2SecretService(s.store.Root()), backend))
 	r.redirectURI = fmt.Sprintf("http://localhost:%d/oauth/cloudflare/callback", port)
 	r.openURL = func(value string) error { urls <- value; return nil }
 	s.r2 = r
@@ -586,8 +567,7 @@ func TestR2OAuthProfilesSurviveSwitchAndReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reopened.r2.client = s.r2.client
-	reopened.r2.secrets = &r2SystemSecretStore{service: r2SecretService(s.store.Root()), backend: backend}
+	reopened.r2.use(s.r2.client, testR2SecretStore(r2SecretService(s.store.Root()), backend))
 	status := reopened.GetCloudSyncStatus()
 	if status.Config.Provider != "r2-oauth" || !status.Configured || !status.Config.HasSecretAccessKey || !status.R2Config.HasSecretAccessKey || !status.ManualConfig.HasSecretAccessKey {
 		t.Fatal("reopening lost the active profile or saved credentials")
@@ -680,26 +660,14 @@ func TestR2OAuthStateValidationCancellationAndTimeout(t *testing.T) {
 	if exchanges != 0 {
 		t.Fatal("invalid or canceled authorization exchanged a code")
 	}
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
-	defer cancel()
-	s.r2.mu.Lock()
-	s.r2.generation++
-	generation := s.r2.generation
-	s.r2.authorizing = true
-	s.r2.mu.Unlock()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		s.serveR2OAuth(ctx, listener, "localhost:1", "/callback", "synthetic-state", "synthetic-verifier", s.r2.redirectURI, generation)
-	}()
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("expired authorization did not stop its callback listener")
+	s.r2.timeout = 150 * time.Millisecond
+	beginR2Authorization(t, s, urls)
+	deadline := time.Now().Add(3 * time.Second)
+	for s.GetR2OAuthStatus().Authorizing {
+		if time.Now().After(deadline) {
+			t.Fatal("expired authorization did not stop its callback listener")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if status := s.GetR2OAuthStatus(); status.Authorizing || status.LastError == "" {
 		t.Fatal("authorization timeout was not reported")
@@ -822,7 +790,7 @@ func TestR2OAuthCancellationDuringExchangeDiscardsLateAuthorization(t *testing.T
 	case <-time.After(4 * time.Second):
 		t.Fatal("canceled callback did not finish")
 	}
-	if s.GetR2OAuthStatus().Connected || s.r2.state.Authorized || len(backend.items) != 0 {
+	if s.GetR2OAuthStatus().Connected || s.r2.manager.State().Authorized || len(backend.items) != 0 {
 		t.Fatal("a late token response saved authorization after cancellation")
 	}
 }
@@ -848,138 +816,18 @@ func TestR2OAuthProvisioningFailureRemovesNewTokenAndKeepsManualProfile(t *testi
 	}
 	authorizeR2Fixture(t, s, urls)
 	failure := errors.New("synthetic credential-store write failure")
-	s.r2.secrets = r2FailCredentialSaveStore{r2SecretStore: s.r2.secrets, oauthKey: s.r2.oauthKey(), failure: failure}
+	s.r2.use(s.r2.client, r2FailCredentialSaveStore{r2SecretStore: s.r2.secrets, oauthKey: s.r2.manager.OAuthSecretKey(), failure: failure})
 	if _, err := s.ConfigureR2Bucket(t.Context(), r2TestAccount, r2TestBucket, "default"); !errors.Is(err, failure) {
 		t.Fatal("provisioning did not report that the new credentials could not be saved")
 	}
 	control.mu.Lock()
 	mints, deletes := control.mints, control.deletes
 	control.mu.Unlock()
-	if mints != 1 || deletes != 1 || len(s.r2.state.Connections) != 0 {
+	if mints != 1 || deletes != 1 || len(s.r2.manager.State().Connections) != 0 {
 		t.Fatal("failed setup left an untracked remote R2 credential")
 	}
 	if len(backend.items) != 1 || !s.GetR2OAuthStatus().Connected || s.GetCloudSyncStatus().Config.Endpoint != manual.Endpoint {
 		t.Fatal("failed setup changed the working profile or discarded the reusable OAuth authorization")
-	}
-}
-
-type r2FailOnceSecretStore struct {
-	r2SecretStore
-	key       string
-	failure   error
-	remaining int
-}
-
-func (s *r2FailOnceSecretStore) Save(key string, data []byte) error {
-	if key == s.key && s.remaining > 0 {
-		s.remaining--
-		return s.failure
-	}
-	return s.r2SecretStore.Save(key, data)
-}
-
-func TestR2OAuthRotatingRefreshRecoversFromSecretStoreFailure(t *testing.T) {
-	s, control, _, urls := r2TestService(t)
-	authorizeR2Fixture(t, s, urls)
-	key := s.r2.oauthKey()
-	data, err := s.r2.secrets.Load(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var tokens cloudflare.TokenSet
-	if err = json.Unmarshal(data, &tokens); err != nil {
-		t.Fatal(err)
-	}
-	tokens.ExpiresAt = time.Now().Add(-time.Minute)
-	data, _ = json.Marshal(tokens)
-	if err = s.r2.secrets.Save(key, data); err != nil {
-		t.Fatal(err)
-	}
-	failure := errors.New("synthetic rotating-token save failure")
-	s.r2.secrets = &r2FailOnceSecretStore{r2SecretStore: s.r2.secrets, key: key, failure: failure, remaining: 1}
-	if _, err = s.ListR2Accounts(t.Context()); !errors.Is(err, failure) {
-		t.Fatal("failed refresh-token save was not reported")
-	}
-	control.mu.Lock()
-	exchanges := control.exchanges
-	control.mu.Unlock()
-	if exchanges != 2 {
-		t.Fatal("expired OAuth credentials did not refresh exactly once")
-	}
-	if _, err = s.ListR2Accounts(t.Context()); err != nil {
-		t.Fatal("a transient secret-store failure prevented recovery:", err)
-	}
-	control.mu.Lock()
-	after := control.exchanges
-	control.mu.Unlock()
-	if after != exchanges {
-		t.Fatal("retry reused the already-consumed rotating refresh token")
-	}
-	if s.r2.pendingTokens != nil {
-		t.Fatal("successfully saved replacement tokens remained pending")
-	}
-}
-
-func TestR2OAuthCredentialRotationMetadataFailureKeepsPreviousCredentials(t *testing.T) {
-	s, control, backend, urls := r2TestService(t)
-	authorizeR2Fixture(t, s, urls)
-	config, err := s.ConfigureR2Bucket(t.Context(), r2TestAccount, r2TestBucket, "default")
-	if err != nil {
-		t.Fatal(err)
-	}
-	config.Passphrase = "isolated rotation encryption phrase"
-	if _, err = s.SaveCloudSyncConfig(config); err != nil {
-		t.Fatal(err)
-	}
-	s.r2.mu.Lock()
-	connection := s.r2.state.Connections[0]
-	credentialKey := r2ConnectionKey(connection)
-	data, err := s.r2.secrets.Load(credentialKey)
-	if err != nil {
-		s.r2.mu.Unlock()
-		t.Fatal(err)
-	}
-	var credentials cloudflare.Credentials
-	if err = json.Unmarshal(data, &credentials); err != nil {
-		s.r2.mu.Unlock()
-		t.Fatal(err)
-	}
-	credentials.ExpiresAt = time.Now().Add(time.Minute)
-	data, _ = json.Marshal(credentials)
-	if err = s.r2.secrets.Save(credentialKey, data); err != nil {
-		s.r2.mu.Unlock()
-		t.Fatal(err)
-	}
-	s.r2.state.Connections[0].ExpiresAt = credentials.ExpiresAt
-	if err = writeR2Metadata(s.r2.path, s.r2.state); err != nil {
-		s.r2.mu.Unlock()
-		t.Fatal(err)
-	}
-	failure := errors.New("synthetic rotation metadata write failure")
-	s.r2.saveMetadata = func(string, r2OAuthState) error { return failure }
-	s.r2.mu.Unlock()
-	if _, err = s.r2ConfigForUse(t.Context(), config); !errors.Is(err, failure) {
-		t.Fatal("rotation metadata failure was not reported")
-	}
-	after, err := s.r2.secrets.Load(credentialKey)
-	if err != nil || !bytes.Equal(data, after) {
-		t.Fatal("failed rotation overwrote the previous usable credentials")
-	}
-	if s.r2.state.Connections[0].TokenID != connection.TokenID || r2ConnectionKey(s.r2.state.Connections[0]) != credentialKey {
-		t.Fatal("failed rotation changed the active credential metadata")
-	}
-	control.mu.Lock()
-	mints, deletes := control.mints, control.deletes
-	control.mu.Unlock()
-	if mints != 2 || deletes != 1 || len(backend.items) != 2 {
-		t.Fatal("failed rotation did not compensate only the newly created credential")
-	}
-	s.r2.saveMetadata = nil
-	if _, err = s.r2ConfigForUse(t.Context(), config); err != nil {
-		t.Fatal("retry did not recover after a metadata write failure:", err)
-	}
-	if s.r2.state.Connections[0].TokenID == connection.TokenID {
-		t.Fatal("successful retry did not install replacement credentials")
 	}
 }
 
@@ -1003,14 +851,14 @@ func TestR2OAuthDisconnectRetriesRemoteCleanupAndPreservesManualProfile(t *testi
 	revokes := control.revokes
 	control.deleteStatus = 0
 	control.mu.Unlock()
-	if !s.GetR2OAuthStatus().Connected || len(s.r2.state.Connections) != 1 || len(backend.items) != 2 || revokes != 0 {
+	if !s.GetR2OAuthStatus().Connected || len(s.r2.manager.State().Connections) != 1 || len(backend.items) != 2 || revokes != 0 {
 		t.Fatal("failed cleanup discarded the authorization needed for retry")
 	}
 	status, err := s.DisconnectR2OAuth(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.Connected || len(s.r2.state.Connections) != 0 || len(backend.items) != 0 {
+	if status.Connected || len(s.r2.manager.State().Connections) != 0 || len(backend.items) != 0 {
 		t.Fatal("disconnect did not remove remote credential metadata and local secrets")
 	}
 	control.mu.Lock()
@@ -1070,7 +918,7 @@ func TestR2OAuthDiscardProtectsSavedProfilesAndCleansAbandonedCandidates(t *test
 	if err = s.DiscardR2Connection(t.Context(), candidate.R2ConnectionID); err == nil {
 		t.Fatal("failed candidate deletion was reported as success")
 	}
-	if len(s.r2.state.Connections) != 2 || len(backend.items) != 3 {
+	if len(s.r2.manager.State().Connections) != 2 || len(backend.items) != 3 {
 		t.Fatal("failed candidate deletion discarded cleanup information")
 	}
 	control.mu.Lock()
@@ -1082,7 +930,7 @@ func TestR2OAuthDiscardProtectsSavedProfilesAndCleansAbandonedCandidates(t *test
 	if err = s.DiscardR2Connection(t.Context(), candidate.R2ConnectionID); err != nil {
 		t.Fatal("discarding an absent candidate was not idempotent:", err)
 	}
-	if len(s.r2.state.Connections) != 1 || s.r2.state.Connections[0].ID != saved.R2ConnectionID || len(backend.items) != 2 {
+	if len(s.r2.manager.State().Connections) != 1 || s.r2.manager.State().Connections[0].ID != saved.R2ConnectionID || len(backend.items) != 2 {
 		t.Fatal("discarding a candidate changed the saved OAuth profile")
 	}
 	if s.GetCloudSyncStatus().Config.Endpoint != manual.Endpoint {
@@ -1109,7 +957,7 @@ func TestR2OAuthSavingReplacementCleansPreviousConnection(t *testing.T) {
 	if _, err = s.SaveCloudSyncConfig(second); err != nil {
 		t.Fatal(err)
 	}
-	if len(s.r2.state.Connections) != 1 || s.r2.state.Connections[0].ID != second.R2ConnectionID || len(backend.items) != 2 {
+	if len(s.r2.manager.State().Connections) != 1 || s.r2.manager.State().Connections[0].ID != second.R2ConnectionID || len(backend.items) != 2 {
 		t.Fatal("saving a replacement left the previous managed credentials active")
 	}
 	control.mu.Lock()
@@ -1158,208 +1006,5 @@ func TestR2OAuthSaveRacingEditorCloseNeverRevokesCommittedCredentials(t *testing
 		} else if s.GetCloudSyncStatus().Config.R2ConnectionID == candidate.R2ConnectionID {
 			t.Fatal("a failed save activated an already-discarded candidate")
 		}
-	}
-}
-
-func TestR2OAuthRetiredCredentialCleanupCanRetryAfterRotation(t *testing.T) {
-	s, control, backend, urls := r2TestService(t)
-	authorizeR2Fixture(t, s, urls)
-	config, err := s.ConfigureR2Bucket(t.Context(), r2TestAccount, r2TestBucket, "default")
-	if err != nil {
-		t.Fatal(err)
-	}
-	config.Passphrase = "retired credential encryption phrase"
-	if _, err = s.SaveCloudSyncConfig(config); err != nil {
-		t.Fatal(err)
-	}
-	connection := s.r2.state.Connections[0]
-	data, err := s.r2.secrets.Load(r2ConnectionKey(connection))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var credentials cloudflare.Credentials
-	if err = json.Unmarshal(data, &credentials); err != nil {
-		t.Fatal(err)
-	}
-	credentials.ExpiresAt = time.Now().Add(time.Minute)
-	data, _ = json.Marshal(credentials)
-	if err = s.r2.secrets.Save(r2ConnectionKey(connection), data); err != nil {
-		t.Fatal(err)
-	}
-	control.mu.Lock()
-	control.deleteStatus = http.StatusServiceUnavailable
-	control.mu.Unlock()
-	renewed, err := s.r2ConfigForUse(t.Context(), config)
-	if err != nil || renewed.AccessKeyID == connection.TokenID {
-		t.Fatal("failed old-token cleanup prevented using newly committed credentials:", err)
-	}
-	if len(s.r2.state.RetiredTokens) != 1 || s.r2.state.RetiredTokens[0].TokenID != connection.TokenID || len(backend.items) != 3 {
-		t.Fatal("rotation forgot the old credential after its remote deletion failed")
-	}
-	control.mu.Lock()
-	control.deleteStatus = 0
-	control.mu.Unlock()
-	if _, err = s.DisconnectR2OAuth(t.Context()); err != nil {
-		t.Fatal("disconnect could not retry old-token cleanup:", err)
-	}
-	if len(s.r2.state.RetiredTokens) != 0 || len(s.r2.state.Connections) != 0 || len(backend.items) != 0 {
-		t.Fatal("disconnect left retired credentials behind")
-	}
-}
-
-func TestR2OAuthDisconnectMetadataFailureDoesNotReuseRevokedAuthorization(t *testing.T) {
-	s, control, backend, urls := r2TestService(t)
-	authorizeR2Fixture(t, s, urls)
-	failure := errors.New("synthetic post-revocation metadata failure")
-	s.r2.saveMetadata = func(string, r2OAuthState) error { return failure }
-	if _, err := s.DisconnectR2OAuth(t.Context()); !errors.Is(err, failure) {
-		t.Fatal("post-revocation persistence failure was not reported")
-	}
-	// Even if the saved access token expires before retry, remote revocation
-	// already succeeded. Finishing local cleanup must not refresh it again.
-	data, err := s.r2.secrets.Load(s.r2.oauthKey())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var tokens cloudflare.TokenSet
-	if err = json.Unmarshal(data, &tokens); err != nil {
-		t.Fatal(err)
-	}
-	tokens.ExpiresAt = time.Now().Add(-time.Minute)
-	data, _ = json.Marshal(tokens)
-	if err = s.r2.secrets.Save(s.r2.oauthKey(), data); err != nil {
-		t.Fatal(err)
-	}
-	s.r2.saveMetadata = nil
-	if _, err = s.DisconnectR2OAuth(t.Context()); err != nil {
-		t.Fatal("local cleanup retried an already revoked OAuth authorization:", err)
-	}
-	control.mu.Lock()
-	exchanges, revokes := control.exchanges, control.revokes
-	control.mu.Unlock()
-	if exchanges != 1 || revokes != 1 || len(backend.items) != 0 || s.GetR2OAuthStatus().Connected {
-		t.Fatal("disconnect reused a revoked token or left local authorization active")
-	}
-}
-
-func setR2CredentialExpiry(t *testing.T, s *Service, expiresAt time.Time) cloudflare.Credentials {
-	t.Helper()
-	s.r2.mu.Lock()
-	defer s.r2.mu.Unlock()
-	key := r2ConnectionKey(s.r2.state.Connections[0])
-	data, err := s.r2.secrets.Load(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var credentials cloudflare.Credentials
-	if err = json.Unmarshal(data, &credentials); err != nil {
-		t.Fatal(err)
-	}
-	credentials.ExpiresAt = expiresAt
-	data, _ = json.Marshal(credentials)
-	if err = s.r2.secrets.Save(key, data); err != nil {
-		t.Fatal(err)
-	}
-	return credentials
-}
-
-func TestR2OAuthRefreshableGrantRenewsCredentialsEarly(t *testing.T) {
-	s, control, _, urls := r2TestService(t)
-	authorizeR2Fixture(t, s, urls)
-	if !s.r2.state.Renewable {
-		t.Fatal("a grant with a refresh token was not recorded as renewable")
-	}
-	config, err := s.ConfigureR2Bucket(t.Context(), r2TestAccount, r2TestBucket, "default")
-	if err != nil {
-		t.Fatal(err)
-	}
-	config.Passphrase = "isolated early renewal phrase"
-	if _, err = s.SaveCloudSyncConfig(config); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.r2ConfigForUse(t.Context(), config); err != nil {
-		t.Fatal(err)
-	}
-	control.mu.Lock()
-	mints := control.mints
-	control.mu.Unlock()
-	if mints != 1 {
-		t.Fatal("fresh credentials were renewed")
-	}
-
-	// Inside the renewal window, an expired access token is refreshed and the
-	// bucket credentials are replaced without a browser.
-	previous := setR2CredentialExpiry(t, s, time.Now().Add(3*24*time.Hour))
-	key := s.r2.oauthKey()
-	data, err := s.r2.secrets.Load(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var tokens cloudflare.TokenSet
-	if err = json.Unmarshal(data, &tokens); err != nil {
-		t.Fatal(err)
-	}
-	tokens.ExpiresAt = time.Now().Add(-time.Minute)
-	data, _ = json.Marshal(tokens)
-	if err = s.r2.secrets.Save(key, data); err != nil {
-		t.Fatal(err)
-	}
-	renewed, err := s.r2ConfigForUse(t.Context(), config)
-	if err != nil {
-		t.Fatal("silent renewal failed:", err)
-	}
-	control.mu.Lock()
-	exchanges, mints, deletes := control.exchanges, control.mints, control.deletes
-	control.mu.Unlock()
-	if exchanges != 2 || mints != 2 || deletes != 1 || renewed.AccessKeyID == previous.AccessKeyID || s.r2.state.Connections[0].TokenID == previous.TokenID {
-		t.Fatalf("silent renewal did not refresh, rotate and retire: exchanges=%d mints=%d deletes=%d", exchanges, mints, deletes)
-	}
-
-	// A failed early renewal keeps the still-valid credentials and backs off.
-	current := setR2CredentialExpiry(t, s, time.Now().Add(3*24*time.Hour))
-	if err = s.r2.secrets.Save(key, []byte("{}")); err != nil {
-		t.Fatal(err)
-	}
-	for range 2 {
-		used, err := s.r2ConfigForUse(t.Context(), config)
-		if err != nil || used.AccessKeyID != current.AccessKeyID {
-			t.Fatal("a failed early renewal interrupted sync with valid credentials:", err)
-		}
-	}
-	if s.r2.renewRetryAt.IsZero() {
-		t.Fatal("a failed early renewal did not back off")
-	}
-	setR2CredentialExpiry(t, s, time.Now().Add(time.Minute))
-	if _, err = s.r2ConfigForUse(t.Context(), config); err == nil {
-		t.Fatal("expiring credentials were used after renewal failed")
-	}
-}
-
-func TestR2OAuthCodeOnlyGrantRenewsOnlyNearExpiry(t *testing.T) {
-	s, control, _, urls := r2TestService(t)
-	control.mu.Lock()
-	control.omitRefresh = true
-	control.mu.Unlock()
-	authorizeR2Fixture(t, s, urls)
-	if s.r2.state.Renewable {
-		t.Fatal("a code-only grant was recorded as renewable")
-	}
-	config, err := s.ConfigureR2Bucket(t.Context(), r2TestAccount, r2TestBucket, "default")
-	if err != nil {
-		t.Fatal(err)
-	}
-	config.Passphrase = "isolated code-only renewal phrase"
-	if _, err = s.SaveCloudSyncConfig(config); err != nil {
-		t.Fatal(err)
-	}
-	setR2CredentialExpiry(t, s, time.Now().Add(3*24*time.Hour))
-	if _, err = s.r2ConfigForUse(t.Context(), config); err != nil {
-		t.Fatal(err)
-	}
-	control.mu.Lock()
-	mints := control.mints
-	control.mu.Unlock()
-	if mints != 1 {
-		t.Fatal("a code-only grant renewed credentials early")
 	}
 }

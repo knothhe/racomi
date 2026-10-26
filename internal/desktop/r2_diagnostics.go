@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"racomi/internal/cloudflare"
+	"github.com/knothhe/r2connect"
 )
 
 const r2DiagnosticMaxBytes = 512 << 10
@@ -17,21 +17,21 @@ const r2DiagnosticMaxBytes = 512 << 10
 // Only explicit stage names, booleans and the Cloudflare client's sanitized
 // events cross this boundary. Never accept an error, URL, query or response body.
 type r2DiagnosticEvent struct {
-	Time              string                      `json:"time"`
-	PID               int                         `json:"pid"`
-	Stage             string                      `json:"stage"`
-	Generation        uint64                      `json:"generation,omitempty"`
-	Result            string                      `json:"result,omitempty"`
-	ClientConfigured  *bool                       `json:"clientConfigured,omitempty"`
-	MethodMatches     *bool                       `json:"methodMatches,omitempty"`
-	HostMatches       *bool                       `json:"hostMatches,omitempty"`
-	PathMatches       *bool                       `json:"pathMatches,omitempty"`
-	StatePresent      *bool                       `json:"statePresent,omitempty"`
-	StateMatches      *bool                       `json:"stateMatches,omitempty"`
-	CodePresent       *bool                       `json:"codePresent,omitempty"`
-	OAuthErrorPresent *bool                       `json:"oauthErrorPresent,omitempty"`
-	OAuthError        string                      `json:"oauthError,omitempty"`
-	API               *cloudflare.DiagnosticEvent `json:"api,omitempty"`
+	Time              string                     `json:"time"`
+	PID               int                        `json:"pid"`
+	Stage             string                     `json:"stage"`
+	Generation        uint64                     `json:"generation,omitempty"`
+	Result            string                     `json:"result,omitempty"`
+	ClientConfigured  *bool                      `json:"clientConfigured,omitempty"`
+	MethodMatches     *bool                      `json:"methodMatches,omitempty"`
+	HostMatches       *bool                      `json:"hostMatches,omitempty"`
+	PathMatches       *bool                      `json:"pathMatches,omitempty"`
+	StatePresent      *bool                      `json:"statePresent,omitempty"`
+	StateMatches      *bool                      `json:"stateMatches,omitempty"`
+	CodePresent       *bool                      `json:"codePresent,omitempty"`
+	OAuthErrorPresent *bool                      `json:"oauthErrorPresent,omitempty"`
+	OAuthError        string                     `json:"oauthError,omitempty"`
+	API               *r2connect.DiagnosticEvent `json:"api,omitempty"`
 }
 
 type r2DiagnosticLog struct {
@@ -48,18 +48,6 @@ func newR2DiagnosticLog(root string, enabled bool) *r2DiagnosticLog {
 }
 
 func diagnosticBool(value bool) *bool { return &value }
-
-// r2OAuthErrorCode keeps only the standard OAuth error codes; any other
-// callback value is recorded as "other" so arbitrary text never reaches the log.
-func r2OAuthErrorCode(value string) string {
-	switch value {
-	case "":
-		return ""
-	case "invalid_request", "unauthorized_client", "access_denied", "unsupported_response_type", "invalid_scope", "server_error", "temporarily_unavailable", "invalid_state":
-		return value
-	}
-	return "other"
-}
 
 func (d *r2DiagnosticLog) write(event r2DiagnosticEvent) {
 	if d == nil {

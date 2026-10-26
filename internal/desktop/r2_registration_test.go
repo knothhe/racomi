@@ -3,15 +3,11 @@ package desktop
 import (
 	"bytes"
 	"errors"
-	"fmt"
-	"io"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
-	"time"
+
+	"github.com/knothhe/r2connect"
 )
 
 func TestR2RegistrationPrecedenceAndLegacyFallback(t *testing.T) {
@@ -51,28 +47,17 @@ func TestR2RegistrationRejectsMalformedOrOffDeviceCallbacks(t *testing.T) {
 		}
 	}
 	for _, value := range []string{
-		"https://localhost:18796/oauth/cloudflare/callback", "http://example.com:18796/oauth/cloudflare/callback", "http://127.0.0.1.example.com:18796/oauth/cloudflare/callback",
-		"http://localhost/oauth/cloudflare/callback", "http://localhost:0/oauth/cloudflare/callback", "http://localhost:65536/oauth/cloudflare/callback",
-		"http://user@localhost:18796/oauth/cloudflare/callback", "http://localhost:18796/oauth/cloudflare/callback?code=other", "http://localhost:18796/oauth/cloudflare/callback?",
-		"http://localhost:18796/oauth/cloudflare/callback#fragment", "http://localhost:18796/other", "http://localhost:18796/%6fauth/cloudflare/callback",
+		"https://localhost:18796/oauth/cloudflare/callback", "http://example.com:18796/oauth/cloudflare/callback",
+		"http://user@localhost:18796/oauth/cloudflare/callback", "http://localhost:18796/oauth/cloudflare/callback#fragment",
+		"http://localhost:18796/other", "http://localhost:18796/%6fauth/cloudflare/callback",
 	} {
-		if _, err := r2CallbackURL(value); !errors.Is(err, errR2Registration) {
+		if err := checkR2CallbackURL(value); !errors.Is(err, errR2Registration) {
 			t.Fatalf("accepted off-device or ambiguous callback %q: %v", value, err)
 		}
 	}
 	for _, value := range []string{r2OAuthRedirectURI, "http://127.0.0.1:18796/oauth/cloudflare/callback", "http://[::1]:18796/oauth/cloudflare/callback"} {
-		u, err := r2CallbackURL(value)
-		if err != nil {
+		if err := checkR2CallbackURL(value); err != nil {
 			t.Fatalf("valid loopback callback rejected: %s: %v", value, err)
-		}
-		addresses := r2CallbackListenAddresses(u)
-		if len(addresses) == 0 || addresses[0].optional {
-			t.Fatal("loopback callback did not produce a required local listener")
-		}
-		for _, candidate := range addresses {
-			if host, _, err := net.SplitHostPort(candidate.address); err != nil || !net.ParseIP(host).IsLoopback() {
-				t.Fatalf("callback listener is not loopback: %s", candidate.address)
-			}
 		}
 	}
 }
@@ -88,8 +73,8 @@ func TestR2RegistrationRuntimePreservesExistingMetadataAndManualConfiguration(t 
 	if _, err = s.SaveCloudSyncConfig(manual); err != nil {
 		t.Fatal(err)
 	}
-	metadata := r2OAuthState{Version: 1, ClientID: "legacy-client", Connections: []r2Connection{}}
-	if err = writeR2Metadata(s.r2.path, metadata); err != nil {
+	metadata := r2connect.State{Version: 1, ClientID: "legacy-client", Connections: []r2connect.Connection{}}
+	if err = (r2connect.FileStateStore{Path: s.r2.path}).Save(metadata); err != nil {
 		t.Fatal(err)
 	}
 	before, err := os.ReadFile(s.r2.path)
@@ -97,7 +82,7 @@ func TestR2RegistrationRuntimePreservesExistingMetadataAndManualConfiguration(t 
 		t.Fatal(err)
 	}
 	s.r2 = newR2OAuthRuntimeWithRegistration(s.store.Root(), []byte(`{"ClientID":""}`))
-	if s.r2.client.ClientID != "legacy-client" || s.r2.loadError != nil {
+	if s.r2.client.ClientID != "legacy-client" || s.r2.unavailable() != nil {
 		t.Fatal("legacy configured client identity was not retained")
 	}
 	after, err := os.ReadFile(s.r2.path)
@@ -117,42 +102,5 @@ func TestR2RegistrationRuntimePreservesExistingMetadataAndManualConfiguration(t 
 	}
 	if after, err = os.ReadFile(filepath.Join(s.store.Root(), "r2-oauth-state.json")); err != nil || !bytes.Equal(before, after) {
 		t.Fatal("invalid registration overwrote recoverable authorization metadata")
-	}
-}
-
-func TestR2LocalhostCallbackAcceptsBothLoopbackFamilies(t *testing.T) {
-	probe, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := probe.Addr().(*net.TCPAddr).Port
-	_ = probe.Close()
-	u, err := r2CallbackURL(fmt.Sprintf("http://localhost:%d/oauth/cloudflare/callback", port))
-	if err != nil {
-		t.Fatal(err)
-	}
-	listener, err := listenR2Callback(u)
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "ok") })}
-	go server.Serve(listener)
-	defer server.Close()
-	hosts := []string{"127.0.0.1"}
-	if ipv6, err := net.Listen("tcp6", "[::1]:0"); err == nil {
-		_ = ipv6.Close()
-		hosts = append(hosts, "::1")
-	}
-	client := &http.Client{Timeout: 3 * time.Second}
-	for _, host := range hosts {
-		response, err := client.Get("http://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/")
-		if err != nil {
-			t.Fatalf("callback was not reachable over %s: %v", host, err)
-		}
-		_ = response.Body.Close()
-	}
-	_ = listener.Close()
-	if _, err = listener.Accept(); !errors.Is(err, net.ErrClosed) {
-		t.Fatal("closed callback listener kept accepting")
 	}
 }
