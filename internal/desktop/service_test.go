@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"racomi/internal/testutil"
 	skillstore "racomi/internal/skills"
+	"racomi/internal/testutil"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -411,7 +411,7 @@ func TestReadSkillDocumentRejectsUnknownIDs(t *testing.T) {
 func TestSetThemeWithoutAttachedApplication(t *testing.T) {
 	service := &Service{}
 	for _, theme := range []string{"system", "light", "dark"} {
-		if err := service.SetTheme(theme); err != nil {
+		if err := service.SetTheme(theme, "default"); err != nil {
 			t.Fatalf("valid theme %q: %v", theme, err)
 		}
 		if service.theme != theme {
@@ -419,7 +419,7 @@ func TestSetThemeWithoutAttachedApplication(t *testing.T) {
 		}
 	}
 	for _, theme := range []string{"", "Dark", " light ", "unknown"} {
-		if err := service.SetTheme(theme); err == nil {
+		if err := service.SetTheme(theme, "default"); err == nil {
 			t.Fatalf("invalid theme %q accepted", theme)
 		}
 		if service.theme != "dark" {

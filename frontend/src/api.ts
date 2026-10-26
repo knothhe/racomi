@@ -28,6 +28,7 @@ export interface AppSettings {
   interfaceFontStyle?: string;
   snapshotRetentionDays?: number;
   snapshotMaxCount?: number;
+  themeStyle?: "default" | "omarchy";
   theme?: "light" | "dark" | "system";
   locale?: "zh-CN" | "zh-TW" | "en" | "system";
   navLayout?: "auto" | "side" | "top";
@@ -65,6 +66,7 @@ export interface CloudSyncStatus {
 }
 export interface CloudBackup { id: string; createdAt: string; skillCount: number; presetCount: number }
 export interface DirectoryOption { id: string; name: string; path: string; kind: "global" | "project"; description: string }
+export interface OmarchyTheme { colors: Record<string, string>; dark: boolean }
 export interface DesktopPreferences { lightweight: boolean; openAtLogin: boolean; supported: boolean; platform: string }
 export interface BuildInfo { name: string; id: string; version: string; number: string; commit: string; dirty: boolean; channel: string; executor: string; os: string; arch: string; repository: string }
 export interface UpdaterState { available: boolean; reason: string; automatic: boolean; canCheck: boolean }
@@ -143,7 +145,8 @@ export const api = {
   setTextSize: (size: number) => invoke<void>("SetTextSize", size),
   setLightweight: (on: boolean) => invoke<AppState>("SetLightweight", on),
   setOpenAtLogin: (on: boolean) => invoke<AppState>("SetOpenAtLogin", on),
-  setTheme: (preference: "light" | "dark" | "system") => invoke<void>("SetTheme", preference),
+  omarchyTheme: () => invoke<OmarchyTheme | null>("GetOmarchyTheme"),
+  setTheme: (preference: "light" | "dark" | "system", style: "default" | "omarchy") => invoke<void>("SetTheme", preference, style),
   setLocale: (locale: "zh-CN" | "zh-TW" | "en") => invoke<void>("SetLocale", locale),
   saveSettings: (settings: AppSettings) => invoke<AppState>("SaveSettings", settings),
   saveSettingsPatch: (patch: Partial<AppSettings>, onlyMissing = false) => invoke<AppState>("SaveSettingsPatch", patch, onlyMissing),

@@ -24,6 +24,7 @@ function cloneSettings(settings: AppSettings): AppSettings {
     ...(settings.interfaceFontStyle ? { interfaceFontStyle: settings.interfaceFontStyle } : {}),
     ...(settings.snapshotRetentionDays ? { snapshotRetentionDays: settings.snapshotRetentionDays } : {}),
     ...(settings.snapshotMaxCount ? { snapshotMaxCount: settings.snapshotMaxCount } : {}),
+    ...(settings.themeStyle ? { themeStyle: settings.themeStyle } : {}),
     ...(settings.theme ? { theme: settings.theme } : {}),
     ...(settings.locale ? { locale: settings.locale } : {}),
     ...(settings.navLayout ? { navLayout: settings.navLayout } : {}),
@@ -41,6 +42,7 @@ function clonePatch(patch: Partial<AppSettings>): Partial<AppSettings> {
   if (patch.interfaceFontStyle !== undefined) snapshot.interfaceFontStyle = patch.interfaceFontStyle;
   if (patch.snapshotRetentionDays !== undefined) snapshot.snapshotRetentionDays = patch.snapshotRetentionDays;
   if (patch.snapshotMaxCount !== undefined) snapshot.snapshotMaxCount = patch.snapshotMaxCount;
+  if (patch.themeStyle !== undefined) snapshot.themeStyle = patch.themeStyle;
   if (patch.theme !== undefined) snapshot.theme = patch.theme;
   if (patch.locale !== undefined) snapshot.locale = patch.locale;
   if (patch.navLayout !== undefined) snapshot.navLayout = patch.navLayout;

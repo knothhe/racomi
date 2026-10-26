@@ -61,6 +61,7 @@ type Settings struct {
 	InterfaceFontStyle        string             `json:"interfaceFontStyle,omitempty"`
 	SnapshotRetentionDays     int                `json:"snapshotRetentionDays,omitempty"`
 	SnapshotMaxCount          int                `json:"snapshotMaxCount,omitempty"`
+	ThemeStyle                string             `json:"themeStyle,omitempty"`
 	Theme                     string             `json:"theme,omitempty"`
 	Locale                    string             `json:"locale,omitempty"`
 	NavLayout                 string             `json:"navLayout,omitempty"`

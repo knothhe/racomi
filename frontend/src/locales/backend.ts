@@ -1,5 +1,6 @@
 // Explicit backend message templates. Placeholders preserve names, paths, and nested errors.
 const messages: ReadonlyArray<readonly [string, string, string, string]> = [
+  ["theme style must be default or omarchy", "Theme style must be default or Omarchy", "主题风格必须为默认或 Omarchy", "主題風格必須為預設或 Omarchy"],
   ["login registration belongs to another installation", "The login registration belongs to another installation.", "自启登记属于另一个安装副本，已保留。", "登入啟動登記屬於另一個安裝副本，已保留。"],
   ["invalid login registration", "The login registration is invalid.", "自启登记无效，已保留原文件。", "登入啟動登記無效，已保留原檔案。"],
   ["missing login executable", "The login registration has no executable.", "自启登记缺少程序路径，已保留原文件。", "登入啟動登記缺少程式路徑，已保留原檔案。"],

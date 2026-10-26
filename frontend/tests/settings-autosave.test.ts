@@ -309,15 +309,15 @@ test("settled receives the last successful response even when the tail of the qu
 });
 
 test("shared appearance preferences survive unrelated settings saves and serialize as patches", async () => {
-  const h = harness({ ...initialSettings(), theme: "dark", locale: "zh-TW", navLayout: "top" });
+  const h = harness({ ...initialSettings(), theme: "dark", themeStyle: "omarchy", locale: "zh-TW", navLayout: "top" });
   h.autosave.save({ deploymentMode: "symlink" });
-  h.autosave.save({ theme: "light", locale: "en", navLayout: "side" });
+  h.autosave.save({ theme: "light", themeStyle: "default", locale: "en", navLayout: "side" });
   assert.deepEqual(h.patches[0], { deploymentMode: "symlink" });
-  assert.deepEqual(h.writes[0], { ...initialSettings(), deploymentMode: "symlink", theme: "dark", locale: "zh-TW", navLayout: "top" });
+  assert.deepEqual(h.writes[0], { ...initialSettings(), deploymentMode: "symlink", theme: "dark", themeStyle: "omarchy", locale: "zh-TW", navLayout: "top" });
   h.requests[0].resolve({ id: 1, settings: copy(h.writes[0]) });
   await nextTurn();
-  assert.deepEqual(h.patches[1], { theme: "light", locale: "en", navLayout: "side" });
-  assert.deepEqual(h.writes[1], { ...initialSettings(), deploymentMode: "symlink", theme: "light", locale: "en", navLayout: "side" });
+  assert.deepEqual(h.patches[1], { theme: "light", themeStyle: "default", locale: "en", navLayout: "side" });
+  assert.deepEqual(h.writes[1], { ...initialSettings(), deploymentMode: "symlink", theme: "light", themeStyle: "default", locale: "en", navLayout: "side" });
   h.requests[1].resolve({ id: 2, settings: copy(h.writes[1]) });
   await h.autosave.idle();
 });

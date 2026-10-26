@@ -3,7 +3,7 @@ import { getLocalePreference, supportedLocales, t } from "./i18n";
 import { icon } from "./icons";
 import { agentIcon } from "./agent-icons";
 import { homeRelativePath } from "./paths";
-import { getThemePreference } from "./theme";
+import { getThemePreference, getThemeStyle } from "./theme";
 import { getNavLayoutPreference } from "./layout";
 import { getInterfaceFonts, textSizes } from "./interface";
 
@@ -45,6 +45,7 @@ export function settingsPage(settings: AppSettings, applications: GlobalApplicat
         <h2 id="settings-appearance-title" class="settings-section-title">${e(t("Appearance"))}</h2>
         <div class="settings-group">
           <div class="settings-row"><div class="settings-row-copy"><strong>${e(t("Theme"))}</strong></div><div class="theme-picker settings-theme-options settings-icon-switch" role="group" aria-label="${e(t("Theme"))}">${themeOptions}</div></div>
+          ${desktop?.platform === "linux" || getThemeStyle() === "omarchy" ? `<label class="settings-row"><span class="settings-row-copy"><strong>${e(t("Theme style"))}</strong><span class="settings-row-description">${e(t("Use the active Omarchy colors. If unavailable, use the default palette."))}</span></span><select name="theme-style" aria-label="${e(t("Theme style"))}"><option value="default" ${getThemeStyle() === "default" ? "selected" : ""}>${e(t("Default palette"))}</option><option value="omarchy" ${getThemeStyle() === "omarchy" ? "selected" : ""}>Omarchy</option></select></label>` : ""}
           <div class="settings-row"><div class="settings-row-copy"><strong>${e(t("导航布局"))}</strong></div><div class="theme-picker settings-nav-layout-options settings-icon-switch" role="group" aria-label="${e(t("导航布局"))}">${navLayoutOptions}</div></div>
           <label class="settings-row"><span class="settings-row-copy"><strong>${e(t("Language"))}</strong></span><select name="locale-preference" aria-label="${e(t("Language"))}"><option value="system" ${getLocalePreference() === "system" ? "selected" : ""}>${e(t("Follow system"))}</option>${supportedLocales.map((locale) => `<option value="${locale.id}" ${getLocalePreference() === locale.id ? "selected" : ""}>${e(locale.label)}</option>`).join("")}</select></label>
           <div class="settings-row"><strong>${e(t("文字大小"))}</strong><div class="theme-picker settings-text-sizes" role="group" aria-label="${e(t("文字大小"))}">${textSizes.map((size) => `<button type="button" class="theme-option" data-action="set-text-size" data-size="${size}" aria-pressed="${(settings.textSize || 100) === size}">${size}%</button>`).join("")}</div></div>

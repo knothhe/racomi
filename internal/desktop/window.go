@@ -29,7 +29,7 @@ func OpenMainWindow(s *Service, app *application.App) {
 			w := app.Window.NewWithOptions(application.WebviewWindowOptions{
 				Name: "main", Title: buildinfo.Current().Name, Width: width, Height: height,
 				MinWidth: 900, MinHeight: 620,
-				BackgroundColour: application.NewRGB(244, 244, 246),
+				BackgroundColour: s.themeBackground(),
 				Mac:              application.MacWindow{TitleBar: application.MacTitleBarHiddenInset}, URL: "/",
 			})
 			window = w

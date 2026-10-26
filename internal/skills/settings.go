@@ -98,6 +98,9 @@ func validateSettings(settings Settings, targets []Target) error {
 	if settings.SnapshotRetentionDays < 1 || settings.SnapshotRetentionDays > 3650 || settings.SnapshotMaxCount < 1 || settings.SnapshotMaxCount > 10000 {
 		return errors.New("snapshot retention must be 1 to 3650 days and 1 to 10000 snapshots")
 	}
+	if settings.ThemeStyle != "" && !slices.Contains([]string{"default", "omarchy"}, settings.ThemeStyle) {
+		return errors.New("theme style must be default or omarchy")
+	}
 	if settings.Theme != "" && !slices.Contains([]string{"system", "light", "dark"}, settings.Theme) {
 		return errors.New("theme must be system, light, or dark")
 	}
@@ -165,6 +168,9 @@ func (l *Store) SaveSettings(settings Settings) error {
 	}
 	if settings.SnapshotMaxCount == 0 {
 		settings.SnapshotMaxCount = state.Settings.SnapshotMaxCount
+	}
+	if settings.ThemeStyle == "" {
+		settings.ThemeStyle = state.Settings.ThemeStyle
 	}
 	if settings.Theme == "" {
 		settings.Theme = state.Settings.Theme

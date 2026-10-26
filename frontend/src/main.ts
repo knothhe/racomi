@@ -32,7 +32,7 @@ import { defaultSkillFilters, filterSkills, pendingSkills, skillSource, skillSta
 import { catalogEntries, sourceStatus, sourceStatusDetails, sourceSyncPaths, summarizeSource, type SourceEntry } from "./source-catalog";
 import { variantOptions } from "./skill-variants";
 import { defaultSettings, projectDirectories, settingsPage } from "./settings";
-import { enableNativeThemeSync, getThemePreference, setThemePreference, type ThemePreference } from "./theme";
+import { enableNativeThemeSync, refreshOmarchyTheme, getThemePreference, getThemeStyle, setThemeStyle, setThemePreference, type ThemePreference, type ThemeStyle } from "./theme";
 import { api, type AppSettings, type BuildInfo, type UpdaterState, type AppState, type ApplyPlan, type CloudBackup, type SyncConflict, type Source, type ImportResult, type Preset, type Preview, type PreviewCandidate, type SearchResult, type SkillListPage, type Skill, type SkillsManagerPreview, type Target, type Update } from "./api";
 
 type Page = "skills" | "sources" | "discover" | "presets" | "projects" | "global" | "settings" | "guide";
@@ -358,6 +358,7 @@ function applySharedPreferences() {
   applyInterfaceSettings(settings);
   applyingSharedPreferences = true;
   try {
+    if (settings.themeStyle) setThemeStyle(settings.themeStyle);
     if (settings.theme && settings.theme !== getThemePreference()) setThemePreference(settings.theme);
     if (settings.locale && settings.locale !== getLocalePreference()) setLocale(settings.locale);
     if (settings.navLayout && settings.navLayout !== getNavLayoutPreference()) setNavLayoutPreference(settings.navLayout);
@@ -365,6 +366,7 @@ function applySharedPreferences() {
   if (!preferencesMigrated) {
     preferencesMigrated = true;
     const patch: Partial<AppSettings> = {};
+    if (!settings.themeStyle) patch.themeStyle = getThemeStyle();
     if (!settings.theme) patch.theme = getThemePreference();
     if (!settings.locale) patch.locale = getLocalePreference();
     if (!settings.navLayout) patch.navLayout = getNavLayoutPreference();
@@ -1581,10 +1583,10 @@ async function load() {
   loadError = ""; render();
   const revision = stateRevision, settingsRevision = settingsWriteRevision;
   try {
-    const next = await api.state();
+    const [next] = await Promise.all([api.state(), refreshOmarchyTheme()]);
     if (revision === stateRevision && settingsRevision === settingsWriteRevision && !settingsAutosave.busy) accept(next);
     ensureHubResults();
-    enableNativeThemeSync(); enableNativeLocaleSync();
+    enableNativeThemeSync(next.desktopPreferences?.platform); enableNativeLocaleSync();
   } catch (err) {
     if (revision === stateRevision && settingsRevision === settingsWriteRevision && !settingsAutosave.busy) { loadError = err instanceof Error ? err.message : String(err); render(); }
   }
@@ -1821,6 +1823,7 @@ app.addEventListener("change", async (ev) => {
     const next = await task("正在保存设置…", () => input.name === "lightweight" ? api.setLightweight(on) : api.setOpenAtLogin(on));
     if (next) accept(next); else render();
   }
+  if (input.name === "theme-style") { setThemeStyle(input.value as ThemeStyle); return; }
   if (input.name === "locale-preference") { setLocale(input.value as LocalePreference); render(); }
   if (input.name === "global-directory-selection") {
     if (applicationBusy() || globalDirectorySelectionBlocked()) { render(); return; }
@@ -2485,6 +2488,7 @@ function focusSearch() {
 }
 document.addEventListener("racomi:nav-layout-change", () => { syncNavigationLayout(); savePreference({ navLayout: getNavLayoutPreference() }); });
 document.addEventListener("racomi:locale-change", () => { savePreference({ locale: getLocalePreference() }); render(); });
+document.addEventListener("racomi:theme-style-change", () => { savePreference({ themeStyle: getThemeStyle() }); render(); });
 document.addEventListener("racomi:theme-change", () => {
   savePreference({ theme: getThemePreference() });
   for (const button of document.querySelectorAll<HTMLButtonElement>("button[data-theme-preference]")) {

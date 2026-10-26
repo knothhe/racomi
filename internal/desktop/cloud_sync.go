@@ -350,10 +350,10 @@ func (s *Service) SaveSettingsPatch(patch map[string]json.RawMessage, onlyMissin
 			return err
 		}
 		allowed := map[string]bool{"deploymentMode": true, "defaultProjectDirectories": true, "defaultGlobalDirectories": true,
-			"customProjectDirectories": true, "theme": true, "locale": true, "navLayout": true, "textSize": true, "interfaceFont": true,
+			"customProjectDirectories": true, "theme": true, "themeStyle": true, "locale": true, "navLayout": true, "textSize": true, "interfaceFont": true,
 			"interfaceFontStyle": true, "snapshotRetentionDays": true, "snapshotMaxCount": true}
 		filtered := make(map[string]json.RawMessage, len(patch))
-		preferences := map[string]string{"theme": state.Settings.Theme, "locale": state.Settings.Locale, "navLayout": state.Settings.NavLayout}
+		preferences := map[string]string{"theme": state.Settings.Theme, "themeStyle": state.Settings.ThemeStyle, "locale": state.Settings.Locale, "navLayout": state.Settings.NavLayout}
 		for field, value := range patch {
 			_, preference := preferences[field]
 			if !allowed[field] || strings.TrimSpace(string(value)) == "null" || (onlyMissing && !preference) {

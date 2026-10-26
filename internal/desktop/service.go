@@ -42,6 +42,7 @@ type Service struct {
 	sources             *sources.Client
 	mu                  sync.Mutex
 	themeMu             sync.Mutex
+	themeStyle          string
 	theme               string
 	locale              string
 	app                 *application.App
@@ -90,7 +91,15 @@ func New(root string) (*Service, error) {
 		cloud = newCloudSyncRuntime(store.Root(), r2.secrets)
 		cloud.lastError = err.Error()
 	}
-	return &Service{desktop: desktop, store: store, sources: sources.New(filepath.Join(store.Root(), "cache", "sources")), theme: "system", locale: "zh-CN", cloud: cloud, r2: r2}, nil
+	state, err := store.State()
+	if err != nil {
+		return nil, err
+	}
+	theme := state.Settings.Theme
+	if theme == "" {
+		theme = "system"
+	}
+	return &Service{desktop: desktop, store: store, sources: sources.New(filepath.Join(store.Root(), "cache", "sources")), theme: theme, themeStyle: state.Settings.ThemeStyle, locale: "zh-CN", cloud: cloud, r2: r2}, nil
 }
 
 // UseIcon gives native surfaces without their own artwork, such as the Linux
@@ -148,13 +157,16 @@ func (s *Service) ServiceShutdown() error {
 // SetTheme colours the native window behind the frontend's matching theme. Wails
 // beta.24 exposes dynamic background colours, while native controls keep the
 // system appearance. The transparent titlebar shares the frontend background.
-func (s *Service) SetTheme(theme string) error {
+func (s *Service) SetTheme(theme, style string) error {
+	if style != "default" && style != "omarchy" {
+		return errors.New("theme style must be default or omarchy")
+	}
 	if theme != "system" && theme != "light" && theme != "dark" {
 		return errors.New("主题必须为 system、light 或 dark")
 	}
 	s.themeMu.Lock()
 	defer s.themeMu.Unlock()
-	s.theme = theme
+	s.theme, s.themeStyle = theme, style
 	s.applyThemeLocked()
 	return nil
 }
@@ -163,14 +175,36 @@ func (s *Service) applyThemeLocked() {
 	if s.app == nil {
 		return
 	}
-	dark := s.theme == "dark" || (s.theme == "system" && s.app.Env.IsDarkMode())
-	colour := application.NewRGB(244, 244, 246)
-	if dark {
-		colour = application.NewRGB(26, 26, 30)
-	}
+	colour := s.themeBackgroundLocked()
 	for _, window := range s.app.Window.GetAll() {
 		window.SetBackgroundColour(colour)
 	}
+}
+
+// Caller holds themeMu. A newly created window uses the same palette as updates.
+func (s *Service) themeBackgroundLocked() application.RGBA {
+	dark := s.theme == "dark" || (s.theme == "system" && s.app != nil && s.app.Env.IsDarkMode())
+	if s.themeStyle != "default" {
+		if palette := readOmarchyTheme(); palette != nil {
+			if s.theme == "system" {
+				dark = palette.Dark
+			}
+			if dark == palette.Dark {
+				r, g, b := hexRGB(palette.Colors["background"])
+				return application.NewRGB(r, g, b)
+			}
+		}
+	}
+	if dark {
+		return application.NewRGB(26, 26, 30)
+	}
+	return application.NewRGB(244, 244, 246)
+}
+
+func (s *Service) themeBackground() application.RGBA {
+	s.themeMu.Lock()
+	defer s.themeMu.Unlock()
+	return s.themeBackgroundLocked()
 }
 
 // ReadSkillDocument reads only the bounded document from an indexed local object.

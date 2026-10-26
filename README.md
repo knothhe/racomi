@@ -6,7 +6,7 @@
 - 来源、预设与单个技能合并去重，支持多目录、复制与软链接部署。
 - 本地快照、ZIP 备份恢复，可导入 skills-manager 数据。
 - 可选 S3 / Cloudflare R2 加密同步与云端历史恢复；R2 支持 OAuth 自动配置，无需 racomi 账号。
-- 明暗主题、文字缩放、界面字体，简体中文／繁體中文／English。
+- 明暗主题、Omarchy 系统配色（Linux）、文字缩放、界面字体，简体中文／繁體中文／English。
 - 轻量模式（托盘常驻）、开机自启，官方正式版支持签名应用内更新。
 
 ## 安装
@@ -40,6 +40,8 @@
   tar -xzf racomi-*-x86_64-linux.tar.gz
   install -m 755 racomi-*-x86_64-linux/racomi ~/.local/bin/racomi
   ```
+
+  在“设置 → 外观 → 主题风格”可选择 Omarchy，未设置主题风格时，检测到有效配色会自动采用。运行中会跟随 Omarchy 换色；明暗模式仍可单独选择，配色不可用时回退为默认主题。
 
   托盘需要桌面支持 StatusNotifierItem（如 KDE、waybar）；开机自启使用 XDG autostart。
 
