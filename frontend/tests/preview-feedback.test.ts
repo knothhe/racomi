@@ -8,7 +8,7 @@ import { variantOptions } from "../src/skill-variants.ts";
 import { createHubAvailability } from "../src/hub-availability.ts";
 
 const source = ts.createSourceFile("main.ts", readFileSync(new URL("../src/main.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
-const names = new Set(["doPreview", "task", "previewRequestPanel", "previewWaitHint", "updatePreviewWait", "closePreview", "button", "iconButton", "captureListScroll", "restoreListScroll", "renderPreview", "scanWarnings", "checkVisibleHubAvailability", "previewCandidateRow", "variantPicker"]);
+const names = new Set(["doPreview", "task", "mutate", "previewRequestPanel", "previewWaitHint", "updatePreviewWait", "closePreview", "button", "iconButton", "captureListScroll", "restoreListScroll", "renderPreview", "scanWarnings", "checkVisibleHubAvailability", "previewCandidateRow", "variantPicker"]);
 const production = source.statements.filter((node) => ts.isFunctionDeclaration(node) && node.name && names.has(node.name.text)).map((node) => node.getText(source)).join("\n");
 const panelProduction = source.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "previewPanel")!.getText(source);
 const eventProduction = source.statements.filter((node) => ts.isExpressionStatement(node) && ts.isCallExpression(node.expression)
@@ -22,6 +22,7 @@ function harness(options: { previewOpen?: boolean; actualPanel?: boolean; locali
   const timers = new Map<number, () => void>();
   const elapsed = { textContent: "" }, hint = { textContent: "" };
   const calls: unknown[][] = [];
+  const accepted: unknown[] = [], messages: { message: string; error: boolean }[] = [];
   const focused: { selector: string; preventScroll: boolean }[] = [];
   const listeners = new Map<string, (event: { target: unknown; preventDefault: () => void }) => Promise<void>>();
   const hubScroller = { dataset: { preserveScroll: "hub-results" }, scrollTop: 0 };
@@ -29,23 +30,24 @@ function harness(options: { previewOpen?: boolean; actualPanel?: boolean; locali
   let renders = 0;
   const panel = { outerHTML: "existing preview", querySelector: () => null };
   const pending: { resolve: (value: unknown) => void; reject: (error: Error) => void }[] = [];
-  const checks: { cancellations: number; resolve: (value: unknown[]) => void }[] = [];
+  const checks: { urls: string[]; cancellations: number; resolve: (value: unknown[]) => void }[] = [];
   const availability = createHubAvailability({
-    check: () => {
-      const item = { cancellations: 0 } as typeof checks[number];
+    check: (urls) => {
+      const item = { urls, cancellations: 0 } as typeof checks[number];
       const promise = new Promise<never>((resolve) => { item.resolve = resolve; });
       checks.push(item);
       return Object.assign(promise, { cancel: () => { item.cancellations++; } });
     },
     changed: () => {},
   });
-  const api = Object.fromEntries(["preview", "previewLocal", "previewHubRepository"].map((name) => [name, (...args: unknown[]) => {
+  const api = Object.fromEntries(["preview", "previewLocal", "previewHubRepository", "install"].map((name) => [name, (...args: unknown[]) => {
     calls.push([name, ...args]);
     return new Promise((resolve, reject) => pending.push({ resolve, reject }));
   }]));
   const context = vm.createContext({
     api, Error, variantOptions, gitBackedHubSkill, recoverableHubSkill, hubAvailability: availability, localizeMessage: options.localizeMessage || ((value: string) => value), Date: { now: () => now },
     recordRender: () => { renders++; }, setThemePreference: () => {}, ensureHubResults: () => {},
+    recordAccept: (next: unknown) => accepted.push(next), recordToast: (message: string, error = false) => messages.push({ message, error }),
     syncRenderedControls: (html: string) => { install.disabled = /data-action="install" disabled/.test(html); },
     window: { setInterval: (callback: () => void) => { const id = nextTimer++; timers.set(id, callback); return id; }, clearInterval: (id: number) => timers.delete(id) },
     app: { addEventListener: (name: string, listener: (event: { target: unknown; preventDefault: () => void }) => Promise<void>) => listeners.set(`app:${name}`, listener) },
@@ -67,7 +69,7 @@ function harness(options: { previewOpen?: boolean; actualPanel?: boolean; locali
     let selectedCandidates = new Set();
     const activeTasks = new Set(), taskMessages = new Map(), stateChangingTasks = new Set();
     const discoveryBusy = () => activeTasks.size > 0;
-    const status = () => {}, syncBusyControls = () => {}, toast = () => {};
+    const status = () => {}, syncBusyControls = () => {}, toast = recordToast;
     const arr = (value) => value || [], tMessage = localizeMessage;
     const t = (value, variables) => value.replace(/\\{(\\w+)\\}/g, (slot, key) => variables?.[key] ?? slot);
     const e = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
@@ -76,6 +78,7 @@ function harness(options: { previewOpen?: boolean; actualPanel?: boolean; locali
     let html = "";
     ${options.actualPanel ? panelProduction : 'const previewPanel = () => "candidates";'}
     const render = () => { recordRender(); html = preview ? previewPanel() : previewRequest ? previewRequestPanel() : ""; syncRenderedControls(html); };
+    const accept = (next) => { recordAccept(next); render(); };
     ${production}
     ${eventProduction}
     globalThis.run = doPreview;
@@ -87,9 +90,9 @@ function harness(options: { previewOpen?: boolean; actualPanel?: boolean; locali
   `, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText, context);
   return {
     close: context.close as () => void,
-    setResults: context.setResults as (results: { source: string; slug: string; name: string }[]) => void,
+    setResults: context.setResults as (results: { source: string; slug: string; name: string; url?: string }[]) => void,
     focused, panel, hubScroller, install, candidateCount, selectAll, renders: () => renders,
-    availability, checks,
+    availability, checks, accepted, messages,
     click: (dataset: Record<string, string>, disabled = false) => {
       const target = { dataset, disabled, closest: () => target };
       return listeners.get("document:click")!({ target, preventDefault() {} });
@@ -459,6 +462,70 @@ test("foreground previews and navigation cancel checks; closing resumes only unf
   h.checks[1].resolve([{ url: otherURL, state: "missing", revision: "old", checkedAt: "", reason: "" }]);
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(h.availability.get(otherURL)?.state, "unknown", "a canceled late result cannot mark another page's card missing");
+});
+
+test("successful import stays in discovery and resumes unfinished checks without repeating completed checks", async () => {
+  const h = harness({ actualPanel: true });
+  const completedURL = "https://skills.sh/completed/repo/done", otherURL = "https://skills.sh/other/repo/review";
+  h.setResults([
+    { source: "completed/repo", slug: "completed/repo/done", name: "done", url: completedURL },
+    { source: "pbakaus/impeccable", slug: "pbakaus/impeccable/polish", name: "polish", url: polishURL },
+    { source: "other/repo", slug: "other/repo/review", name: "review", url: otherURL },
+  ]);
+  h.availability.record({ url: completedURL, state: "available", revision: "checked", checkedAt: "", reason: "" });
+  const check = h.availability.run([completedURL, polishURL, otherURL], true);
+  h.hubScroller.scrollTop = 420;
+  const preview = h.click({ action: "hub-preview", index: "1" });
+  assert.equal(h.checks[0].cancellations, 1);
+  h.checks[0].resolve([]); await check;
+  h.pending[0].resolve({ ...currentRepository, candidates: [{ name: "polish", subpath: "skills/polish" }] }); await preview;
+  h.hubScroller.scrollTop = 0;
+
+  const importing = h.click({ action: "install" });
+  assert.equal(h.calls[1][0], "install");
+  assert.equal(h.calls[1][1], currentRepository.id);
+  assert.deepEqual(Array.from(h.calls[1][2] as string[]), ["skills/polish"]);
+  assert.equal(h.snapshot().busy, 1);
+  const next = { state: { skills: [{ id: "installed-polish" }] } };
+  h.pending[1].resolve(next); await importing;
+
+  assert.deepEqual(h.accepted, [next]);
+  assert.equal(h.snapshot().page, "discover");
+  assert.equal(h.snapshot().tab, "hub");
+  assert.equal(h.snapshot().preview, null);
+  assert.equal(h.snapshot().request, null);
+  assert.equal(h.snapshot().returnTo, null);
+  assert.deepEqual([...h.snapshot().selected], []);
+  assert.equal(h.snapshot().html, "");
+  assert.equal(h.snapshot().busy, 0);
+  assert.equal(h.hubScroller.scrollTop, 420);
+  assert.deepEqual(h.focused.at(-1), { selector: '[data-action="hub-preview"][data-index="1"]', preventScroll: true });
+  assert.deepEqual(h.messages.at(-1), { message: "所选技能已导入本地。", error: false });
+  assert.equal(h.checks.length, 2);
+  assert.deepEqual(h.checks[1].urls, [otherURL], "only the unfinished repository is checked again");
+  h.checks[1].resolve([{ url: otherURL, state: "available", revision: "current", checkedAt: "", reason: "" }]);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(h.availability.get(completedURL)?.state, "available");
+  assert.equal(h.availability.get(polishURL)?.state, "available");
+  assert.equal(h.availability.get(otherURL)?.state, "available");
+});
+
+test("failed import retains the preview and selection for retry", async () => {
+  const h = harness({ actualPanel: true });
+  const preview = h.run("team/repo", "", "");
+  h.pending[0].resolve({ ...currentRepository, candidates: [{ name: "polish", subpath: "skills/polish" }] }); await preview;
+  const importing = h.click({ action: "install" });
+  h.pending[1].reject(new Error("cannot install skill")); await importing;
+  assert.equal(h.snapshot().page, "discover");
+  assert.equal((h.snapshot().preview as { id: string }).id, currentRepository.id);
+  assert.deepEqual([...h.snapshot().selected], ["skills/polish"]);
+  assert.equal(h.snapshot().busy, 0);
+  assert.deepEqual(h.accepted, []);
+  assert.deepEqual(h.messages.at(-1), { message: "cannot install skill", error: true });
+  const retry = h.click({ action: "install" });
+  h.pending[2].resolve({ state: { skills: [] } }); await retry;
+  assert.equal(h.snapshot().preview, null);
+  assert.deepEqual([...h.snapshot().selected], []);
 });
 
 

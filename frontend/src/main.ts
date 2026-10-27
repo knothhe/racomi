@@ -2343,7 +2343,7 @@ document.addEventListener("click", async (ev) => {
         await doPreview(r.url || r.source, "", "", recover ? original.skill : r.slug?.split("/").pop() || r.name, recover ? "hub-repository" : "git", { key: JSON.stringify([r.source, r.slug || r.name]), scroll: captureListScroll(".hub-panel") }, recover ? "none" : "auto", value?.state === "unavailable" ? "unavailable" : "missing");
       }
     } else if (action === "install" && preview && selectedCandidates.size) {
-      if (await mutate("正在导入所选技能…", () => api.install(preview!.id, [...selectedCandidates]), t("所选技能已导入本地。"))) { preview = null; previewMissingSkill = ""; previewRepositoryRecovery = false; selectedCandidates.clear(); currentPage = "skills"; render(); }
+      if (await mutate("正在导入所选技能…", () => api.install(preview!.id, [...selectedCandidates]), t("所选技能已导入本地。"))) closePreview();
     } else if (action === "delete-preset") {
       const p = presets().find((p) => p.id === id);
       if (p && await confirm(t("删除预设"), t("确定删除“{0}”？技能原件会保留，相关项目与全局配置需重新应用。", { 0: p.name }), "", t("删除预设"), true)) await mutate("正在删除预设…", () => api.deletePreset(id), t("预设已删除。") );
