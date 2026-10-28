@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"path/filepath"
 
 	"github.com/knothhe/r2connect/keyring"
 )
@@ -42,14 +43,18 @@ func r2SecretError(err error) error {
 
 // r2SystemSecretStore is the system credential store shared by Cloudflare
 // authorization and the sync profiles, including its access-denied state.
-type r2SystemSecretStore struct{ *keyring.Store }
+type r2SystemSecretStore struct {
+	*keyring.Store
+	session *secretSessionBackend
+}
 
 // defaultSecretBackend is replaced in tests so they never reach the user's
 // credential store.
 var defaultSecretBackend = keyring.Native("racomi credentials")
 
 func newR2SecretStore(namespace string) r2SecretStore {
-	return &r2SystemSecretStore{keyring.NewWithBackend(r2SecretService(namespace), defaultSecretBackend)}
+	session := &secretSessionBackend{backend: defaultSecretBackend, statePath: filepath.Join(namespace, "r2-oauth-state.json")}
+	return &r2SystemSecretStore{Store: keyring.NewWithBackend(r2SecretService(namespace), session), session: session}
 }
 
 func (s *r2SystemSecretStore) Load(key string) ([]byte, error) {
@@ -65,9 +70,20 @@ func (s *r2SystemSecretStore) Delete(key string) error {
 	return r2SecretError(s.Store.Delete(key))
 }
 
-// Only an explicit Connect Cloudflare action may reopen access. Polling,
-// background sync, compensation and status reads must never call this method.
-func (s *r2SystemSecretStore) retryAccess() { s.RetryAccess() }
+func (s *r2SystemSecretStore) clearSession() {
+	if s.session != nil {
+		s.session.clear()
+	}
+}
+
+// Only an explicit connection, disconnection or manual-profile retry may reopen
+// access. Polling, background sync and compensation must never call this method.
+func (s *r2SystemSecretStore) retryAccess() {
+	s.RetryAccess()
+	// RetryAccess waits for any in-flight Store operation. Clear afterwards so
+	// that operation cannot repopulate the old session while we wait for it.
+	s.clearSession()
+}
 
 // secretStoreUnusable reports that this device cannot keep secrets in its
 // credential store, as opposed to a transient failure.

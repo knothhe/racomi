@@ -150,6 +150,9 @@ func (s *Service) ServiceShutdown() error {
 	s.CancelR2OAuth()
 	if s.r2 != nil {
 		s.r2.workers.Wait()
+		if store, ok := s.r2.secrets.(*r2SystemSecretStore); ok {
+			store.clearSession()
+		}
 	}
 	return nil
 }
