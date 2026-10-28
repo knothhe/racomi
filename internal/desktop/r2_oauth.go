@@ -404,6 +404,9 @@ func (s *Service) DisconnectR2OAuth(ctx context.Context) (R2OAuthStatus, error) 
 	if err := r.unavailable(); err != nil {
 		return s.GetR2OAuthStatus(), err
 	}
+	if store, ok := r.secrets.(interface{ retryAccess() }); ok {
+		store.retryAccess()
+	}
 	if err := r.manager.Disconnect(ctx); err != nil {
 		if errors.Is(err, r2connect.ErrCleanupPending) {
 			err = errors.New("Reconnect Cloudflare to remove the remaining racomi R2 tokens.")

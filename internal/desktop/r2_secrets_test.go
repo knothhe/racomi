@@ -49,7 +49,7 @@ func (b *memoryR2SecretBackend) Delete(service, key string) error {
 }
 
 func testR2SecretStore(service string, backend keyring.Backend) *r2SystemSecretStore {
-	return &r2SystemSecretStore{keyring.NewWithBackend(service, backend)}
+	return &r2SystemSecretStore{Store: keyring.NewWithBackend(service, backend)}
 }
 
 func TestR2SecretServiceHidesDataPath(t *testing.T) {
@@ -98,5 +98,19 @@ func TestR2OnlyExplicitNewAuthorizationResetsCredentialDenial(t *testing.T) {
 	}
 	if _, err := store.Load("authorization"); !errors.Is(err, errR2SecretAccessDenied) || backend.calls != 3 {
 		t.Fatal("an already active authorization reset credential denial")
+	}
+}
+
+func TestR2ExplicitDisconnectResetsCredentialDenial(t *testing.T) {
+	s, _, backend, urls := r2TestService(t)
+	authorizeR2Fixture(t, s, urls)
+	backend.err = keyring.ErrAccessDenied
+	if _, err := s.r2.secrets.Load("denied"); !errors.Is(err, keyring.ErrAccessDenied) {
+		t.Fatal(err)
+	}
+	backend.err = nil
+	status, err := s.DisconnectR2OAuth(t.Context())
+	if err != nil || status.Connected {
+		t.Fatalf("explicit disconnect could not recover denied access: %+v, %v", status, err)
 	}
 }

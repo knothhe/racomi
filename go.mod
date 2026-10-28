@@ -3,7 +3,7 @@ module racomi
 go 1.26.8
 
 require (
-	github.com/knothhe/r2connect v0.1.0
+	github.com/knothhe/r2connect v0.1.1
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/wailsapp/wails/v3 v3.0.0-beta.24
 	golang.org/x/sys v0.46.0
