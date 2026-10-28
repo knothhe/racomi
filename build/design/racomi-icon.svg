@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512" fill="none" role="img" aria-labelledby="title desc">
   <title id="title">racomi — light app icon</title>
-  <desc id="desc">A compact graphite raccoon with rounded ears, a bold eye mask and a porcelain face, on a warm ivory rounded square.</desc>
+  <desc id="desc">A line-drawn raccoon in profile with dark little hands and a ringed tail, a big glossy eye, a button nose and a small smile, hugging a closed book of skills to its chest. Graphite ink on a warm ivory rounded square.</desc>
   <defs>
     <linearGradient id="surface" x1="256" y1="44" x2="256" y2="468" gradientUnits="userSpaceOnUse">
       <stop stop-color="#FCFCF8"/>
@@ -9,9 +9,94 @@
     <filter id="shadow" x="16" y="24" width="480" height="484" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
       <feDropShadow dy="9" stdDeviation="10" flood-color="#18221E" flood-opacity=".13"/>
     </filter>
+    <path id="tail" d="M206 384C156 380 120 344 120 296C120 262 132 236 150 214"/>
+    <path id="body" d="M214 222C186 240 174 282 176 322C178 364 200 392 236 394H290C312 394 322 380 316 360C310 334 302 300 298 268C296 248 284 232 268 226Z"/>
+    <ellipse id="foot" cx="300" cy="394" rx="28" ry="13"/>
+    <path id="head" d="M196 168C196 124 228 96 268 96C302 96 326 114 338 140C346 156 356 166 356 182C356 198 346 210 332 216C316 223 300 228 284 232C266 237 246 238 228 230C208 221 196 198 196 168Z"/>
+    <mask id="ear-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="#fff"/>
+      <use href="#head" fill="#000"/>
+    </mask>
+    <!-- Two highlights make the round eye glossy. -->
+    <mask id="eye-shine" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="#fff"/>
+      <circle cx="300" cy="170" r="5.5" fill="#000"/>
+      <circle cx="289" cy="184" r="2.6" fill="#000"/>
+    </mask>
+    <!-- A closed book hugged to the chest, tilted back toward the body. -->
+    <rect id="book" x="-44" y="-54" width="88" height="108" rx="10" transform="translate(304 312) rotate(-12)"/>
+    <g id="hands">
+      <ellipse cx="258" cy="336" rx="15" ry="13"/>
+      <ellipse cx="342" cy="276" rx="15" ry="13"/>
+    </g>
+    <!-- Tail: a hollow tube with a dark tip and alternating rings; it tucks behind the body. -->
+    <mask id="tail-tube" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="#fff"/>
+      <use href="#tail" fill="none" stroke="#000" stroke-width="34" stroke-linecap="round"/>
+      <use href="#body" fill="#000"/>
+    </mask>
+    <mask id="behind-body" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="#fff"/>
+      <use href="#body" fill="#000"/>
+    </mask>
+    <!-- Body outline hides behind the head, book, hands and foot. -->
+    <mask id="body-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="#fff"/>
+      <use href="#head" fill="#000"/>
+      <use href="#book" fill="#000" stroke="#000" stroke-width="30" stroke-linejoin="round"/>
+      <use href="#hands" fill="#000" stroke="#000" stroke-width="16"/>
+      <use href="#foot" fill="#000" stroke="#000" stroke-width="12"/>
+      <path fill="#000" d="M296 362H340V392H296Z"/>
+      <path fill="#000" d="M270 226H312V262H270Z"/>
+    </mask>
+    <mask id="foot-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="#fff"/>
+      <g fill="#000">
+        <ellipse cx="306" cy="398" rx="9" ry="5.5"/>
+        <circle cx="290" cy="391" r="3.4"/>
+        <circle cx="300" cy="387" r="3.4"/>
+        <circle cx="311" cy="387" r="3.4"/>
+        <circle cx="320" cy="391" r="3.4"/>
+      </g>
+    </mask>
+    <mask id="finger-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="#fff"/>
+      <path d="M264 331H275M264 341H275M327 271H337M327 281H337" stroke="#000" stroke-width="3" stroke-linecap="round"/>
+    </mask>
+    <mask id="book-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="#fff"/>
+      <use href="#hands" fill="#000" stroke="#000" stroke-width="14"/>
+    </mask>
   </defs>
   <rect x="44" y="44" width="424" height="424" rx="96" fill="url(#surface)" filter="url(#shadow)"/>
   <rect x="44.75" y="44.75" width="422.5" height="422.5" rx="95.25" stroke="#FFFFFF" stroke-opacity=".8" stroke-width="1.5"/>
-  <path fill="#242C29" fill-rule="evenodd" d="M143 207C130 176 125 135 141 127C157 119 189 138 207 154C238 146 274 146 305 154C323 138 355 119 371 127C387 135 382 176 369 207C383 224 395 244 410 258C422 270 415 292 400 308C377 333 343 347 312 353C296 372 276 383 256 383C236 383 216 372 200 353C169 347 135 333 112 308C97 292 90 270 102 258C117 244 129 224 143 207ZM151 148C147 158 151 176 157 190C165 181 175 173 185 166C173 157 159 149 151 148ZM361 148C353 149 339 157 327 166C337 173 347 181 355 190C361 176 365 158 361 148ZM158 215L128 259C149 254 169 242 190 229C210 217 227 220 236 235C246 252 240 272 229 287C218 302 207 312 212 327C218 343 238 359 256 359C274 359 294 343 300 327C305 312 294 302 283 287C272 272 266 252 276 235C285 220 302 217 322 229C343 242 363 254 384 259L354 215C329 185 296 170 256 170C216 170 183 185 158 215ZM183 258A13 13 0 1 0 183 284A13 13 0 1 0 183 258ZM329 258A13 13 0 1 0 329 284A13 13 0 1 0 329 258Z"/>
-  <path d="M242 309H270C276 309 279 314 275 319L263 333C259 338 253 338 249 333L237 319C233 314 236 309 242 309Z" fill="#242C29"/>
+  <g fill="#242C29" stroke="#242C29" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" transform="translate(-6 8)">
+    <!-- Tail. -->
+    <use href="#tail" mask="url(#tail-tube)" fill="none" stroke-width="62"/>
+    <path mask="url(#behind-body)" fill="none" stroke-width="40" stroke-linecap="butt" stroke-dasharray="30 22 22 22 22 22 22 22 22 400" d="M150 214C132 236 120 262 120 296C120 344 156 380 206 384"/>
+    <!-- Body and foot. -->
+    <use href="#body" mask="url(#body-cut)" fill="none"/>
+    <use href="#foot" mask="url(#foot-cut)" stroke="none"/>
+    <!-- Head: ears with an inner line, a big glossy eye, a button nose and a small smile. -->
+    <g mask="url(#ear-cut)" fill="none">
+      <path d="M212 132C202 106 208 84 226 74C244 80 258 98 260 114"/>
+      <path d="M262 106C264 86 276 72 292 68C302 82 302 100 296 114"/>
+    </g>
+    <path fill="none" stroke-width="6" d="M222 112C221 101 224 92 229 87"/>
+    <use href="#head" fill="none"/>
+    <ellipse mask="url(#eye-shine)" stroke="none" cx="295" cy="176" rx="14" ry="16"/>
+    <path stroke="none" d="M349 171C357 165 370 170 370 181C370 190 362 195 354 192C346 189 343 176 349 171Z"/>
+    <path fill="none" stroke-width="5" d="M345 192C344 199 338 202 332 198"/>
+    <!-- Book hugged in both hands, with a skill sparkle on the cover. -->
+    <g mask="url(#book-cut)">
+      <use href="#book" fill="none"/>
+      <g transform="translate(304 312) rotate(-12)">
+        <path fill="none" d="M-29 -54V26M-44 37C-44 31 -38 26 -31 26H44"/>
+        <path stroke="none" d="M8 -36C10 -22 14 -18 29 -16C14 -14 10 -10 8 4C6 -10 2 -14 -13 -16C2 -18 6 -22 8 -36Z"/>
+      </g>
+    </g>
+    <use href="#hands" mask="url(#finger-cut)" stroke="none"/>
+    <!-- A small sparkle beside the book. -->
+    <path stroke="none" d="M384 238C385 246 388 249 396 250C388 251 385 254 384 262C383 254 380 251 372 250C380 249 383 246 384 238Z"/>
+  </g>
 </svg>

@@ -1,8 +1,8 @@
 {
   "files": {
-    "app-icon-dev-1024.png": "36ee2268895c6b071f91f4cea0a0d29bf8d0ef39f746cbb9322304d52261a26b",
-    "app-icon-dev.icns": "131aabf2caab1a6ea07e55233f6879201d10e6a74296274ac2ad3e33ffc8b62c",
-    "app-icon-dev.png": "36ee2268895c6b071f91f4cea0a0d29bf8d0ef39f746cbb9322304d52261a26b"
+    "app-icon-dev-1024.png": "f557c5234201be127677359416ce2f8f9869298b4ade63e7eae62735d524bb14",
+    "app-icon-dev.icns": "6dffd606e9e55fe29e666aa26a78ee7736e91da563b4b78d862e26e1c055109c",
+    "app-icon-dev.png": "f557c5234201be127677359416ce2f8f9869298b4ade63e7eae62735d524bb14"
   },
   "formats": [
     "icns",
@@ -15,6 +15,6 @@
   ],
   "schema": 1,
   "source": "appicon.png",
-  "source_sha256": "4addb97a0c8035c8c1c877cbad56e7bd4326931c723ae5f0b0279081b36140a2",
+  "source_sha256": "860efe77dc6f45536bb35529c35fe6584b32b413a0b724441ab0ca1420347697",
   "tool": "h2-desktop-client/dev-icon"
 }
