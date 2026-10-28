@@ -91,5 +91,5 @@ Launch Services 不保留自定义资料环境。使用 `RACOMI_DATA_DIR` 或 `C
 Dev 图标由 `scripts/dev_icon.py` 从正式 PNG 派生，提交的生成资源供无 Python 环境的普通构建使用。修改图源时在有 Python 3.9+／Pillow 10.1+ 的环境运行：
 
 ```sh
-python3 scripts/dev_icon.py --input build/appicon.png --output-dir build/dev-icons --formats png,icns --sizes 1024 --force
+python3 scripts/dev_icon.py --input assets/appicon.png --output-dir assets/dev-icons --formats png,icns --sizes 1024 --force
 ```

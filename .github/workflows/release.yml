@@ -210,7 +210,7 @@ jobs:
         run: |
           # Generators may rewrite checked-in icon outputs; authoritative source
           # files must still match the clean tag captured before the checks.
-          test -z "$(git status --porcelain --untracked-files=normal -- . ':(exclude)build/appicon.png' ':(exclude)build/appicon-dark.png' ':(exclude)build/macos/Assets.car' ':(exclude)build/macos/racomi.icns' ':(exclude)frontend/public/appicon.png')"
+          test -z "$(git status --porcelain --untracked-files=normal -- . ':(exclude)assets/appicon.png' ':(exclude)assets/appicon-dark.png' ':(exclude)assets/macos/Assets.car' ':(exclude)assets/macos/racomi.icns' ':(exclude)frontend/public/appicon.png')"
           make dist CHANNEL="$RELEASE_CHANNEL" BUILD_EXECUTOR=ci VERSION="${RELEASE_TAG#v}" BUILD_NUMBER="$GITHUB_RUN_NUMBER" GOARCH=arm64 SOURCE_COMMIT="$GITHUB_SHA" SOURCE_DIRTY=false
       - name: Sign stable update archive and feed
         if: env.RELEASE_CHANNEL == 'stable'

@@ -18,8 +18,8 @@ for dir in "$bin_dir" "$desktop_dir" "$icon_dir"; do
 done
 channel=${CHANNEL:-stable}
 case "$channel" in
- dev) app_name='racomi Dev'; command_name=racomi-dev; app_id=com.knothhe.racomi.dev; data_name=racomi-dev; icon_source=build/dev-icons/app-icon-dev.png ;;
- stable|preview) app_name=racomi; command_name=racomi; app_id=com.knothhe.racomi; data_name=racomi; icon_source=build/appicon.png ;;
+ dev) app_name='racomi Dev'; command_name=racomi-dev; app_id=com.knothhe.racomi.dev; data_name=racomi-dev; icon_source=assets/dev-icons/app-icon-dev.png ;;
+ stable|preview) app_name=racomi; command_name=racomi; app_id=com.knothhe.racomi; data_name=racomi; icon_source=assets/appicon.png ;;
  *) fail 'invalid CHANNEL' ;;
 esac
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)

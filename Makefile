@@ -27,7 +27,7 @@ export MACOSX_DEPLOYMENT_TARGET
 CGO_CFLAGS ?= -O2 -g
 export CGO_CFLAGS := $(CGO_CFLAGS) -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)
 
-NATIVE_ICON_OUTPUTS := build/macos/Assets.car build/appicon.png build/appicon-dark.png build/macos/racomi.icns
+NATIVE_ICON_OUTPUTS := assets/macos/Assets.car assets/appicon.png assets/appicon-dark.png assets/macos/racomi.icns
 NATIVE_ICON_MISSING := $(filter-out $(wildcard $(NATIVE_ICON_OUTPUTS)),$(NATIVE_ICON_OUTPUTS))
 
 .PHONY: help doctor deps bootstrap install uninstall icons frontend frontend-dev dev check test test-install test-release build package dist release release-initial release-notes run force-native-icons
@@ -69,18 +69,18 @@ icons: $(NATIVE_ICON_OUTPUTS) frontend/public/appicon.png
 # One producer owns all native outputs, including under make 3.81 with -j.
 # Missing a secondary output must regenerate the catalog and its siblings once.
 ifneq ($(strip $(NATIVE_ICON_MISSING)),)
-build/macos/Assets.car: force-native-icons
+assets/macos/Assets.car: force-native-icons
 endif
 
-build/macos/Assets.car: build/macos/AppIcon.icon/icon.json build/macos/AppIcon.icon/Assets/racomi.png build/macos/generate-icons.sh
+assets/macos/Assets.car: assets/macos/AppIcon.icon/icon.json assets/macos/AppIcon.icon/Assets/racomi.png build/macos/generate-icons.sh
 	MACOSX_DEPLOYMENT_TARGET=$(MACOSX_DEPLOYMENT_TARGET) sh build/macos/generate-icons.sh
 
-build/appicon.png build/appicon-dark.png build/macos/racomi.icns: build/macos/Assets.car
+assets/appicon.png assets/appicon-dark.png assets/macos/racomi.icns: assets/macos/Assets.car
 	@test -s "$@"
 
 force-native-icons:
 
-frontend/public/appicon.png: build/appicon.png
+frontend/public/appicon.png: assets/appicon.png
 	mkdir -p frontend/public
 	sips -z 128 128 $< --out $@ >/dev/null
 

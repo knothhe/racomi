@@ -43,10 +43,10 @@ if [ "$action" = package ]; then
   mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
   cp "$binary" "$bundle/Contents/MacOS/racomi"
   cp "$project_dir/build/macos/Info.plist" "$bundle/Contents/Info.plist"
-  if [ "$channel" = dev ]; then icon="$project_dir/build/dev-icons/app-icon-dev.icns"; else icon="$project_dir/build/macos/racomi.icns"; fi
+  if [ "$channel" = dev ]; then icon="$project_dir/assets/dev-icons/app-icon-dev.icns"; else icon="$project_dir/assets/macos/racomi.icns"; fi
   cp "$icon" "$bundle/Contents/Resources/racomi.icns"
-  if [ "$channel" != dev ]; then cp "$project_dir/build/macos/Assets.car" "$bundle/Contents/Resources/Assets.car"; fi
-  if [ "$channel" = dev ]; then icon_png="$project_dir/build/dev-icons/app-icon-dev.png"; else icon_png="$project_dir/build/appicon.png"; fi
+  if [ "$channel" != dev ]; then cp "$project_dir/assets/macos/Assets.car" "$bundle/Contents/Resources/Assets.car"; fi
+  if [ "$channel" = dev ]; then icon_png="$project_dir/assets/dev-icons/app-icon-dev.png"; else icon_png="$project_dir/assets/appicon.png"; fi
   cp "$icon_png" "$bundle/Contents/Resources/NSApplicationIcon.png"
   "$binary" --build-info > "$stage/build-info.json"
   node "$project_dir/scripts/package-metadata.mjs" "$stage/build-info.json" "$bundle/Contents/Info.plist" "$channel" "$version" "$build_number"

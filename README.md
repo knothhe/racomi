@@ -81,5 +81,5 @@ make check       # 前端构建、类型检查、Go vet 与测试
 - [S3 / R2 同步配置指南](docs/s3-r2-sync.md)
 - [R2 OAuth 发行者配置](docs/r2-oauth-poc.md)
 - [发布指南](docs/release/README.md)
-- [图标设计与生成](build/design/README.md)
+- [图标设计与生成](assets/README.md)
 - [第三方许可](frontend/public/THIRD_PARTY_NOTICES.txt)

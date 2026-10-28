@@ -85,7 +85,7 @@ function New-WindowsResources {
     New-Item -ItemType Directory -Force bin/windows | Out-Null
     # ICO directory entries contain PNG images, supported since Windows Vista.
     Add-Type -AssemblyName System.Drawing
-    $iconSource = if ($Channel -eq 'dev') { 'build/dev-icons/app-icon-dev.png' } else { 'build/appicon.png' }
+    $iconSource = if ($Channel -eq 'dev') { 'assets/dev-icons/app-icon-dev.png' } else { 'assets/appicon.png' }
     $source = [System.Drawing.Image]::FromFile((Join-Path $root $iconSource))
     try {
         $images = @(foreach ($size in @(16, 32, 48, 64, 128, 256)) {

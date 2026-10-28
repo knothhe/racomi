@@ -76,7 +76,7 @@ func TestLinuxAutostartEntryIsOwnedByExactExecutable(t *testing.T) {
 }
 
 func TestTrayIconIsSmallAndOpaqueWhereSourceIs(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "..", "build", "appicon.png"))
+	source, err := os.ReadFile(filepath.Join("..", "..", "assets", "appicon.png"))
 	if err != nil {
 		t.Fatal(err)
 	}

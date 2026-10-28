@@ -61,7 +61,7 @@ uninstall:
 
 # Linux uses the committed PNG icons; regenerating them needs the macOS tools.
 icons:
-	@test -s build/appicon.png && test -s build/dev-icons/app-icon-dev.png && test -s frontend/public/appicon.png
+	@test -s assets/appicon.png && test -s assets/dev-icons/app-icon-dev.png && test -s frontend/public/appicon.png
 	@echo "Icons are committed; regenerate them on macOS with make icons."
 
 frontend:

@@ -10,7 +10,7 @@ printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Z
 case "$architecture" in arm64) archive_arch=aarch64 ;; amd64) archive_arch=x86_64 ;; *) fail "unsupported Linux GOARCH: $architecture" ;; esac
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 channel=${CHANNEL:-dev}
-case "$channel" in dev) suffix=-dev; icon=build/dev-icons/app-icon-dev.png ;; stable|preview) suffix=; icon=build/appicon.png ;; *) fail 'invalid CHANNEL' ;; esac
+case "$channel" in dev) suffix=-dev; icon=assets/dev-icons/app-icon-dev.png ;; stable|preview) suffix=; icon=assets/appicon.png ;; *) fail 'invalid CHANNEL' ;; esac
 binary="$project_dir/bin/$channel/racomi"
 [ -x "$binary" ] || fail 'build bin/CHANNEL/racomi first (make dist)'
 built_version=$("$binary" --build-info | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))')

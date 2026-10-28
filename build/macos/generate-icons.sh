@@ -8,11 +8,11 @@ case "${1:-all}" in
 esac
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-native_icon="$project_dir/build/macos/AppIcon.icon"
-catalog_file="$project_dir/build/macos/Assets.car"
-light_icon="$project_dir/build/appicon.png"
-dark_icon="$project_dir/build/appicon-dark.png"
-icns_file="$project_dir/build/macos/racomi.icns"
+native_icon="$project_dir/assets/macos/AppIcon.icon"
+catalog_file="$project_dir/assets/macos/Assets.car"
+light_icon="$project_dir/assets/appicon.png"
+dark_icon="$project_dir/assets/appicon-dark.png"
+icns_file="$project_dir/assets/macos/racomi.icns"
 
 developer_dir=$(xcode-select -p 2>/dev/null || true)
 ictool=${RACOMI_ICTOOL:-"$developer_dir/../Applications/Icon Composer.app/Contents/Executables/ictool"}

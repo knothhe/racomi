@@ -19,10 +19,10 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-//go:embed build/appicon.png
+//go:embed assets/appicon.png
 var appIcon []byte
 
-//go:embed build/dev-icons/app-icon-dev.png
+//go:embed assets/dev-icons/app-icon-dev.png
 var devIcon []byte
 
 // Keep the bundle's asset catalog in control of macOS light and dark Dock icons.
